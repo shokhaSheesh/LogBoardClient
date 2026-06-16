@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import {
   Users, UsersRound, ShieldCheck, Plus, Pencil, Trash2, X, Check,
-  Eye, EyeOff, ToggleLeft, ToggleRight,
+  Eye, EyeOff, ToggleLeft, ToggleRight, Search, ChevronDown, ChevronLeft, ChevronRight,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -35,7 +35,7 @@ interface User {
   workFrom: string;
   workTo: string;
   roleId: number;
-  teamId: number;
+  teamId: number | null;
   login: string;
   password: string;
   status: UserStatus;
@@ -91,7 +91,7 @@ const TH = ({ children, width, align = "left" }: { children: React.ReactNode; wi
     fontFamily: "var(--font-sans)", fontSize: 10, fontWeight: 600,
     color: "var(--muted-foreground)", letterSpacing: "0.07em",
     textTransform: "uppercase", backgroundColor: "var(--muted)",
-    borderBottom: "1px solid var(--border)", borderRight: "1px solid var(--border)",
+    borderBottom: "1px solid var(--border)",
     whiteSpace: "nowrap", userSelect: "none",
     width: width ?? "auto", minWidth: width ?? "auto",
     position: "sticky", top: 0, zIndex: 5,
@@ -103,11 +103,190 @@ const TD = ({ children, mono = false, center = false, style: extra }: { children
     padding: "10px 14px",
     fontFamily: mono ? "var(--font-mono)" : "var(--font-sans)",
     fontSize: mono ? 11 : 12, color: "var(--foreground)",
-    borderBottom: "1px solid var(--border)", borderRight: "1px solid var(--border)",
+    borderBottom: "1px solid var(--border)",
     verticalAlign: "middle", textAlign: center ? "center" : "left",
     ...extra,
   }}>{children}</td>
 );
+
+// ─── CustomSelect ─────────────────────────────────────────────────────────────
+
+function CustomSelect({
+  value, options, onChange, width, compact = false, dropUp = false, portal = false,
+}: {
+  value: string; options: { value: string; label: string }[];
+  onChange: (v: string) => void; width?: number | string;
+  compact?: boolean; dropUp?: boolean;
+  portal?: boolean; // escape overflow:hidden containers (use inside modals)
+}) {
+  const [open, setOpen] = useState(false);
+  const [fixedPos, setFixedPos] = useState<{ top: number; left: number; width: number } | null>(null);
+  const ref = useRef<HTMLDivElement>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, []);
+
+  const handleToggle = () => {
+    if (!open && portal && btnRef.current) {
+      const r = btnRef.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - r.bottom;
+      const goUp = spaceBelow < 200 && r.top > 200;
+      setFixedPos({ top: goUp ? r.top - 4 : r.bottom + 4, left: r.left, width: r.width });
+    }
+    setOpen((v) => !v);
+  };
+
+  const selected = options.find((o) => o.value === value);
+  const h = compact ? 30 : 34;
+
+  const dropdownStyle: React.CSSProperties = portal && fixedPos ? {
+    position: "fixed",
+    top: fixedPos.top,
+    left: fixedPos.left,
+    minWidth: fixedPos.width,
+    width: "max-content",
+    transform: fixedPos.top < (btnRef.current?.getBoundingClientRect().top ?? 0) ? "translateY(-100%)" : undefined,
+  } : {
+    position: "absolute",
+    ...(dropUp ? { bottom: "calc(100% + 4px)", top: "auto" } : { top: "calc(100% + 4px)", bottom: "auto" }),
+    left: 0, minWidth: "100%", width: "max-content",
+  };
+
+  const dropList = open && (
+    <div style={{
+      ...dropdownStyle,
+      backgroundColor: "var(--card)", border: "1px solid var(--border)",
+      borderRadius: 8, boxShadow: "0 8px 24px rgba(0,0,0,0.12)", zIndex: 9999,
+      overflow: "hidden", maxHeight: 240, overflowY: "auto",
+    }}>
+      {options.map((opt) => {
+        const isActive = opt.value === value;
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            onClick={() => { onChange(opt.value); setOpen(false); }}
+            style={{
+              display: "flex", alignItems: "center", gap: 8,
+              width: "100%", padding: "7px 12px", border: "none",
+              backgroundColor: isActive ? "rgba(59,130,246,0.06)" : "transparent",
+              fontFamily: "var(--font-sans)", fontSize: compact ? 12 : 13,
+              color: isActive ? "var(--primary)" : "var(--foreground)",
+              cursor: "pointer", textAlign: "left",
+            }}
+            onMouseEnter={(e) => { if (!isActive) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--muted)"; }}
+            onMouseLeave={(e) => { if (!isActive) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "transparent"; }}
+          >
+            <span style={{ flex: 1 }}>{opt.label}</span>
+            {isActive && <Check size={12} style={{ color: "var(--primary)", flexShrink: 0 }} />}
+          </button>
+        );
+      })}
+    </div>
+  );
+
+  return (
+    <div ref={ref} style={{ position: "relative", width: width ?? "100%" }}>
+      <button
+        ref={btnRef}
+        type="button"
+        onClick={handleToggle}
+        style={{
+          display: "flex", alignItems: "center", gap: 8, width: "100%",
+          height: h, paddingLeft: 10, paddingRight: 8,
+          fontFamily: "var(--font-sans)", fontSize: compact ? 12 : 13,
+          backgroundColor: "var(--input-background)",
+          border: `1px solid ${open ? "var(--primary)" : "var(--border)"}`,
+          borderRadius: 7, color: "var(--foreground)", cursor: "pointer",
+          boxShadow: open ? "0 0 0 3px rgba(59,130,246,0.12)" : "none",
+          transition: "border-color 0.15s, box-shadow 0.15s", outline: "none",
+        }}
+      >
+        <span style={{ flex: 1, textAlign: "left", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {selected?.label ?? "Select…"}
+        </span>
+        <ChevronDown size={13} style={{ color: "var(--muted-foreground)", flexShrink: 0, transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s" }} />
+      </button>
+      {portal ? dropList : !portal && dropList}
+    </div>
+  );
+}
+
+// ─── Pagination ───────────────────────────────────────────────────────────────
+
+const PAGE_SIZES = [20, 40, 60, 100];
+
+function Pagination({ total, page, pageSize, onPage, onPageSize }: {
+  total: number; page: number; pageSize: number;
+  onPage: (p: number) => void; onPageSize: (s: number) => void;
+}) {
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const from = total === 0 ? 0 : (page - 1) * pageSize + 1;
+  const to   = Math.min(page * pageSize, total);
+
+  const pages: (number | "…")[] = [];
+  if (totalPages <= 7) {
+    for (let i = 1; i <= totalPages; i++) pages.push(i);
+  } else {
+    pages.push(1);
+    if (page > 3) pages.push("…");
+    for (let i = Math.max(2, page - 1); i <= Math.min(totalPages - 1, page + 1); i++) pages.push(i);
+    if (page < totalPages - 2) pages.push("…");
+    pages.push(totalPages);
+  }
+
+  const PBtn = ({ children, active = false, disabled = false, onClick }: {
+    children: React.ReactNode; active?: boolean; disabled?: boolean; onClick: () => void;
+  }) => (
+    <button onClick={onClick} disabled={disabled} style={{
+      minWidth: 30, height: 30, borderRadius: 6, padding: "0 6px",
+      border: active ? "1.5px solid var(--primary)" : "1px solid var(--border)",
+      backgroundColor: active ? "var(--primary)" : "transparent",
+      color: active ? "#fff" : disabled ? "var(--muted-foreground)" : "var(--foreground)",
+      fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: active ? 600 : 400,
+      cursor: disabled ? "default" : "pointer",
+      display: "inline-flex", alignItems: "center", justifyContent: "center",
+      opacity: disabled ? 0.38 : 1, outline: "none", transition: "background-color 0.1s",
+    }}>{children}</button>
+  );
+
+  return (
+    <div style={{
+      display: "flex", alignItems: "center", justifyContent: "space-between",
+      padding: "10px 16px", borderTop: "1px solid var(--border)",
+      backgroundColor: "var(--card)", flexShrink: 0,
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)", whiteSpace: "nowrap" }}>
+          {total === 0 ? "No results" : `Showing ${from}–${to} of ${total}`}
+        </span>
+        <span style={{ color: "var(--border)", userSelect: "none" }}>·</span>
+        <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)", whiteSpace: "nowrap" }}>Rows per page</span>
+        <CustomSelect
+          value={String(pageSize)}
+          options={PAGE_SIZES.map((n) => ({ value: String(n), label: String(n) }))}
+          onChange={(v) => { onPageSize(Number(v)); onPage(1); }}
+          width={72} compact dropUp
+        />
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+        <PBtn disabled={page === 1} onClick={() => onPage(page - 1)}><ChevronLeft size={14} /></PBtn>
+        {pages.map((p, i) =>
+          p === "…" ? (
+            <span key={`e${i}`} style={{ minWidth: 30, textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>…</span>
+          ) : (
+            <PBtn key={p} active={p === page} onClick={() => onPage(p as number)}>{p}</PBtn>
+          )
+        )}
+        <PBtn disabled={page === totalPages} onClick={() => onPage(page + 1)}><ChevronRight size={14} /></PBtn>
+      </div>
+    </div>
+  );
+}
 
 function ActionBtn({ icon, color, bg, onClick }: { icon: React.ReactNode; color: string; bg: string; onClick: () => void }) {
   return (
@@ -160,60 +339,94 @@ function UserModal({ user, roles, teams, onClose, onSave }: {
   const set = <K extends keyof User>(k: K, v: User[K]) => setForm((f) => ({ ...f, [k]: v }));
   const isNew = !user.id;
 
-  const DAYS_OPTIONS = ["Mon–Fri", "Mon–Sat", "Mon–Sun", "Tue–Sat", "Wed–Sun"];
+  const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  const dayOpts = DAYS.map((d) => ({ value: d, label: d }));
+
+  const parsedDays = (user.workDays ?? "Mon–Fri").split("–");
+  const [dayFrom, setDayFrom] = useState(parsedDays[0] ?? "Mon");
+  const [dayTo,   setDayTo]   = useState(parsedDays[1] ?? "Fri");
+
+  const hourOpts = Array.from({ length: 48 }, (_, i) => {
+    const hh = String(Math.floor(i / 2)).padStart(2, "0");
+    const mm = i % 2 === 0 ? "00" : "30";
+    return { value: `${hh}:${mm}`, label: `${hh}:${mm}` };
+  });
+
+  const roleOpts  = roles.map((r) => ({ value: String(r.id), label: r.name }));
+  const teamOpts  = [{ value: "0", label: "No Team" }, ...teams.map((t) => ({ value: String(t.id), label: t.name }))];
+  const statusOpts = [{ value: "Active", label: "Active" }, { value: "Inactive", label: "Inactive" }];
+
+  const handleSave = () => onSave({ ...form, workDays: `${dayFrom}–${dayTo}` } as User);
 
   return (
     <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div style={{ backgroundColor: "var(--card)", borderRadius: 12, width: 580, boxShadow: "0 20px 60px rgba(0,0,0,0.25)", overflow: "hidden", maxHeight: "90vh", display: "flex", flexDirection: "column" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderBottom: "1px solid var(--border)", backgroundColor: "var(--muted)", flexShrink: 0 }}>
+      <div style={{ backgroundColor: "var(--card)", borderRadius: 12, width: 580, boxShadow: "0 20px 60px rgba(0,0,0,0.25)", maxHeight: "90vh", display: "flex", flexDirection: "column" }}>
+        {/* Header */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderBottom: "1px solid var(--border)", backgroundColor: "var(--muted)", borderRadius: "12px 12px 0 0", flexShrink: 0 }}>
           <span style={{ fontFamily: "var(--font-sans)", fontSize: 14, fontWeight: 600, color: "var(--foreground)" }}>{isNew ? "Add User" : "Edit User"}</span>
           <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted-foreground)" }}><X size={16} /></button>
         </div>
+
+        {/* Body */}
         <div style={{ padding: 20, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, overflowY: "auto" }}>
+          {/* Name */}
           <label style={fieldStyle}>
             <span style={capStyle}>Full Name</span>
             <input value={form.name ?? ""} onChange={(e) => set("name", e.target.value)} style={inputStyle} />
           </label>
+          {/* Phone */}
           <label style={fieldStyle}>
             <span style={capStyle}>Phone Number</span>
             <input value={form.phone ?? ""} onChange={(e) => set("phone", e.target.value)} style={inputStyle} />
           </label>
 
-          {/* Working days & hours */}
-          <label style={fieldStyle}>
+          {/* Working Days — two day pickers */}
+          <div style={fieldStyle}>
             <span style={capStyle}>Working Days</span>
-            <select value={form.workDays ?? "Mon–Fri"} onChange={(e) => set("workDays", e.target.value)} style={inputStyle}>
-              {DAYS_OPTIONS.map((d) => <option key={d}>{d}</option>)}
-            </select>
-          </label>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-            <label style={fieldStyle}>
-              <span style={capStyle}>From</span>
-              <input type="time" value={form.workFrom ?? "08:00"} onChange={(e) => set("workFrom", e.target.value)} style={{ ...inputStyle, fontFamily: "var(--font-mono)" }} />
-            </label>
-            <label style={fieldStyle}>
-              <span style={capStyle}>To</span>
-              <input type="time" value={form.workTo ?? "17:00"} onChange={(e) => set("workTo", e.target.value)} style={{ ...inputStyle, fontFamily: "var(--font-mono)" }} />
-            </label>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", alignItems: "center", gap: 6 }}>
+              <CustomSelect value={dayFrom} options={dayOpts} onChange={setDayFrom} portal />
+              <span style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)", textAlign: "center" }}>–</span>
+              <CustomSelect value={dayTo} options={dayOpts} onChange={setDayTo} portal />
+            </div>
           </div>
 
-          <label style={fieldStyle}>
-            <span style={capStyle}>Role</span>
-            <select value={form.roleId ?? roles[0]?.id} onChange={(e) => set("roleId", Number(e.target.value))} style={inputStyle}>
-              {roles.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-            </select>
-          </label>
-          <label style={fieldStyle}>
-            <span style={capStyle}>Team</span>
-            <select value={form.teamId ?? teams[0]?.id} onChange={(e) => set("teamId", Number(e.target.value))} style={inputStyle}>
-              {teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-            </select>
-          </label>
+          {/* Working Hours */}
+          <div style={fieldStyle}>
+            <span style={capStyle}>Working Hours</span>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", alignItems: "center", gap: 6 }}>
+              <CustomSelect value={form.workFrom ?? "08:00"} options={hourOpts} onChange={(v) => set("workFrom", v)} portal />
+              <span style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)", textAlign: "center" }}>–</span>
+              <CustomSelect value={form.workTo ?? "17:00"} options={hourOpts} onChange={(v) => set("workTo", v)} portal />
+            </div>
+          </div>
 
+          {/* Role */}
+          <div style={fieldStyle}>
+            <span style={capStyle}>Role</span>
+            <CustomSelect
+              value={String(form.roleId ?? roles[0]?.id ?? "")}
+              options={roleOpts}
+              onChange={(v) => set("roleId", Number(v))}
+              portal
+            />
+          </div>
+          {/* Team */}
+          <div style={fieldStyle}>
+            <span style={capStyle}>Team</span>
+            <CustomSelect
+              value={String(form.teamId ?? 0)}
+              options={teamOpts}
+              onChange={(v) => set("teamId", v === "0" ? null : Number(v))}
+              portal
+            />
+          </div>
+
+          {/* Login */}
           <label style={fieldStyle}>
             <span style={capStyle}>Login</span>
             <input value={form.login ?? ""} onChange={(e) => set("login", e.target.value)} style={{ ...inputStyle, fontFamily: "var(--font-mono)" }} autoComplete="off" />
           </label>
+          {/* Password */}
           <label style={fieldStyle}>
             <span style={capStyle}>Password</span>
             <div style={{ position: "relative" }}>
@@ -224,26 +437,28 @@ function UserModal({ user, roles, teams, onClose, onSave }: {
                 style={{ ...inputStyle, paddingRight: 36, fontFamily: "var(--font-mono)" }}
                 autoComplete="new-password"
               />
-              <button
-                type="button"
-                onClick={() => setShowPass((v) => !v)}
-                style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: "var(--muted-foreground)", display: "flex" }}
-              >
+              <button type="button" onClick={() => setShowPass((v) => !v)} style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: "var(--muted-foreground)", display: "flex" }}>
                 {showPass ? <EyeOff size={14} /> : <Eye size={14} />}
               </button>
             </div>
           </label>
 
-          <label style={fieldStyle}>
+          {/* Status */}
+          <div style={fieldStyle}>
             <span style={capStyle}>Status</span>
-            <select value={form.status ?? "Active"} onChange={(e) => set("status", e.target.value as UserStatus)} style={inputStyle}>
-              <option>Active</option><option>Inactive</option>
-            </select>
-          </label>
+            <CustomSelect
+              value={form.status ?? "Active"}
+              options={statusOpts}
+              onChange={(v) => set("status", v as UserStatus)}
+              portal
+            />
+          </div>
         </div>
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, padding: "14px 20px", borderTop: "1px solid var(--border)", flexShrink: 0 }}>
+
+        {/* Footer */}
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, padding: "14px 20px", borderTop: "1px solid var(--border)", borderRadius: "0 0 12px 12px", flexShrink: 0 }}>
           <button onClick={onClose} style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 16px", borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "var(--muted)", color: "var(--foreground)", cursor: "pointer" }}>Cancel</button>
-          <button onClick={() => onSave(form as User)} style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 16px", borderRadius: 6, border: "none", backgroundColor: "var(--primary)", color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+          <button onClick={handleSave} style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 16px", borderRadius: 6, border: "none", backgroundColor: "var(--primary)", color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
             <Check size={14} /> {isNew ? "Create User" : "Save Changes"}
           </button>
         </div>
@@ -253,10 +468,14 @@ function UserModal({ user, roles, teams, onClose, onSave }: {
 }
 
 function UsersTab({ roles, teams }: { roles: Role[]; teams: Team[] }) {
-  const [users, setUsers] = useState<User[]>(initUsers);
-  const [modal, setModal] = useState<"create" | "edit" | null>(null);
+  const [users, setUsers]     = useState<User[]>(initUsers);
+  const [modal, setModal]     = useState<"create" | "edit" | null>(null);
   const [editing, setEditing] = useState<Partial<User>>({});
   const [deleting, setDeleting] = useState<User | null>(null);
+  const [search, setSearch]   = useState("");
+  const [filterRole, setFilterRole] = useState("All");
+  const [page, setPage]       = useState(1);
+  const [pageSize, setPageSize] = useState(20);
 
   const save = (u: User) => {
     if (modal === "create") {
@@ -268,19 +487,53 @@ function UsersTab({ roles, teams }: { roles: Role[]; teams: Team[] }) {
     setModal(null);
   };
 
+  const roleOpts = [
+    { value: "All", label: "All Roles" },
+    ...roles.map((r) => ({ value: String(r.id), label: r.name })),
+  ];
+
+  const q = search.toLowerCase();
+  const filtered = users.filter((u) => {
+    const matchRole = filterRole === "All" || u.roleId === Number(filterRole);
+    const matchQ = !q || u.name.toLowerCase().includes(q) || u.login.toLowerCase().includes(q) || u.phone.includes(q);
+    return matchRole && matchQ;
+  });
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const safePage = Math.min(page, totalPages);
+  const paginated = filtered.slice((safePage - 1) * pageSize, safePage * pageSize);
+
   return (
     <>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 20px", borderBottom: "1px solid var(--border)", backgroundColor: "var(--card)", flexShrink: 0 }}>
+      {/* Toolbar */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", borderBottom: "1px solid var(--border)", backgroundColor: "var(--card)", flexShrink: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <span style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
-            <span style={{ fontWeight: 600, color: "var(--foreground)" }}>{users.length}</span> users ·{" "}
-            <span style={{ color: "#10B981", fontWeight: 600 }}>{users.filter((u) => u.status === "Active").length} active</span>
-          </span>
+          <div style={{ position: "relative" }}>
+            <Search size={14} style={{ position: "absolute", left: 9, top: "50%", transform: "translateY(-50%)", color: "var(--muted-foreground)", pointerEvents: "none" }} />
+            <input
+              value={search}
+              onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+              placeholder="Search users…"
+              style={{
+                fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 10px 7px 30px",
+                borderRadius: 7, border: "1px solid var(--border)", backgroundColor: "var(--card)",
+                color: "var(--foreground)", outline: "none", width: 220,
+              }}
+            />
+          </div>
+          <CustomSelect
+            value={filterRole}
+            onChange={(v) => { setFilterRole(v); setPage(1); }}
+            options={roleOpts}
+            width={160}
+          />
         </div>
         <button onClick={() => { setEditing({}); setModal("create"); }} style={{ display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 14px", borderRadius: 7, border: "none", backgroundColor: "var(--primary)", color: "#fff", cursor: "pointer" }}>
           <Plus size={14} /> Add User
         </button>
       </div>
+
+      {/* Table */}
       <div style={{ flex: 1, overflow: "auto", scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent" }}>
         <table style={{ width: "max-content", minWidth: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
           <thead>
@@ -298,7 +551,7 @@ function UsersTab({ roles, teams }: { roles: Role[]; teams: Team[] }) {
             </tr>
           </thead>
           <tbody>
-            {users.map((u, i) => {
+            {paginated.map((u, i) => {
               const role = roles.find((r) => r.id === u.roleId);
               const team = teams.find((t) => t.id === u.teamId);
               const isEven = i % 2 === 0;
@@ -310,9 +563,9 @@ function UsersTab({ roles, teams }: { roles: Role[]; teams: Team[] }) {
                   <TD mono center>{u.id}</TD>
                   <TD><span style={{ fontWeight: 500 }}>{u.name}</span></TD>
                   <TD mono>{u.phone}</TD>
-                  <TD><span style={{ fontFamily: "var(--font-sans)", fontSize: 12 }}>{u.workDays}</span></TD>
+                  <TD>{u.workDays}</TD>
                   <TD mono>{u.workFrom} – {u.workTo}</TD>
-                  <td style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", borderRight: "1px solid var(--border)", verticalAlign: "middle" }}>
+                  <td style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", verticalAlign: "middle" }}>
                     <span style={{
                       fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600,
                       color: role?.name === "Admin" ? "#1D4ED8" : role?.name === "Dispatcher" ? "#5B21B6" : "#374151",
@@ -322,9 +575,9 @@ function UsersTab({ roles, teams }: { roles: Role[]; teams: Team[] }) {
                       {role?.name ?? "—"}
                     </span>
                   </td>
-                  <TD><span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)" }}>{team?.name ?? "—"}</span></TD>
+                  <TD><span style={{ color: "var(--muted-foreground)" }}>{team?.name ?? "—"}</span></TD>
                   <TD mono>{u.login}</TD>
-                  <td style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", borderRight: "1px solid var(--border)", verticalAlign: "middle" }}>
+                  <td style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", verticalAlign: "middle" }}>
                     <span style={{
                       display: "inline-flex", alignItems: "center", gap: 5,
                       fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600,
@@ -345,9 +598,23 @@ function UsersTab({ roles, teams }: { roles: Role[]; teams: Team[] }) {
                 </tr>
               );
             })}
+            {paginated.length === 0 && (
+              <tr>
+                <td colSpan={10} style={{ padding: "32px 24px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)", borderBottom: "1px solid var(--border)" }}>
+                  No users match your filters.
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
+
+      {/* Pagination */}
+      <Pagination
+        total={filtered.length} page={safePage} pageSize={pageSize}
+        onPage={setPage} onPageSize={setPageSize}
+      />
+
       {(modal === "create" || modal === "edit") && (
         <UserModal user={editing} roles={roles} teams={teams} onClose={() => setModal(null)} onSave={save} />
       )}
@@ -358,67 +625,197 @@ function UsersTab({ roles, teams }: { roles: Role[]; teams: Team[] }) {
 
 // ─── TEAMS TAB ────────────────────────────────────────────────────────────────
 
-function TeamModal({ team, users, onClose, onSave }: {
-  team: Partial<Team>; users: User[];
+function MultiSelectSearch<T>({
+  label,
+  selected,
+  options,
+  getKey,
+  getLabel,
+  onToggle,
+  placeholder,
+  chipColor = "#1D4ED8",
+  chipBg = "#DBEAFE",
+}: {
+  label: string;
+  selected: T[];
+  options: T[];
+  getKey: (item: T) => string;
+  getLabel: (item: T) => string;
+  onToggle: (item: T) => void;
+  placeholder?: string;
+  chipColor?: string;
+  chipBg?: string;
+}) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const h = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, []);
+
+  const q = query.toLowerCase();
+  const filtered = options.filter((o) => getLabel(o).toLowerCase().includes(q));
+  const selectedKeys = new Set(selected.map(getKey));
+
+  return (
+    <div style={fieldStyle}>
+      <span style={capStyle}>{label}</span>
+      <div ref={containerRef} style={{ position: "relative" }}>
+        {/* Input + chips area */}
+        <div
+          onClick={() => { setOpen(true); inputRef.current?.focus(); }}
+          style={{
+            display: "flex", flexWrap: "wrap", alignItems: "center", gap: 5,
+            padding: "6px 8px", minHeight: 38, borderRadius: 7,
+            border: `1px solid ${open ? "var(--primary)" : "var(--border)"}`,
+            backgroundColor: "var(--input-background)", cursor: "text",
+            boxShadow: open ? "0 0 0 3px rgba(59,130,246,0.12)" : "none",
+            transition: "border-color 0.15s, box-shadow 0.15s",
+          }}
+        >
+          {selected.map((item) => (
+            <span key={getKey(item)} style={{
+              display: "inline-flex", alignItems: "center", gap: 4,
+              fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600,
+              color: chipColor, backgroundColor: chipBg,
+              borderRadius: 4, padding: "2px 6px 2px 8px",
+            }}>
+              {getLabel(item)}
+              <button
+                type="button"
+                onMouseDown={(e) => { e.stopPropagation(); onToggle(item); }}
+                style={{ background: "none", border: "none", cursor: "pointer", color: chipColor, display: "flex", padding: 0, lineHeight: 1 }}
+              >
+                <X size={10} />
+              </button>
+            </span>
+          ))}
+          <input
+            ref={inputRef}
+            value={query}
+            onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
+            onFocus={() => setOpen(true)}
+            placeholder={selected.length === 0 ? placeholder : ""}
+            style={{
+              flex: 1, minWidth: 80, border: "none", outline: "none", background: "transparent",
+              fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--foreground)",
+              padding: "1px 2px",
+            }}
+          />
+        </div>
+
+        {/* Dropdown */}
+        {open && (
+          <div style={{
+            position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0,
+            backgroundColor: "var(--card)", border: "1px solid var(--border)",
+            borderRadius: 8, boxShadow: "0 8px 24px rgba(0,0,0,0.12)",
+            zIndex: 9999, maxHeight: 200, overflowY: "auto",
+          }}>
+            {filtered.length === 0 ? (
+              <div style={{ padding: "10px 12px", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>No results</div>
+            ) : filtered.map((item) => {
+              const isSelected = selectedKeys.has(getKey(item));
+              return (
+                <button
+                  key={getKey(item)}
+                  type="button"
+                  onMouseDown={(e) => { e.preventDefault(); onToggle(item); setQuery(""); }}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 8, width: "100%",
+                    padding: "8px 12px", border: "none",
+                    backgroundColor: isSelected ? "rgba(59,130,246,0.06)" : "transparent",
+                    fontFamily: "var(--font-sans)", fontSize: 13,
+                    color: isSelected ? "var(--primary)" : "var(--foreground)",
+                    cursor: "pointer", textAlign: "left",
+                  }}
+                  onMouseEnter={(e) => { if (!isSelected) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--muted)"; }}
+                  onMouseLeave={(e) => { if (!isSelected) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "transparent"; }}
+                >
+                  <span style={{ flex: 1 }}>{getLabel(item)}</span>
+                  {isSelected && <Check size={13} style={{ color: "var(--primary)", flexShrink: 0 }} />}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function TeamModal({ team, users, allDriverNames, onClose, onSave }: {
+  team: Partial<Team>; users: User[]; allDriverNames: string[];
   onClose: () => void; onSave: (t: Team) => void;
 }) {
   const [form, setForm] = useState<Partial<Team>>(team);
-  const [driverInput, setDriverInput] = useState((team.driverNames ?? []).join(", "));
   const isNew = !team.id;
 
-  const toggleUser = (uid: number) => {
+  const selectedUsers = users.filter((u) => (form.userIds ?? []).includes(u.id));
+  const selectedDrivers = (form.driverNames ?? []).map((n) => ({ name: n }));
+
+  const driverOptions = Array.from(
+    new Set([...allDriverNames, ...(form.driverNames ?? [])])
+  ).map((n) => ({ name: n }));
+
+  const toggleUser = (u: User) => {
     setForm((f) => {
       const ids = f.userIds ?? [];
-      return { ...f, userIds: ids.includes(uid) ? ids.filter((x) => x !== uid) : [...ids, uid] };
+      return { ...f, userIds: ids.includes(u.id) ? ids.filter((x) => x !== u.id) : [...ids, u.id] };
+    });
+  };
+
+  const toggleDriver = (d: { name: string }) => {
+    setForm((f) => {
+      const names = f.driverNames ?? [];
+      return { ...f, driverNames: names.includes(d.name) ? names.filter((x) => x !== d.name) : [...names, d.name] };
     });
   };
 
   return (
     <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div style={{ backgroundColor: "var(--card)", borderRadius: 12, width: 520, boxShadow: "0 20px 60px rgba(0,0,0,0.25)", overflow: "hidden" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderBottom: "1px solid var(--border)", backgroundColor: "var(--muted)" }}>
+      <div style={{ backgroundColor: "var(--card)", borderRadius: 12, width: 540, boxShadow: "0 20px 60px rgba(0,0,0,0.25)", maxHeight: "90vh", display: "flex", flexDirection: "column" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderBottom: "1px solid var(--border)", backgroundColor: "var(--muted)", borderRadius: "12px 12px 0 0", flexShrink: 0 }}>
           <span style={{ fontFamily: "var(--font-sans)", fontSize: 14, fontWeight: 600, color: "var(--foreground)" }}>{isNew ? "Create Team" : "Edit Team"}</span>
           <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted-foreground)" }}><X size={16} /></button>
         </div>
-        <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 16 }}>
+        <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 16, overflowY: "auto" }}>
           <label style={fieldStyle}>
             <span style={capStyle}>Team Name</span>
             <input value={form.name ?? ""} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} style={inputStyle} />
           </label>
-          <div style={fieldStyle}>
-            <span style={capStyle}>Users</span>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, padding: "10px 12px", borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "var(--input-background)", minHeight: 44 }}>
-              {users.map((u) => {
-                const selected = (form.userIds ?? []).includes(u.id);
-                return (
-                  <button key={u.id} onClick={() => toggleUser(u.id)} style={{
-                    fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: selected ? 600 : 400,
-                    color: selected ? "#1D4ED8" : "var(--muted-foreground)",
-                    backgroundColor: selected ? "#DBEAFE" : "var(--muted)",
-                    border: selected ? "1.5px solid #93C5FD" : "1px solid var(--border)",
-                    borderRadius: 4, padding: "3px 10px", cursor: "pointer",
-                  }}>
-                    {selected && <Check size={10} style={{ marginRight: 4, display: "inline" }} />}
-                    {u.name}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-          <label style={fieldStyle}>
-            <span style={capStyle}>Drivers (comma-separated names)</span>
-            <input
-              value={driverInput}
-              onChange={(e) => {
-                setDriverInput(e.target.value);
-                setForm((f) => ({ ...f, driverNames: e.target.value.split(",").map((s) => s.trim()).filter(Boolean) }));
-              }}
-              style={inputStyle}
-              placeholder="Carlos Mendez, Angela Torres, ..."
-            />
-          </label>
+
+          <MultiSelectSearch
+            label="Users"
+            selected={selectedUsers}
+            options={users}
+            getKey={(u) => String(u.id)}
+            getLabel={(u) => u.name}
+            onToggle={toggleUser}
+            placeholder="Search users…"
+            chipColor="#1D4ED8"
+            chipBg="#DBEAFE"
+          />
+
+          <MultiSelectSearch
+            label="Drivers"
+            selected={selectedDrivers}
+            options={driverOptions}
+            getKey={(d) => d.name}
+            getLabel={(d) => d.name}
+            onToggle={toggleDriver}
+            placeholder="Search drivers…"
+            chipColor="#374151"
+            chipBg="var(--muted)"
+          />
         </div>
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, padding: "14px 20px", borderTop: "1px solid var(--border)" }}>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, padding: "14px 20px", borderTop: "1px solid var(--border)", borderRadius: "0 0 12px 12px", flexShrink: 0 }}>
           <button onClick={onClose} style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 16px", borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "var(--muted)", color: "var(--foreground)", cursor: "pointer" }}>Cancel</button>
           <button onClick={() => onSave(form as Team)} style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 16px", borderRadius: 6, border: "none", backgroundColor: "var(--primary)", color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
             <Check size={14} /> {isNew ? "Create Team" : "Save Changes"}
@@ -434,6 +831,9 @@ function TeamsTab({ users }: { users: User[] }) {
   const [modal, setModal] = useState<"create" | "edit" | null>(null);
   const [editing, setEditing] = useState<Partial<Team>>({});
   const [deleting, setDeleting] = useState<Team | null>(null);
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
 
   const save = (t: Team) => {
     if (modal === "create") {
@@ -445,16 +845,42 @@ function TeamsTab({ users }: { users: User[] }) {
     setModal(null);
   };
 
+  const allDriverNames = Array.from(new Set(teams.flatMap((t) => t.driverNames)));
+
+  const q = search.toLowerCase();
+  const filtered = teams.filter((t) =>
+    !q || t.name.toLowerCase().includes(q) ||
+    t.driverNames.some((d) => d.toLowerCase().includes(q)) ||
+    users.filter((u) => t.userIds.includes(u.id)).some((u) => u.name.toLowerCase().includes(q))
+  );
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const safePage = Math.min(page, totalPages);
+  const paginated = filtered.slice((safePage - 1) * pageSize, safePage * pageSize);
+
   return (
     <>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 20px", borderBottom: "1px solid var(--border)", backgroundColor: "var(--card)", flexShrink: 0 }}>
-        <span style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
-          <span style={{ fontWeight: 600, color: "var(--foreground)" }}>{teams.length}</span> teams
-        </span>
+      {/* Toolbar */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", borderBottom: "1px solid var(--border)", backgroundColor: "var(--card)", flexShrink: 0 }}>
+        <div style={{ position: "relative" }}>
+          <Search size={14} style={{ position: "absolute", left: 9, top: "50%", transform: "translateY(-50%)", color: "var(--muted-foreground)", pointerEvents: "none" }} />
+          <input
+            value={search}
+            onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+            placeholder="Search teams…"
+            style={{
+              fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 10px 7px 30px",
+              borderRadius: 7, border: "1px solid var(--border)", backgroundColor: "var(--card)",
+              color: "var(--foreground)", outline: "none", width: 220,
+            }}
+          />
+        </div>
         <button onClick={() => { setEditing({ userIds: [], driverNames: [] }); setModal("create"); }} style={{ display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 14px", borderRadius: 7, border: "none", backgroundColor: "var(--primary)", color: "#fff", cursor: "pointer" }}>
           <Plus size={14} /> Create Team
         </button>
       </div>
+
+      {/* Table */}
       <div style={{ flex: 1, overflow: "auto", scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent" }}>
         <table style={{ width: "max-content", minWidth: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
           <thead>
@@ -467,7 +893,7 @@ function TeamsTab({ users }: { users: User[] }) {
             </tr>
           </thead>
           <tbody>
-            {teams.map((t, i) => {
+            {paginated.map((t, i) => {
               const teamUsers = users.filter((u) => t.userIds.includes(u.id));
               const isEven = i % 2 === 0;
               return (
@@ -477,7 +903,7 @@ function TeamsTab({ users }: { users: User[] }) {
                 >
                   <TD mono center>{t.id}</TD>
                   <TD><span style={{ fontWeight: 600 }}>{t.name}</span></TD>
-                  <td style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", borderRight: "1px solid var(--border)", verticalAlign: "middle" }}>
+                  <td style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", verticalAlign: "middle" }}>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
                       {teamUsers.length === 0
                         ? <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)", fontStyle: "italic" }}>No users</span>
@@ -486,7 +912,7 @@ function TeamsTab({ users }: { users: User[] }) {
                         ))}
                     </div>
                   </td>
-                  <td style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", borderRight: "1px solid var(--border)", verticalAlign: "middle" }}>
+                  <td style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", verticalAlign: "middle" }}>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
                       {t.driverNames.length === 0
                         ? <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)", fontStyle: "italic" }}>No drivers</span>
@@ -504,11 +930,25 @@ function TeamsTab({ users }: { users: User[] }) {
                 </tr>
               );
             })}
+            {paginated.length === 0 && (
+              <tr>
+                <td colSpan={5} style={{ padding: "32px 24px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)", borderBottom: "1px solid var(--border)" }}>
+                  No teams match your search.
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
+
+      {/* Pagination */}
+      <Pagination
+        total={filtered.length} page={safePage} pageSize={pageSize}
+        onPage={setPage} onPageSize={setPageSize}
+      />
+
       {(modal === "create" || modal === "edit") && (
-        <TeamModal team={editing} users={users} onClose={() => setModal(null)} onSave={save} />
+        <TeamModal team={editing} users={users} allDriverNames={allDriverNames} onClose={() => setModal(null)} onSave={save} />
       )}
       {deleting && <DeleteConfirm label={deleting.name} onClose={() => setDeleting(null)} onConfirm={() => { setTeams((p) => p.filter((x) => x.id !== deleting.id)); setDeleting(null); }} />}
     </>
@@ -681,13 +1121,13 @@ function RolesTab() {
                   onMouseLeave={(e) => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = isEven ? "var(--card)" : "var(--background)"; }}
                 >
                   <TD mono center>{r.id}</TD>
-                  <td style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", borderRight: "1px solid var(--border)", verticalAlign: "middle" }}>
+                  <td style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", verticalAlign: "middle" }}>
                     <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: 700, color: rc.color, backgroundColor: rc.bg, borderRadius: 4, padding: "3px 10px" }}>{r.name}</span>
                   </td>
                   {PAGES.map((page) => {
                     const perms = r.permissions[page];
                     return (
-                      <td key={page} style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", borderRight: "1px solid var(--border)", verticalAlign: "middle" }}>
+                      <td key={page} style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", verticalAlign: "middle" }}>
                         <div style={{ display: "flex", gap: 4 }}>
                           {CRUD_KEYS.map((k) => {
                             const on = perms[k];
@@ -765,10 +1205,12 @@ export function SettingsPage() {
           );
         })}
       </div>
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-        {tab === "users" && <UsersTab roles={initRoles} teams={initTeams} />}
-        {tab === "teams" && <TeamsTab users={users} />}
-        {tab === "roles" && <RolesTab />}
+      <div style={{ flex: 1, overflow: "hidden", padding: "20px 24px", display: "flex", flexDirection: "column" }}>
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", backgroundColor: "var(--card)", borderRadius: 12, overflow: "hidden", border: "1px solid var(--border)" }}>
+          {tab === "users" && <UsersTab roles={initRoles} teams={initTeams} />}
+          {tab === "teams" && <TeamsTab users={users} />}
+          {tab === "roles" && <RolesTab />}
+        </div>
       </div>
     </div>
   );

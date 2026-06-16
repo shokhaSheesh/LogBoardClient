@@ -1,115 +1,105 @@
 import { useState, useRef, useEffect } from "react";
+import { Status, STATUS_CONFIG, ALL_STATUSES } from "../lib/statuses";
 import {
   User, Users, Plus, Pencil, Trash2, MapPin, MessageSquare,
   X, Check, Search, ChevronDown, ChevronLeft, ChevronRight,
-  ClipboardList, FileSpreadsheet, Sparkles, Upload, FileText,
+  ClipboardList, FileSpreadsheet, Radio, Upload, FileText,
   ArrowLeft, Phone, Truck, DollarSign, Route, Package, TrendingUp,
 } from "lucide-react";
 
-type DriverStatus = "Active" | "Inactive" | "On Leave" | "Terminated";
+type DriverStatus = Status;
 type DriverType   = "O/O" | "C/D";
-
-const STATUS_CFG: Record<DriverStatus, { color: string; bg: string; dot: string }> = {
-  Active:     { color: "#065F46", bg: "#D1FAE5", dot: "#10B981" },
-  Inactive:   { color: "#92400E", bg: "#FEF3C7", dot: "#F59E0B" },
-  "On Leave": { color: "#1D4ED8", bg: "#DBEAFE", dot: "#3B82F6" },
-  Terminated: { color: "#991B1B", bg: "#FEE2E2", dot: "#EF4444" },
-};
 
 // ─── Data ────────────────────────────────────────────────────────────────────
 
 interface SoloDriver {
   id: number; name: string; phone: string; type: DriverType;
   status: DriverStatus; truck: string; trailer: string; location: string; comment: string;
+  weeklyGrossTarget?: number;
+  currentLoad?: string;
 }
 
 const initSolo: SoloDriver[] = [
-  { id: 1,  name: "Carlos Mendez",      phone: "(214) 555-0132", type: "O/O", status: "Active",     truck: "TRK-4481", trailer: "TRL-2210", location: "Dallas, TX",     comment: "Prefer night runs"        },
-  { id: 2,  name: "Angela Torres",      phone: "(312) 555-0871", type: "C/D", status: "Active",     truck: "TRK-2290", trailer: "TRL-0881", location: "Chicago, IL",    comment: "Available from 06:00"     },
-  { id: 3,  name: "Darnell Washington", phone: "(404) 555-0344", type: "O/O", status: "Inactive",   truck: "TRK-8813", trailer: "TRL-4430", location: "Atlanta, GA",    comment: "Waiting on load"          },
-  { id: 4,  name: "Priya Sharma",       phone: "(713) 555-0209", type: "C/D", status: "Active",     truck: "TRK-5577", trailer: "TRL-1190", location: "Houston, TX",    comment: "Dock #7"                  },
-  { id: 5,  name: "Marcus Webb",        phone: "(602) 555-0518", type: "O/O", status: "Active",     truck: "TRK-3342", trailer: "TRL-6620", location: "Phoenix, AZ",    comment: "POD signed"               },
-  { id: 6,  name: "Linda Okafor",       phone: "(720) 555-0763", type: "C/D", status: "On Leave",   truck: "TRK-6610", trailer: "TRL-3300", location: "Denver, CO",     comment: "I-70 construction delay"  },
-  { id: 7,  name: "Ray Kowalski",       phone: "(702) 555-0487", type: "O/O", status: "Active",     truck: "TRK-9924", trailer: "TRL-7710", location: "Las Vegas, NV",  comment: "Call before dispatching"  },
-  { id: 8,  name: "Tomás García",       phone: "(305) 555-0622", type: "C/D", status: "Terminated", truck: "TRK-1157", trailer: "TRL-5540", location: "Miami, FL",      comment: "Contract ended"           },
+  { id: 1,  name: "Carlos Mendez",      phone: "(214) 555-0132", type: "O/O", status: "enroute",    truck: "TRK-4481", trailer: "TRL-2210", location: "Dallas, TX",     comment: "Prefer night runs",       weeklyGrossTarget: 5000, currentLoad: "LD-00481" },
+  { id: 2,  name: "Angela Torres",      phone: "(312) 555-0871", type: "C/D", status: "ready",      truck: "TRK-2290", trailer: "TRL-0881", location: "Chicago, IL",    comment: "Available from 06:00",    weeklyGrossTarget: 3500 },
+  { id: 3,  name: "Darnell Washington", phone: "(404) 555-0344", type: "O/O", status: "rest",       truck: "TRK-8813", trailer: "TRL-4430", location: "Atlanta, GA",    comment: "Waiting on load",         weeklyGrossTarget: 4000 },
+  { id: 4,  name: "Priya Sharma",       phone: "(713) 555-0209", type: "C/D", status: "dispatched", truck: "TRK-5577", trailer: "TRL-1190", location: "Houston, TX",    comment: "Dock #7",                 weeklyGrossTarget: 4500, currentLoad: "LD-00577" },
+  { id: 5,  name: "Marcus Webb",        phone: "(602) 555-0518", type: "O/O", status: "delivered",  truck: "TRK-3342", trailer: "TRL-6620", location: "Phoenix, AZ",    comment: "POD signed",              weeklyGrossTarget: 3000, currentLoad: "LD-00342" },
+  { id: 6,  name: "Linda Okafor",       phone: "(720) 555-0763", type: "C/D", status: "home",       truck: "TRK-6610", trailer: "TRL-3300", location: "Denver, CO",     comment: "I-70 construction delay"  },
+  { id: 7,  name: "Ray Kowalski",       phone: "(702) 555-0487", type: "O/O", status: "ready",      truck: "TRK-9924", trailer: "TRL-7710", location: "Las Vegas, NV",  comment: "Call before dispatching", weeklyGrossTarget: 4500 },
+  { id: 8,  name: "Tomás García",       phone: "(305) 555-0622", type: "C/D", status: "re_update",  truck: "TRK-1157", trailer: "TRL-5540", location: "Miami, FL",      comment: "Contract ended"           },
 ];
 
 interface TeamDriver {
   id: number; name1: string; name2: string; phone1: string; phone2: string;
   type: DriverType; status: DriverStatus; truck: string; trailer: string; comment: string;
+  weeklyGrossTarget?: number;
+  currentLoad?: string;
 }
 
 const initTeam: TeamDriver[] = [
-  { id: 1, name1: "Jean Eddy Simon",     name2: "Jean Wesly Herard",   phone1: "(504) 555-0112", phone2: "(504) 555-0224", type: "C/D", status: "Active",   truck: "TRK-7701", trailer: "TRL-8810", comment: "Relay every 500 mi"    },
-  { id: 2, name1: "Keavis Dyer",         name2: "James Schwein",       phone1: "(813) 555-0337", phone2: "(813) 555-0448", type: "O/O", status: "Active",   truck: "TRK-4412", trailer: "TRL-2230", comment: "Coast-to-coast route"  },
-  { id: 3, name1: "Shokhnurbek Komilov", name2: "Umarkhon Kholmirzaev",phone1: "(469) 555-0891", phone2: "(469) 555-0902", type: "C/D", status: "Inactive", truck: "TRK-6650", trailer: "TRL-9910", comment: "On standby"            },
-  { id: 4, name1: "Bakhodir Azamov",     name2: "Ilhom Latipov",       phone1: "(832) 555-0563", phone2: "(832) 555-0674", type: "O/O", status: "Active",   truck: "TRK-1130", trailer: "TRL-4450", comment: "Midwest circuit"       },
+  { id: 1, name1: "Jean Eddy Simon",     name2: "Jean Wesly Herard",   phone1: "(504) 555-0112", phone2: "(504) 555-0224", type: "C/D", status: "enroute",    truck: "TRK-7701", trailer: "TRL-8810", comment: "Relay every 500 mi",   weeklyGrossTarget: 7000, currentLoad: "LD-01024" },
+  { id: 2, name1: "Keavis Dyer",         name2: "James Schwein",       phone1: "(813) 555-0337", phone2: "(813) 555-0448", type: "O/O", status: "dispatched", truck: "TRK-4412", trailer: "TRL-2230", comment: "Coast-to-coast route", weeklyGrossTarget: 8000, currentLoad: "LD-01105" },
+  { id: 3, name1: "Shokhnurbek Komilov", name2: "Umarkhon Kholmirzaev",phone1: "(469) 555-0891", phone2: "(469) 555-0902", type: "C/D", status: "rest",       truck: "TRK-6650", trailer: "TRL-9910", comment: "On standby"            },
+  { id: 4, name1: "Bakhodir Azamov",     name2: "Ilhom Latipov",       phone1: "(832) 555-0563", phone2: "(832) 555-0674", type: "O/O", status: "ready",      truck: "TRK-1130", trailer: "TRL-4450", comment: "Midwest circuit",      weeklyGrossTarget: 6500 },
 ];
 
 // ─── Loads data ───────────────────────────────────────────────────────────────
 
-type LoadStatus = "Delivered" | "In Transit" | "Pending";
-
 interface LoadEntry {
   id: string; origin: string; destination: string;
-  miles: number; rate: number; date: string; status: LoadStatus;
+  miles: number; rate: number; date: string; status: Status;
 }
-
-const LOAD_STATUS_CFG: Record<LoadStatus, { color: string; bg: string; dot: string }> = {
-  "Delivered":  { color: "#065F46", bg: "#D1FAE5", dot: "#10B981" },
-  "In Transit": { color: "#1D4ED8", bg: "#DBEAFE", dot: "#3B82F6" },
-  "Pending":    { color: "#92400E", bg: "#FEF3C7", dot: "#F59E0B" },
-};
 
 const WEEKLY_LOADS: Record<number, LoadEntry[]> = {
   1: [
-    { id: "LD-4481", origin: "Dallas, TX",        destination: "Nashville, TN",    miles: 648, rate: 1620, date: "Mon Jun 9",  status: "Delivered"  },
-    { id: "LD-4482", origin: "Nashville, TN",     destination: "Chicago, IL",      miles: 474, rate: 1185, date: "Wed Jun 11", status: "Delivered"  },
-    { id: "LD-4483", origin: "Chicago, IL",       destination: "Kansas City, MO",  miles: 503, rate: 1257, date: "Fri Jun 13", status: "In Transit" },
+    { id: "LD-4481", origin: "Dallas, TX",        destination: "Nashville, TN",    miles: 648, rate: 1620, date: "Mon Jun 9",  status: "delivered"  },
+    { id: "LD-4482", origin: "Nashville, TN",     destination: "Chicago, IL",      miles: 474, rate: 1185, date: "Wed Jun 11", status: "delivered"  },
+    { id: "LD-4483", origin: "Chicago, IL",       destination: "Kansas City, MO",  miles: 503, rate: 1257, date: "Fri Jun 13", status: "enroute"    },
   ],
   2: [
-    { id: "LD-2290", origin: "Chicago, IL",       destination: "Detroit, MI",      miles: 281, rate: 843,  date: "Mon Jun 9",  status: "Delivered"  },
-    { id: "LD-2291", origin: "Detroit, MI",       destination: "Columbus, OH",     miles: 171, rate: 513,  date: "Tue Jun 10", status: "Delivered"  },
-    { id: "LD-2292", origin: "Columbus, OH",      destination: "Indianapolis, IN", miles: 175, rate: 525,  date: "Thu Jun 12", status: "Pending"    },
+    { id: "LD-2290", origin: "Chicago, IL",       destination: "Detroit, MI",      miles: 281, rate: 843,  date: "Mon Jun 9",  status: "delivered"  },
+    { id: "LD-2291", origin: "Detroit, MI",       destination: "Columbus, OH",     miles: 171, rate: 513,  date: "Tue Jun 10", status: "delivered"  },
+    { id: "LD-2292", origin: "Columbus, OH",      destination: "Indianapolis, IN", miles: 175, rate: 525,  date: "Thu Jun 12", status: "reserved"   },
   ],
   3: [
-    { id: "LD-8813", origin: "Atlanta, GA",       destination: "Charlotte, NC",    miles: 244, rate: 610,  date: "Mon Jun 9",  status: "Delivered"  },
+    { id: "LD-8813", origin: "Atlanta, GA",       destination: "Charlotte, NC",    miles: 244, rate: 610,  date: "Mon Jun 9",  status: "delivered"  },
   ],
   4: [
-    { id: "LD-5577", origin: "Houston, TX",       destination: "San Antonio, TX",  miles: 197, rate: 591,  date: "Mon Jun 9",  status: "Delivered"  },
-    { id: "LD-5578", origin: "San Antonio, TX",   destination: "El Paso, TX",      miles: 549, rate: 1372, date: "Tue Jun 10", status: "Delivered"  },
-    { id: "LD-5579", origin: "El Paso, TX",       destination: "Albuquerque, NM",  miles: 268, rate: 804,  date: "Thu Jun 12", status: "In Transit" },
+    { id: "LD-5577", origin: "Houston, TX",       destination: "San Antonio, TX",  miles: 197, rate: 591,  date: "Mon Jun 9",  status: "delivered"  },
+    { id: "LD-5578", origin: "San Antonio, TX",   destination: "El Paso, TX",      miles: 549, rate: 1372, date: "Tue Jun 10", status: "delivered"  },
+    { id: "LD-5579", origin: "El Paso, TX",       destination: "Albuquerque, NM",  miles: 268, rate: 804,  date: "Thu Jun 12", status: "enroute"    },
   ],
   5: [
-    { id: "LD-3342", origin: "Phoenix, AZ",       destination: "Las Vegas, NV",    miles: 297, rate: 742,  date: "Tue Jun 10", status: "Delivered"  },
-    { id: "LD-3343", origin: "Las Vegas, NV",     destination: "Los Angeles, CA",  miles: 270, rate: 810,  date: "Wed Jun 11", status: "Delivered"  },
-    { id: "LD-3344", origin: "Los Angeles, CA",   destination: "San Diego, CA",    miles: 120, rate: 360,  date: "Fri Jun 13", status: "In Transit" },
+    { id: "LD-3342", origin: "Phoenix, AZ",       destination: "Las Vegas, NV",    miles: 297, rate: 742,  date: "Tue Jun 10", status: "delivered"  },
+    { id: "LD-3343", origin: "Las Vegas, NV",     destination: "Los Angeles, CA",  miles: 270, rate: 810,  date: "Wed Jun 11", status: "delivered"  },
+    { id: "LD-3344", origin: "Los Angeles, CA",   destination: "San Diego, CA",    miles: 120, rate: 360,  date: "Fri Jun 13", status: "enroute"    },
   ],
   6: [],
   7: [
-    { id: "LD-9924", origin: "Las Vegas, NV",     destination: "Salt Lake City, UT", miles: 419, rate: 1047, date: "Wed Jun 11", status: "Delivered"  },
-    { id: "LD-9925", origin: "Salt Lake City, UT", destination: "Denver, CO",       miles: 525, rate: 1312, date: "Fri Jun 13", status: "In Transit" },
+    { id: "LD-9924", origin: "Las Vegas, NV",     destination: "Salt Lake City, UT", miles: 419, rate: 1047, date: "Wed Jun 11", status: "delivered"  },
+    { id: "LD-9925", origin: "Salt Lake City, UT", destination: "Denver, CO",       miles: 525, rate: 1312, date: "Fri Jun 13", status: "enroute"    },
   ],
   8: [],
 };
 
 const TEAM_WEEKLY_LOADS: Record<number, LoadEntry[]> = {
   1: [
-    { id: "LD-7701", origin: "New Orleans, LA",  destination: "Memphis, TN",      miles: 393, rate: 982,  date: "Mon Jun 9",  status: "Delivered"  },
-    { id: "LD-7702", origin: "Memphis, TN",      destination: "St. Louis, MO",    miles: 281, rate: 702,  date: "Tue Jun 10", status: "Delivered"  },
-    { id: "LD-7703", origin: "St. Louis, MO",    destination: "Indianapolis, IN", miles: 242, rate: 605,  date: "Thu Jun 12", status: "Delivered"  },
-    { id: "LD-7704", origin: "Indianapolis, IN", destination: "Cincinnati, OH",   miles: 112, rate: 336,  date: "Fri Jun 13", status: "In Transit" },
+    { id: "LD-7701", origin: "New Orleans, LA",  destination: "Memphis, TN",      miles: 393, rate: 982,  date: "Mon Jun 9",  status: "delivered"  },
+    { id: "LD-7702", origin: "Memphis, TN",      destination: "St. Louis, MO",    miles: 281, rate: 702,  date: "Tue Jun 10", status: "delivered"  },
+    { id: "LD-7703", origin: "St. Louis, MO",    destination: "Indianapolis, IN", miles: 242, rate: 605,  date: "Thu Jun 12", status: "delivered"  },
+    { id: "LD-7704", origin: "Indianapolis, IN", destination: "Cincinnati, OH",   miles: 112, rate: 336,  date: "Fri Jun 13", status: "enroute"    },
   ],
   2: [
-    { id: "LD-4412", origin: "Tampa, FL",        destination: "Charlotte, NC",    miles: 586, rate: 1465, date: "Mon Jun 9",  status: "Delivered"  },
-    { id: "LD-4413", origin: "Charlotte, NC",    destination: "Philadelphia, PA", miles: 480, rate: 1200, date: "Wed Jun 11", status: "Delivered"  },
-    { id: "LD-4414", origin: "Philadelphia, PA", destination: "Boston, MA",       miles: 305, rate: 915,  date: "Fri Jun 13", status: "In Transit" },
+    { id: "LD-4412", origin: "Tampa, FL",        destination: "Charlotte, NC",    miles: 586, rate: 1465, date: "Mon Jun 9",  status: "delivered"  },
+    { id: "LD-4413", origin: "Charlotte, NC",    destination: "Philadelphia, PA", miles: 480, rate: 1200, date: "Wed Jun 11", status: "delivered"  },
+    { id: "LD-4414", origin: "Philadelphia, PA", destination: "Boston, MA",       miles: 305, rate: 915,  date: "Fri Jun 13", status: "enroute"    },
   ],
   3: [],
   4: [
-    { id: "LD-1130", origin: "Dallas, TX",       destination: "Oklahoma City, OK",miles: 208, rate: 520,  date: "Mon Jun 9",  status: "Delivered"  },
-    { id: "LD-1131", origin: "Oklahoma City, OK",destination: "Wichita, KS",      miles: 160, rate: 400,  date: "Tue Jun 10", status: "Delivered"  },
-    { id: "LD-1132", origin: "Wichita, KS",      destination: "Kansas City, MO",  miles: 193, rate: 482,  date: "Thu Jun 12", status: "Pending"    },
+    { id: "LD-1130", origin: "Dallas, TX",       destination: "Oklahoma City, OK",miles: 208, rate: 520,  date: "Mon Jun 9",  status: "delivered"  },
+    { id: "LD-1131", origin: "Oklahoma City, OK",destination: "Wichita, KS",      miles: 160, rate: 400,  date: "Tue Jun 10", status: "delivered"  },
+    { id: "LD-1132", origin: "Wichita, KS",      destination: "Kansas City, MO",  miles: 193, rate: 482,  date: "Thu Jun 12", status: "reserved"   },
   ],
 };
 
@@ -352,16 +342,15 @@ const TD = ({ children, mono = false, center = false }: { children: React.ReactN
 );
 
 function StatusBadge({ status }: { status: DriverStatus }) {
-  const c = STATUS_CFG[status];
+  const c = STATUS_CONFIG[status];
   return (
     <span style={{
-      display: "inline-flex", alignItems: "center", gap: 5,
+      display: "inline-flex", alignItems: "center",
       fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600,
       color: c.color, backgroundColor: c.bg, borderRadius: 4,
-      padding: "2px 7px", whiteSpace: "nowrap",
+      padding: "2px 8px", whiteSpace: "nowrap",
     }}>
-      <span style={{ width: 6, height: 6, borderRadius: "50%", backgroundColor: c.dot, display: "inline-block", flexShrink: 0 }} />
-      {status}
+      {c.label}
     </span>
   );
 }
@@ -400,14 +389,11 @@ function ActionBtn({ icon, color, bg, onClick }: { icon: React.ReactNode; color:
 // ─── Shared select option sets ────────────────────────────────────────────────
 
 const STATUS_OPTS: SelectOpt[] = [
-  { value: "All",        label: "All Statuses" },
-  { value: "Active",     label: "Active",     dot: STATUS_CFG.Active.dot     },
-  { value: "Inactive",   label: "Inactive",   dot: STATUS_CFG.Inactive.dot   },
-  { value: "On Leave",   label: "On Leave",   dot: STATUS_CFG["On Leave"].dot },
-  { value: "Terminated", label: "Terminated", dot: STATUS_CFG.Terminated.dot },
+  { value: "All", label: "All Statuses" },
+  ...ALL_STATUSES.map((s) => ({ value: s, label: STATUS_CONFIG[s].label })),
 ];
 
-const STATUS_MODAL_OPTS: SelectOpt[] = STATUS_OPTS.slice(1); // no "All"
+const STATUS_MODAL_OPTS: SelectOpt[] = STATUS_OPTS.slice(1);
 
 const TYPE_OPTS: SelectOpt[] = [
   { value: "O/O", label: "O/O — Owner Operator" },
@@ -480,6 +466,11 @@ function SoloModal({ driver, onClose, onSave }: {
           ))}
 
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+            <FieldLabel>Current Load</FieldLabel>
+            <FieldInput value={(form.currentLoad as string) ?? ""} onChange={(v) => set("currentLoad", v)} placeholder="e.g. LD-00481" />
+          </label>
+
+          <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
             <FieldLabel>Type</FieldLabel>
             <CustomSelect
               value={form.type ?? "O/O"}
@@ -491,10 +482,33 @@ function SoloModal({ driver, onClose, onSave }: {
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
             <FieldLabel>Status</FieldLabel>
             <CustomSelect
-              value={form.status ?? "Active"}
+              value={form.status ?? "ready"}
               options={STATUS_MODAL_OPTS}
               onChange={(v) => set("status", v)}
             />
+          </label>
+
+          <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+            <FieldLabel>Weekly Gross Target ($)</FieldLabel>
+            <div style={{ position: "relative" }}>
+              <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)", pointerEvents: "none" }}>$</span>
+              <input
+                type="number"
+                min={0}
+                value={form.weeklyGrossTarget ?? ""}
+                onChange={(e) => setForm((f) => ({ ...f, weeklyGrossTarget: e.target.value === "" ? undefined : Number(e.target.value) }))}
+                placeholder="e.g. 5000"
+                style={{
+                  fontFamily: "var(--font-sans)", fontSize: 13,
+                  padding: "7px 10px 7px 22px", borderRadius: 6, height: 34,
+                  border: "1px solid var(--border)", backgroundColor: "var(--input-background)",
+                  color: "var(--foreground)", outline: "none", width: "100%", boxSizing: "border-box",
+                  transition: "border-color 0.15s, box-shadow 0.15s",
+                }}
+                onFocus={(e) => { e.currentTarget.style.borderColor = "var(--primary)"; e.currentTarget.style.boxShadow = "0 0 0 3px rgba(59,130,246,0.12)"; }}
+                onBlur={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.boxShadow = "none"; }}
+              />
+            </div>
           </label>
 
           <label style={{ display: "flex", flexDirection: "column", gap: 5, gridColumn: "1 / -1" }}>
@@ -551,6 +565,11 @@ function TeamModal({ driver, onClose, onSave }: {
           ))}
 
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+            <FieldLabel>Current Load</FieldLabel>
+            <FieldInput value={(form.currentLoad as string) ?? ""} onChange={(v) => set("currentLoad", v)} placeholder="e.g. LD-01024" />
+          </label>
+
+          <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
             <FieldLabel>Type</FieldLabel>
             <CustomSelect
               value={form.type ?? "C/D"}
@@ -562,10 +581,33 @@ function TeamModal({ driver, onClose, onSave }: {
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
             <FieldLabel>Status</FieldLabel>
             <CustomSelect
-              value={form.status ?? "Active"}
+              value={form.status ?? "ready"}
               options={STATUS_MODAL_OPTS}
               onChange={(v) => set("status", v)}
             />
+          </label>
+
+          <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+            <FieldLabel>Weekly Gross Target ($)</FieldLabel>
+            <div style={{ position: "relative" }}>
+              <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)", pointerEvents: "none" }}>$</span>
+              <input
+                type="number"
+                min={0}
+                value={form.weeklyGrossTarget ?? ""}
+                onChange={(e) => setForm((f) => ({ ...f, weeklyGrossTarget: e.target.value === "" ? undefined : Number(e.target.value) }))}
+                placeholder="e.g. 7000"
+                style={{
+                  fontFamily: "var(--font-sans)", fontSize: 13,
+                  padding: "7px 10px 7px 22px", borderRadius: 6, height: 34,
+                  border: "1px solid var(--border)", backgroundColor: "var(--input-background)",
+                  color: "var(--foreground)", outline: "none", width: "100%", boxSizing: "border-box",
+                  transition: "border-color 0.15s, box-shadow 0.15s",
+                }}
+                onFocus={(e) => { e.currentTarget.style.borderColor = "var(--primary)"; e.currentTarget.style.boxShadow = "0 0 0 3px rgba(59,130,246,0.12)"; }}
+                onBlur={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.boxShadow = "none"; }}
+              />
+            </div>
           </label>
 
           <label style={{ display: "flex", flexDirection: "column", gap: 5, gridColumn: "1 / -1" }}>
@@ -736,10 +778,11 @@ function ImportModal({ entityLabel, onClose }: { entityLabel: string; onClose: (
 
 // ─── Add Menu ─────────────────────────────────────────────────────────────────
 
-function AddMenu({ entityLabel, onManual, onImport }: {
+function AddMenu({ entityLabel, onManual, onImport, onEld }: {
   entityLabel: string;
   onManual: () => void;
   onImport: () => void;
+  onEld: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -770,12 +813,12 @@ function AddMenu({ entityLabel, onManual, onImport }: {
       onClick: onImport,
     },
     {
-      icon: <Sparkles size={16} />,
-      iconColor: "#7C3AED", iconBg: "#F5F3FF",
-      label: "AI Smart Extract",
-      desc: "Parse driver info from any document",
-      comingSoon: true,
-      onClick: () => {},
+      icon: <Radio size={16} />,
+      iconColor: "#0891B2", iconBg: "#ECFEFF",
+      label: "Sync from ELD",
+      desc: "Pull driver records from your ELD provider",
+      comingSoon: false,
+      onClick: onEld,
     },
   ];
 
@@ -872,6 +915,8 @@ function DriverDetail({ driver, onBack }: { driver: SoloDriver; onBack: () => vo
   const totalGross = loads.reduce((s, l) => s + l.rate, 0);
   const totalMiles = loads.reduce((s, l) => s + l.miles, 0);
   const avgRate    = totalMiles > 0 ? totalGross / totalMiles : 0;
+  const target     = driver.weeklyGrossTarget;
+  const targetPct  = target ? Math.min(100, Math.round((totalGross / target) * 100)) : null;
 
   const initials = driver.name.split(" ").slice(0, 2).map((w) => w[0]).join("");
 
@@ -882,12 +927,13 @@ function DriverDetail({ driver, onBack }: { driver: SoloDriver; onBack: () => vo
     { label: "Avg $/Mile",  value: totalMiles > 0 ? `$${avgRate.toFixed(2)}` : "—",              icon: <TrendingUp size={16} />, color: "#92400E", bg: "#FEF3C7" },
   ];
 
-  const infoRows: { icon: React.ReactNode; label: string; value: string; mono?: boolean }[] = [
-    { icon: <Phone        size={13} />, label: "Phone",    value: driver.phone,   mono: true  },
-    { icon: <Truck        size={13} />, label: "Truck",    value: driver.truck,   mono: true  },
-    { icon: <Truck        size={13} />, label: "Trailer",  value: driver.trailer, mono: true  },
-    { icon: <MapPin       size={13} />, label: "Location", value: driver.location             },
-    { icon: <MessageSquare size={13}/>, label: "Note",     value: driver.comment              },
+  const infoRows: { icon: React.ReactNode; label: string; value: string; mono?: boolean; highlight?: boolean }[] = [
+    { icon: <Phone        size={13} />, label: "Phone",        value: driver.phone,          mono: true },
+    { icon: <Package      size={13} />, label: "Current Load", value: driver.currentLoad ?? "", mono: true, highlight: true },
+    { icon: <Truck        size={13} />, label: "Truck",        value: driver.truck,          mono: true },
+    { icon: <Truck        size={13} />, label: "Trailer",      value: driver.trailer,        mono: true },
+    { icon: <MapPin       size={13} />, label: "Location",     value: driver.location             },
+    { icon: <MessageSquare size={13}/>, label: "Note",         value: driver.comment              },
   ];
 
   return (
@@ -963,8 +1009,14 @@ function DriverDetail({ driver, onBack }: { driver: SoloDriver; onBack: () => vo
                   <div style={{ fontFamily: "var(--font-sans)", fontSize: 10, fontWeight: 600, color: "var(--muted-foreground)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 2 }}>
                     {row.label}
                   </div>
-                  <div style={{ fontFamily: row.mono ? "var(--font-mono)" : "var(--font-sans)", fontSize: 12, color: row.value ? "var(--foreground)" : "var(--muted-foreground)", wordBreak: "break-word" }}>
-                    {row.value || "—"}
+                  <div style={{ fontFamily: row.mono ? "var(--font-mono)" : "var(--font-sans)", fontSize: 12, wordBreak: "break-word" }}>
+                    {row.value ? (
+                      row.highlight ? (
+                        <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 600, color: "var(--primary)", backgroundColor: "var(--secondary)", borderRadius: 4, padding: "2px 7px" }}>
+                          {row.value}
+                        </span>
+                      ) : <span style={{ color: "var(--foreground)" }}>{row.value}</span>
+                    ) : <span style={{ color: "var(--muted-foreground)" }}>—</span>}
                   </div>
                 </div>
               </div>
@@ -987,24 +1039,41 @@ function DriverDetail({ driver, onBack }: { driver: SoloDriver; onBack: () => vo
 
           {/* Metric cards */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
-            {metrics.map((m) => (
-              <div key={m.label} style={{
-                backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 10,
-                padding: "14px 16px", display: "flex", flexDirection: "column", gap: 10,
-              }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                  <span style={{ fontFamily: "var(--font-sans)", fontSize: 10, fontWeight: 600, color: "var(--muted-foreground)", textTransform: "uppercase", letterSpacing: "0.07em" }}>
-                    {m.label}
-                  </span>
-                  <div style={{ width: 28, height: 28, borderRadius: 7, backgroundColor: m.bg, color: m.color, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                    {m.icon}
+            {metrics.map((m) => {
+              const isGross = m.label === "Week Gross";
+              return (
+                <div key={m.label} style={{
+                  backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 10,
+                  padding: "14px 16px", display: "flex", flexDirection: "column", gap: 10,
+                }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <span style={{ fontFamily: "var(--font-sans)", fontSize: 10, fontWeight: 600, color: "var(--muted-foreground)", textTransform: "uppercase", letterSpacing: "0.07em" }}>
+                      {m.label}
+                    </span>
+                    <div style={{ width: 28, height: 28, borderRadius: 7, backgroundColor: m.bg, color: m.color, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      {m.icon}
+                    </div>
                   </div>
+                  <div style={{ fontFamily: "var(--font-sans)", fontSize: 24, fontWeight: 700, color: "var(--foreground)", lineHeight: 1 }}>
+                    {m.value}
+                  </div>
+                  {isGross && targetPct !== null && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 5, marginTop: -2 }}>
+                      <div style={{ height: 5, borderRadius: 99, backgroundColor: "var(--muted)", overflow: "hidden" }}>
+                        <div style={{
+                          height: "100%", borderRadius: 99, width: `${targetPct}%`,
+                          backgroundColor: targetPct >= 100 ? "#10B981" : targetPct >= 70 ? "#F59E0B" : "#3B82F6",
+                          transition: "width 0.4s ease",
+                        }} />
+                      </div>
+                      <span style={{ fontFamily: "var(--font-sans)", fontSize: 10, color: "var(--muted-foreground)" }}>
+                        {targetPct}% of ${target!.toLocaleString()} target
+                      </span>
+                    </div>
+                  )}
                 </div>
-                <div style={{ fontFamily: "var(--font-sans)", fontSize: 24, fontWeight: 700, color: "var(--foreground)", lineHeight: 1 }}>
-                  {m.value}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           {/* Loads table */}
@@ -1038,7 +1107,7 @@ function DriverDetail({ driver, onBack }: { driver: SoloDriver; onBack: () => vo
                   </thead>
                   <tbody>
                     {loads.map((load, i) => {
-                      const sc = LOAD_STATUS_CFG[load.status];
+                      const sc = STATUS_CONFIG[load.status];
                       return (
                         <tr
                           key={load.id}
@@ -1052,12 +1121,11 @@ function DriverDetail({ driver, onBack }: { driver: SoloDriver; onBack: () => vo
                           <TD center>{load.date}</TD>
                           <td style={{ padding: "10px 12px", borderBottom: "1px solid var(--border)", verticalAlign: "middle", textAlign: "center" }}>
                             <span style={{
-                              display: "inline-flex", alignItems: "center", gap: 5,
+                              display: "inline-block",
                               fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600,
                               color: sc.color, backgroundColor: sc.bg, borderRadius: 4, padding: "2px 8px",
                             }}>
-                              <span style={{ width: 6, height: 6, borderRadius: "50%", backgroundColor: sc.dot, flexShrink: 0 }} />
-                              {load.status}
+                              {sc.label}
                             </span>
                           </td>
                         </tr>
@@ -1081,6 +1149,8 @@ function TeamDetail({ team, onBack }: { team: TeamDriver; onBack: () => void }) 
   const totalGross = loads.reduce((s, l) => s + l.rate, 0);
   const totalMiles = loads.reduce((s, l) => s + l.miles, 0);
   const avgRate    = totalMiles > 0 ? totalGross / totalMiles : 0;
+  const target     = team.weeklyGrossTarget;
+  const targetPct  = target ? Math.min(100, Math.round((totalGross / target) * 100)) : null;
 
   const initials1 = team.name1.split(" ").slice(0, 2).map((w) => w[0]).join("");
   const initials2 = team.name2.split(" ").slice(0, 2).map((w) => w[0]).join("");
@@ -1175,9 +1245,10 @@ function TeamDetail({ team, onBack }: { team: TeamDriver; onBack: () => void }) 
           {/* Truck / trailer / comment */}
           <div style={{ backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
             {[
-              { icon: <Truck         size={13} />, label: "Truck",   value: team.truck,   mono: true  },
-              { icon: <Truck         size={13} />, label: "Trailer", value: team.trailer, mono: true  },
-              { icon: <MessageSquare size={13} />, label: "Note",    value: team.comment             },
+              { icon: <Package       size={13} />, label: "Current Load", value: team.currentLoad ?? "", mono: true, highlight: true },
+              { icon: <Truck         size={13} />, label: "Truck",        value: team.truck,            mono: true  },
+              { icon: <Truck         size={13} />, label: "Trailer",      value: team.trailer,          mono: true  },
+              { icon: <MessageSquare size={13} />, label: "Note",         value: team.comment                       },
             ].map((row, i, arr) => (
               <div key={row.label} style={{
                 display: "flex", alignItems: "flex-start", gap: 10, padding: "11px 14px",
@@ -1188,8 +1259,14 @@ function TeamDetail({ team, onBack }: { team: TeamDriver; onBack: () => void }) 
                   <div style={{ fontFamily: "var(--font-sans)", fontSize: 10, fontWeight: 600, color: "var(--muted-foreground)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 2 }}>
                     {row.label}
                   </div>
-                  <div style={{ fontFamily: row.mono ? "var(--font-mono)" : "var(--font-sans)", fontSize: 12, color: row.value ? "var(--foreground)" : "var(--muted-foreground)", wordBreak: "break-word" }}>
-                    {row.value || "—"}
+                  <div style={{ fontSize: 12, wordBreak: "break-word" }}>
+                    {row.value ? (
+                      (row as { highlight?: boolean }).highlight ? (
+                        <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 600, color: "var(--primary)", backgroundColor: "var(--secondary)", borderRadius: 4, padding: "2px 7px" }}>
+                          {row.value}
+                        </span>
+                      ) : <span style={{ fontFamily: row.mono ? "var(--font-mono)" : "var(--font-sans)", color: "var(--foreground)" }}>{row.value}</span>
+                    ) : <span style={{ fontFamily: "var(--font-sans)", color: "var(--muted-foreground)" }}>—</span>}
                   </div>
                 </div>
               </div>
@@ -1211,24 +1288,41 @@ function TeamDetail({ team, onBack }: { team: TeamDriver; onBack: () => void }) 
 
           {/* Metric cards */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
-            {metrics.map((m) => (
-              <div key={m.label} style={{
-                backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 10,
-                padding: "14px 16px", display: "flex", flexDirection: "column", gap: 10,
-              }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                  <span style={{ fontFamily: "var(--font-sans)", fontSize: 10, fontWeight: 600, color: "var(--muted-foreground)", textTransform: "uppercase", letterSpacing: "0.07em" }}>
-                    {m.label}
-                  </span>
-                  <div style={{ width: 28, height: 28, borderRadius: 7, backgroundColor: m.bg, color: m.color, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                    {m.icon}
+            {metrics.map((m) => {
+              const isGross = m.label === "Week Gross";
+              return (
+                <div key={m.label} style={{
+                  backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 10,
+                  padding: "14px 16px", display: "flex", flexDirection: "column", gap: 10,
+                }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <span style={{ fontFamily: "var(--font-sans)", fontSize: 10, fontWeight: 600, color: "var(--muted-foreground)", textTransform: "uppercase", letterSpacing: "0.07em" }}>
+                      {m.label}
+                    </span>
+                    <div style={{ width: 28, height: 28, borderRadius: 7, backgroundColor: m.bg, color: m.color, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      {m.icon}
+                    </div>
                   </div>
+                  <div style={{ fontFamily: "var(--font-sans)", fontSize: 24, fontWeight: 700, color: "var(--foreground)", lineHeight: 1 }}>
+                    {m.value}
+                  </div>
+                  {isGross && targetPct !== null && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 5, marginTop: -2 }}>
+                      <div style={{ height: 5, borderRadius: 99, backgroundColor: "var(--muted)", overflow: "hidden" }}>
+                        <div style={{
+                          height: "100%", borderRadius: 99, width: `${targetPct}%`,
+                          backgroundColor: targetPct >= 100 ? "#10B981" : targetPct >= 70 ? "#F59E0B" : "#3B82F6",
+                          transition: "width 0.4s ease",
+                        }} />
+                      </div>
+                      <span style={{ fontFamily: "var(--font-sans)", fontSize: 10, color: "var(--muted-foreground)" }}>
+                        {targetPct}% of ${target!.toLocaleString()} target
+                      </span>
+                    </div>
+                  )}
                 </div>
-                <div style={{ fontFamily: "var(--font-sans)", fontSize: 24, fontWeight: 700, color: "var(--foreground)", lineHeight: 1 }}>
-                  {m.value}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           {/* Loads table */}
@@ -1262,7 +1356,7 @@ function TeamDetail({ team, onBack }: { team: TeamDriver; onBack: () => void }) 
                   </thead>
                   <tbody>
                     {loads.map((load, i) => {
-                      const sc = LOAD_STATUS_CFG[load.status];
+                      const sc = STATUS_CONFIG[load.status];
                       return (
                         <tr key={load.id} style={{ backgroundColor: i % 2 === 0 ? "var(--card)" : "var(--background)" }}>
                           <TD mono>{load.id}</TD>
@@ -1273,12 +1367,11 @@ function TeamDetail({ team, onBack }: { team: TeamDriver; onBack: () => void }) 
                           <TD center>{load.date}</TD>
                           <td style={{ padding: "10px 12px", borderBottom: "1px solid var(--border)", verticalAlign: "middle", textAlign: "center" }}>
                             <span style={{
-                              display: "inline-flex", alignItems: "center", gap: 5,
+                              display: "inline-block",
                               fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600,
                               color: sc.color, backgroundColor: sc.bg, borderRadius: 4, padding: "2px 8px",
                             }}>
-                              <span style={{ width: 6, height: 6, borderRadius: "50%", backgroundColor: sc.dot, flexShrink: 0 }} />
-                              {load.status}
+                              {sc.label}
                             </span>
                           </td>
                         </tr>
@@ -1299,11 +1392,11 @@ function TeamDetail({ team, onBack }: { team: TeamDriver; onBack: () => void }) 
 
 function Toolbar({
   search, onSearch, statusFilter, onStatus,
-  entityLabel, onManual, onImport, placeholder,
+  entityLabel, onManual, onImport, onEld, placeholder,
 }: {
   search: string; onSearch: (v: string) => void;
   statusFilter: string; onStatus: (v: string) => void;
-  entityLabel: string; onManual: () => void; onImport: () => void;
+  entityLabel: string; onManual: () => void; onImport: () => void; onEld: () => void;
   placeholder: string;
 }) {
   return (
@@ -1345,7 +1438,7 @@ function Toolbar({
 
       <div style={{ flex: 1 }} />
 
-      <AddMenu entityLabel={entityLabel} onManual={onManual} onImport={onImport} />
+      <AddMenu entityLabel={entityLabel} onManual={onManual} onImport={onImport} onEld={onEld} />
     </div>
   );
 }
@@ -1389,7 +1482,7 @@ function SoloTab({ onSelectDriver }: { onSelectDriver: (d: SoloDriver) => void }
       <Toolbar
         search={search} onSearch={handleSearch}
         statusFilter={statusFilter} onStatus={handleStatus}
-        entityLabel="Driver" onManual={openCreate} onImport={() => setImporting(true)}
+        entityLabel="Driver" onManual={openCreate} onImport={() => setImporting(true)} onEld={() => {}}
         placeholder="Search drivers, trucks…"
       />
 
@@ -1402,6 +1495,7 @@ function SoloTab({ onSelectDriver }: { onSelectDriver: (d: SoloDriver) => void }
               <TH width={150}>Phone</TH>
               <TH width={72}>Type</TH>
               <TH width={110}>Status</TH>
+              <TH width={120}>Current Load</TH>
               <TH width={110}>Truck</TH>
               <TH width={110}>Trailer</TH>
               <TH width={160}>Location</TH>
@@ -1435,6 +1529,15 @@ function SoloTab({ onSelectDriver }: { onSelectDriver: (d: SoloDriver) => void }
                 <TD mono>{d.phone}</TD>
                 <TD><TypeBadge type={d.type} /></TD>
                 <TD><StatusBadge status={d.status} /></TD>
+                <TD mono>
+                  {d.currentLoad ? (
+                    <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 600, color: "var(--primary)", backgroundColor: "var(--secondary)", borderRadius: 4, padding: "2px 7px" }}>
+                      {d.currentLoad}
+                    </span>
+                  ) : (
+                    <span style={{ color: "var(--muted-foreground)" }}>—</span>
+                  )}
+                </TD>
                 <TD mono>{d.truck}</TD>
                 <TD mono>{d.trailer}</TD>
                 <TD>
@@ -1525,7 +1628,7 @@ function TeamTab({ onSelectTeam }: { onSelectTeam: (d: TeamDriver) => void }) {
       <Toolbar
         search={search} onSearch={handleSearch}
         statusFilter={statusFilter} onStatus={handleStatus}
-        entityLabel="Team" onManual={openCreate} onImport={() => setImporting(true)}
+        entityLabel="Team" onManual={openCreate} onImport={() => setImporting(true)} onEld={() => {}}
         placeholder="Search teams, trucks…"
       />
 
@@ -1540,6 +1643,7 @@ function TeamTab({ onSelectTeam }: { onSelectTeam: (d: TeamDriver) => void }) {
               <TH width={150}>Phone 2</TH>
               <TH width={72}>Type</TH>
               <TH width={110}>Status</TH>
+              <TH width={120}>Current Load</TH>
               <TH width={110}>Truck</TH>
               <TH width={110}>Trailer</TH>
               <TH width={240}>Comment</TH>
@@ -1575,6 +1679,15 @@ function TeamTab({ onSelectTeam }: { onSelectTeam: (d: TeamDriver) => void }) {
                 <TD mono>{d.phone2}</TD>
                 <TD><TypeBadge type={d.type} /></TD>
                 <TD><StatusBadge status={d.status} /></TD>
+                <TD mono>
+                  {d.currentLoad ? (
+                    <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 600, color: "var(--primary)", backgroundColor: "var(--secondary)", borderRadius: 4, padding: "2px 7px" }}>
+                      {d.currentLoad}
+                    </span>
+                  ) : (
+                    <span style={{ color: "var(--muted-foreground)" }}>—</span>
+                  )}
+                </TD>
                 <TD mono>{d.truck}</TD>
                 <TD mono>{d.trailer}</TD>
                 <TD>
@@ -1593,7 +1706,7 @@ function TeamTab({ onSelectTeam }: { onSelectTeam: (d: TeamDriver) => void }) {
             ))}
             {paged.length === 0 && (
               <tr>
-                <td colSpan={11} style={{ padding: "40px 20px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
+                <td colSpan={12} style={{ padding: "40px 20px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
                   No teams match your filters.
                 </td>
               </tr>

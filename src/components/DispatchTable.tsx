@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { MapPin, Lock, MessageSquare, ChevronDown, Filter, RefreshCw } from "lucide-react";
+import { Status, STATUS_CONFIG } from "../lib/statuses";
 
-type StatusType = "Enroute" | "Home" | "Empty" | "Loading" | "Delivered";
 type DriverType = "O/O" | "C/D";
 
 interface Driver {
@@ -10,7 +10,7 @@ interface Driver {
   phone: string;
   unit: string;
   type: DriverType;
-  status: StatusType;
+  status: Status;
   origin: string;
   destination: string;
   pickupAppt: string;
@@ -19,14 +19,6 @@ interface Driver {
   comments: string;
   lastUpdate: string;
 }
-
-const STATUS_CONFIG: Record<StatusType, { label: string; color: string; bg: string; dot: string }> = {
-  Enroute:   { label: "Enroute",   color: "#1D4ED8", bg: "#DBEAFE", dot: "#3B82F6" },
-  Home:      { label: "Home",      color: "#065F46", bg: "#D1FAE5", dot: "#10B981" },
-  Empty:     { label: "Empty",     color: "#92400E", bg: "#FEF3C7", dot: "#F59E0B" },
-  Loading:   { label: "Loading",   color: "#5B21B6", bg: "#EDE9FE", dot: "#8B5CF6" },
-  Delivered: { label: "Delivered", color: "#166534", bg: "#DCFCE7", dot: "#22C55E" },
-};
 
 const TYPE_CONFIG: Record<DriverType, { color: string; bg: string }> = {
   "O/O": { color: "#1D4ED8", bg: "#DBEAFE" },
@@ -40,7 +32,7 @@ const DRIVERS: Driver[] = [
     phone: "(214) 555-0132",
     unit: "TRK-4481",
     type: "O/O",
-    status: "Enroute",
+    status: "enroute",
     origin: "Dallas, TX",
     destination: "Memphis, TN",
     pickupAppt: "06/12 · 08:00",
@@ -55,7 +47,7 @@ const DRIVERS: Driver[] = [
     phone: "(312) 555-0871",
     unit: "TRK-2290",
     type: "C/D",
-    status: "Home",
+    status: "home",
     origin: "Chicago, IL",
     destination: "—",
     pickupAppt: "—",
@@ -70,7 +62,7 @@ const DRIVERS: Driver[] = [
     phone: "(404) 555-0344",
     unit: "TRK-8813",
     type: "O/O",
-    status: "Empty",
+    status: "ready",
     origin: "Atlanta, GA",
     destination: "Nashville, TN",
     pickupAppt: "06/12 · 11:00",
@@ -85,7 +77,7 @@ const DRIVERS: Driver[] = [
     phone: "(713) 555-0209",
     unit: "TRK-5577",
     type: "C/D",
-    status: "Loading",
+    status: "dispatched",
     origin: "Houston, TX",
     destination: "San Antonio, TX",
     pickupAppt: "06/12 · 14:30",
@@ -100,7 +92,7 @@ const DRIVERS: Driver[] = [
     phone: "(602) 555-0518",
     unit: "TRK-3342",
     type: "O/O",
-    status: "Delivered",
+    status: "delivered",
     origin: "Phoenix, AZ",
     destination: "Los Angeles, CA",
     pickupAppt: "06/11 · 09:00",
@@ -115,7 +107,7 @@ const DRIVERS: Driver[] = [
     phone: "(720) 555-0763",
     unit: "TRK-6610",
     type: "C/D",
-    status: "Enroute",
+    status: "enroute",
     origin: "Denver, CO",
     destination: "Kansas City, MO",
     pickupAppt: "06/12 · 06:30",
@@ -130,7 +122,7 @@ const DRIVERS: Driver[] = [
     phone: "(702) 555-0487",
     unit: "TRK-9924",
     type: "O/O",
-    status: "Empty",
+    status: "ready",
     origin: "Las Vegas, NV",
     destination: "Salt Lake City, UT",
     pickupAppt: "06/13 · 08:00",
@@ -145,7 +137,7 @@ const DRIVERS: Driver[] = [
     phone: "(305) 555-0622",
     unit: "TRK-1157",
     type: "C/D",
-    status: "Home",
+    status: "home",
     origin: "Miami, FL",
     destination: "—",
     pickupAppt: "—",
@@ -209,7 +201,7 @@ export function DispatchTable() {
             {DRIVERS.length} records
           </span>
           <div className="flex items-center gap-1">
-            {(["Enroute", "Empty", "Home", "Loading", "Delivered"] as StatusType[]).map((s) => (
+            {(["enroute", "ready", "home", "dispatched", "delivered"] as Status[]).map((s) => (
               <button
                 key={s}
                 style={{
@@ -226,8 +218,8 @@ export function DispatchTable() {
                   cursor: "pointer",
                 }}
               >
-                <span style={{ width: 6, height: 6, borderRadius: "50%", backgroundColor: STATUS_CONFIG[s].dot, display: "inline-block" }} />
-                {s} {DRIVERS.filter((d) => d.status === s).length}
+                <span style={{ width: 6, height: 6, borderRadius: "50%", backgroundColor: STATUS_CONFIG[s].bg, display: "inline-block" }} />
+                {STATUS_CONFIG[s].label} {DRIVERS.filter((d) => d.status === s).length}
               </button>
             ))}
           </div>
@@ -413,8 +405,8 @@ export function DispatchTable() {
                         whiteSpace: "nowrap",
                       }}
                     >
-                      <span style={{ width: 6, height: 6, borderRadius: "50%", backgroundColor: STATUS_CONFIG[driver.status].dot, display: "inline-block", flexShrink: 0 }} />
-                      {driver.status}
+                      <span style={{ width: 6, height: 6, borderRadius: "50%", backgroundColor: STATUS_CONFIG[driver.status].bg, display: "inline-block", flexShrink: 0 }} />
+                      {STATUS_CONFIG[driver.status].label}
                     </span>
                   </td>
 
