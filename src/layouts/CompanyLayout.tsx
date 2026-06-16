@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { Outlet, NavLink, useLocation } from "react-router";
 import {
   LayoutDashboard,
@@ -9,13 +10,243 @@ import {
   Truck,
   DollarSign,
   Settings,
-  Zap,
   ChevronRight,
+  ChevronDown,
   Search,
   Bell,
   Menu,
+  Check,
+  Plus,
 } from "lucide-react";
 import { Avatar, AvatarFallback } from "../components/ui/avatar";
+
+// ─── Account types ──────────────────────────────────────────────────────────
+
+interface Account {
+  id: string;
+  name: string;
+  initials: string;
+  color: string;
+  plan: string;
+}
+
+const INIT_ACCOUNTS: Account[] = [
+  { id: "acc-1", name: "FleetTech Inc.",    initials: "FT", color: "#3B82F6", plan: "Pro"     },
+  { id: "acc-2", name: "RapidHaul LLC",     initials: "RH", color: "#10B981", plan: "Starter" },
+  { id: "acc-3", name: "Swift Wheels Co.",  initials: "SW", color: "#F59E0B", plan: "Pro"     },
+];
+
+function getInitials(name: string): string {
+  return name.trim().split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? "").join("");
+}
+
+// ─── Account Switcher ────────────────────────────────────────────────────────
+
+function AccountSwitcher({
+  accounts, activeId, onSwitch, onAdd, collapsed,
+}: {
+  accounts: Account[];
+  activeId: string;
+  onSwitch: (id: string) => void;
+  onAdd: (name: string) => void;
+  collapsed: boolean;
+}) {
+  const [open, setOpen]         = useState(false);
+  const [adding, setAdding]     = useState(false);
+  const [draft, setDraft]       = useState("");
+  const [rect, setRect]         = useState<DOMRect | null>(null);
+  const anchorRef = useRef<HTMLButtonElement>(null);
+  const dropRef   = useRef<HTMLDivElement>(null);
+  const inputRef  = useRef<HTMLInputElement>(null);
+
+  const active = accounts.find((a) => a.id === activeId) ?? accounts[0];
+
+  const toggle = () => {
+    const r = anchorRef.current?.getBoundingClientRect();
+    if (r) setRect(r);
+    setOpen((v) => !v);
+    if (open) { setAdding(false); setDraft(""); }
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    const h = (e: MouseEvent) => {
+      if (
+        !anchorRef.current?.contains(e.target as Node) &&
+        !dropRef.current?.contains(e.target as Node)
+      ) { setOpen(false); setAdding(false); setDraft(""); }
+    };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [open]);
+
+  useEffect(() => {
+    if (adding) inputRef.current?.focus();
+  }, [adding]);
+
+  const commitAdd = () => {
+    const name = draft.trim();
+    if (!name) return;
+    onAdd(name);
+    setDraft("");
+    setAdding(false);
+    setOpen(false);
+  };
+
+  return (
+    <>
+      <button
+        ref={anchorRef}
+        onClick={toggle}
+        style={{
+          display: "flex", alignItems: "center", gap: 10,
+          width: "100%", padding: collapsed ? "14px 0" : "12px 16px",
+          justifyContent: collapsed ? "center" : "flex-start",
+          border: "none", background: "none", cursor: "pointer",
+          borderBottom: "1px solid var(--sidebar-border)",
+        }}
+      >
+        {/* Company avatar */}
+        <div style={{
+          width: 34, height: 34, borderRadius: 10, flexShrink: 0,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          backgroundColor: active.color, fontSize: 12, fontWeight: 700, color: "#fff",
+        }}>
+          {active.initials}
+        </div>
+
+        {!collapsed && (
+          <>
+            <div style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: "#F1F5F9", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                {active.name}
+              </div>
+              <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--sidebar-foreground)", opacity: 0.6 }}>
+                {active.plan} Plan
+              </div>
+            </div>
+            <ChevronDown size={14} style={{ color: "var(--sidebar-foreground)", opacity: 0.5, flexShrink: 0 }} />
+          </>
+        )}
+      </button>
+
+      {open && rect && createPortal(
+        <div
+          ref={dropRef}
+          style={{
+            position: "fixed",
+            top: rect.bottom + 6,
+            left: rect.left,
+            width: Math.max(rect.width, 240),
+            zIndex: 9999,
+            backgroundColor: "var(--card)",
+            border: "1px solid var(--border)",
+            borderRadius: 12,
+            boxShadow: "0 12px 32px rgba(0,0,0,0.18)",
+            padding: "5px",
+            overflow: "hidden",
+          }}
+        >
+          {/* Account list */}
+          {accounts.map((acc) => {
+            const isActive = acc.id === activeId;
+            return (
+              <button
+                key={acc.id}
+                onMouseDown={(e) => { e.preventDefault(); onSwitch(acc.id); setOpen(false); }}
+                style={{
+                  display: "flex", alignItems: "center", gap: 10,
+                  width: "100%", padding: "8px 10px", border: "none", borderRadius: 8,
+                  backgroundColor: isActive ? "var(--secondary)" : "transparent",
+                  cursor: "pointer", textAlign: "left",
+                }}
+                onMouseEnter={(e) => { if (!isActive) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--muted)"; }}
+                onMouseLeave={(e) => { if (!isActive) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "transparent"; }}
+              >
+                <div style={{
+                  width: 30, height: 30, borderRadius: 8, flexShrink: 0,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  backgroundColor: acc.color, fontSize: 11, fontWeight: 700, color: "#fff",
+                }}>
+                  {acc.initials}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: isActive ? 600 : 400, color: "var(--foreground)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                    {acc.name}
+                  </div>
+                  <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--muted-foreground)" }}>
+                    {acc.plan} Plan
+                  </div>
+                </div>
+                {isActive && <Check size={13} style={{ color: "var(--primary)", flexShrink: 0 }} />}
+              </button>
+            );
+          })}
+
+          {/* Divider */}
+          <div style={{ height: 1, backgroundColor: "var(--border)", margin: "4px 0" }} />
+
+          {/* Add new account */}
+          {adding ? (
+            <div style={{ padding: "8px 10px", display: "flex", gap: 6 }}>
+              <input
+                ref={inputRef}
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") { e.preventDefault(); commitAdd(); }
+                  if (e.key === "Escape") { setAdding(false); setDraft(""); }
+                }}
+                placeholder="Company name…"
+                style={{
+                  flex: 1, border: "1px solid var(--border)", borderRadius: 6,
+                  padding: "5px 8px", fontFamily: "var(--font-sans)", fontSize: 12,
+                  color: "var(--foreground)", backgroundColor: "var(--muted)", outline: "none",
+                }}
+              />
+              <button
+                onMouseDown={(e) => { e.preventDefault(); commitAdd(); }}
+                disabled={!draft.trim()}
+                style={{
+                  padding: "5px 10px", border: "none", borderRadius: 6,
+                  backgroundColor: draft.trim() ? "var(--primary)" : "var(--muted)",
+                  color: draft.trim() ? "#fff" : "var(--muted-foreground)",
+                  fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: 600,
+                  cursor: draft.trim() ? "pointer" : "default",
+                }}
+              >
+                Add
+              </button>
+            </div>
+          ) : (
+            <button
+              onMouseDown={(e) => { e.preventDefault(); setAdding(true); }}
+              style={{
+                display: "flex", alignItems: "center", gap: 8,
+                width: "100%", padding: "8px 10px", border: "none", borderRadius: 8,
+                backgroundColor: "transparent", cursor: "pointer", textAlign: "left",
+              }}
+              onMouseEnter={(e) => (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--muted)"}
+              onMouseLeave={(e) => (e.currentTarget as HTMLButtonElement).style.backgroundColor = "transparent"}
+            >
+              <div style={{
+                width: 30, height: 30, borderRadius: 8, flexShrink: 0,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                border: "1.5px dashed var(--border)",
+              }}>
+                <Plus size={13} style={{ color: "var(--muted-foreground)" }} />
+              </div>
+              <span style={{ fontSize: 13, color: "var(--muted-foreground)", fontFamily: "var(--font-sans)" }}>
+                Add new account
+              </span>
+            </button>
+          )}
+        </div>,
+        document.body
+      )}
+    </>
+  );
+}
 
 // ─── Navigation config ─────────────────────────────────────────────────────
 
@@ -40,7 +271,14 @@ const activeUsers = [
 
 // ─── Sidebar ────────────────────────────────────────────────────────────────
 
-function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
+function Sidebar({ collapsed, onToggle, accounts, activeAccountId, onSwitch, onAddAccount }: {
+  collapsed: boolean;
+  onToggle: () => void;
+  accounts: Account[];
+  activeAccountId: string;
+  onSwitch: (id: string) => void;
+  onAddAccount: (name: string) => void;
+}) {
   const location = useLocation();
 
   return (
@@ -55,52 +293,14 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
       className="h-full flex flex-col overflow-hidden"
       aria-label="Main navigation"
     >
-      {/* Logo */}
-      <div
-        className="flex items-center gap-2 px-4 border-b shrink-0"
-        style={{
-          borderColor: "var(--sidebar-border)",
-          height: 64,
-          paddingLeft: collapsed ? 15 : 16,
-        }}
-      >
-        <div
-          className="flex items-center justify-center rounded-xl shrink-0"
-          style={{
-            width: 36,
-            height: 36,
-            background: "linear-gradient(135deg, #3B82F6 0%, #1D4ED8 100%)",
-          }}
-        >
-          <Zap size={18} color="#fff" strokeWidth={2.5} />
-        </div>
-        {!collapsed && (
-          <div className="overflow-hidden">
-            <div
-              style={{
-                color: "#F1F5F9",
-                fontSize: 14,
-                fontWeight: 600,
-                letterSpacing: "0.01em",
-                whiteSpace: "nowrap",
-              }}
-            >
-              DispatchOS
-            </div>
-            <div
-              style={{
-                fontFamily: "var(--font-mono)",
-                color: "var(--sidebar-foreground)",
-                fontSize: 10,
-                opacity: 0.6,
-                whiteSpace: "nowrap",
-              }}
-            >
-              Log Board
-            </div>
-          </div>
-        )}
-      </div>
+      {/* Account Switcher */}
+      <AccountSwitcher
+        accounts={accounts}
+        activeId={activeAccountId}
+        onSwitch={onSwitch}
+        onAdd={onAddAccount}
+        collapsed={collapsed}
+      />
 
       {/* Nav section label */}
       {!collapsed && (
@@ -407,6 +607,17 @@ function TopHeader({ onToggleSidebar }: { onToggleSidebar: () => void }) {
 
 export function CompanyLayout() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [accounts, setAccounts]         = useState<Account[]>(INIT_ACCOUNTS);
+  const [activeAccountId, setActiveAccountId] = useState(INIT_ACCOUNTS[0].id);
+
+  const addAccount = (name: string) => {
+    const initials = getInitials(name) || "??";
+    const colors   = ["#8B5CF6", "#EC4899", "#06B6D4", "#84CC16", "#F97316"];
+    const color    = colors[accounts.length % colors.length];
+    const newAcc: Account = { id: `acc-${Date.now()}`, name, initials, color, plan: "Starter" };
+    setAccounts((prev) => [...prev, newAcc]);
+    setActiveAccountId(newAcc.id);
+  };
 
   return (
     <div
@@ -416,6 +627,10 @@ export function CompanyLayout() {
       <Sidebar
         collapsed={sidebarCollapsed}
         onToggle={() => setSidebarCollapsed((v) => !v)}
+        accounts={accounts}
+        activeAccountId={activeAccountId}
+        onSwitch={setActiveAccountId}
+        onAddAccount={addAccount}
       />
 
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
