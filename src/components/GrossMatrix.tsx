@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from "react";
-import { Search, Calendar, ChevronLeft, ChevronRight, Check, ChevronDown } from "lucide-react";
+import { Search, Calendar, Check, ChevronDown } from "lucide-react";
 import { createPortal } from "react-dom";
 import { Status, STATUS_CONFIG, ALL_STATUSES } from "../lib/statuses";
 
@@ -367,81 +367,6 @@ function CellEditPanel({
   );
 }
 
-// ─── Mini select (rows per page) ──────────────────────────────────────────────
-
-const PAGE_SIZES = [10, 20, 40, 100];
-
-function MiniSelect({ value, options, onChange }: {
-  value: string; options: { value: string; label: string }[]; onChange: (v: string) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const selected = options.find((o) => o.value === value);
-  return (
-    <div style={{ position: "relative" }}>
-      <button onClick={() => setOpen((v) => !v)} style={{ display: "flex", alignItems: "center", gap: 6, height: 30, padding: "0 8px 0 10px", fontFamily: "var(--font-sans)", fontSize: 12, backgroundColor: "var(--input-background)", border: `1px solid ${open ? "var(--primary)" : "var(--border)"}`, borderRadius: 6, color: "var(--foreground)", cursor: "pointer", boxShadow: open ? "0 0 0 3px rgba(59,130,246,0.12)" : "none", outline: "none" }}>
-        {selected?.label}
-        <ChevronDown size={12} style={{ color: "var(--muted-foreground)", transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s" }} />
-      </button>
-      {open && (
-        <div onMouseLeave={() => setOpen(false)} style={{ position: "absolute", bottom: "calc(100% + 4px)", left: 0, minWidth: "100%", backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 7, boxShadow: "0 8px 24px rgba(0,0,0,0.12)", zIndex: 9999, overflow: "hidden" }}>
-          {options.map((opt) => {
-            const isActive = opt.value === value;
-            return (
-              <button key={opt.value} onClick={() => { onChange(opt.value); setOpen(false); }} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "6px 10px", border: "none", backgroundColor: isActive ? "rgba(59,130,246,0.06)" : "transparent", fontFamily: "var(--font-sans)", fontSize: 12, color: isActive ? "var(--primary)" : "var(--foreground)", cursor: "pointer", textAlign: "left" }}>
-                <span style={{ flex: 1 }}>{opt.label}</span>
-                {isActive && <Check size={11} style={{ color: "var(--primary)" }} />}
-              </button>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ─── Pagination ───────────────────────────────────────────────────────────────
-
-function PaginationBar({ total, page, pageSize, onPage, onPageSize }: {
-  total: number; page: number; pageSize: number;
-  onPage: (p: number) => void; onPageSize: (s: number) => void;
-}) {
-  const totalPages = Math.max(1, Math.ceil(total / pageSize));
-  const from = total === 0 ? 0 : (page - 1) * pageSize + 1;
-  const to   = Math.min(page * pageSize, total);
-
-  const pages: (number | "…")[] = [];
-  if (totalPages <= 7) { for (let i = 1; i <= totalPages; i++) pages.push(i); }
-  else {
-    pages.push(1);
-    if (page > 3) pages.push("…");
-    for (let i = Math.max(2, page - 1); i <= Math.min(totalPages - 1, page + 1); i++) pages.push(i);
-    if (page < totalPages - 2) pages.push("…");
-    pages.push(totalPages);
-  }
-
-  const PBtn = ({ children, active = false, disabled = false, onClick }: { children: React.ReactNode; active?: boolean; disabled?: boolean; onClick: () => void }) => (
-    <button onClick={onClick} disabled={disabled} style={{ minWidth: 30, height: 30, borderRadius: 6, padding: "0 6px", border: active ? "1.5px solid var(--primary)" : "1px solid var(--border)", backgroundColor: active ? "var(--primary)" : "transparent", color: active ? "#fff" : disabled ? "var(--muted-foreground)" : "var(--foreground)", fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: active ? 600 : 400, cursor: disabled ? "default" : "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", opacity: disabled ? 0.38 : 1, outline: "none" }}>{children}</button>
-  );
-
-  return (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 16px", borderTop: "1px solid var(--border)", backgroundColor: "var(--card)", flexShrink: 0 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)", whiteSpace: "nowrap" }}>{total === 0 ? "No results" : `Showing ${from}–${to} of ${total}`}</span>
-        <span style={{ color: "var(--border)", userSelect: "none" }}>·</span>
-        <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)", whiteSpace: "nowrap" }}>Rows per page</span>
-        <MiniSelect value={String(pageSize)} options={PAGE_SIZES.map((n) => ({ value: String(n), label: String(n) }))} onChange={(v) => { onPageSize(Number(v)); onPage(1); }} />
-      </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-        <PBtn disabled={page === 1} onClick={() => onPage(page - 1)}><ChevronLeft size={14} /></PBtn>
-        {pages.map((p, i) => p === "…"
-          ? <span key={`e${i}`} style={{ minWidth: 30, textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>…</span>
-          : <PBtn key={p} active={p === page} onClick={() => onPage(p as number)}>{p}</PBtn>
-        )}
-        <PBtn disabled={page === totalPages} onClick={() => onPage(page + 1)}><ChevronRight size={14} /></PBtn>
-      </div>
-    </div>
-  );
-}
 
 // ─── Inline number editor (Target / Co.Profit) ────────────────────────────────
 
@@ -770,8 +695,6 @@ export function GrossMatrix() {
   const [search,   setSearch]   = useState("");
   const [dateFrom, setDateFrom] = useState("2026-06-09");
   const [dateTo,   setDateTo]   = useState("2026-06-15");
-  const [page,     setPage]     = useState(1);
-  const [pageSize, setPageSize] = useState(20);
 
   // Cell editing
   const [editState, setEditState] = useState<EditState | null>(null);
@@ -815,10 +738,6 @@ export function GrossMatrix() {
     return q ? rows.filter((d) => d.name.toLowerCase().includes(q) || d.unit.toLowerCase().includes(q)) : rows;
   }, [search, rows]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
-  const safePage   = Math.min(page, totalPages);
-  const paged      = filtered.slice((safePage - 1) * pageSize, safePage * pageSize);
-
   function rangeTotal(driver: DriverRow) {
     return dates.reduce((s, iso) => {
       const cell = driver.dateMap[iso];
@@ -826,8 +745,8 @@ export function GrossMatrix() {
     }, 0);
   }
 
-  const grandTotal  = paged.reduce((s, d) => s + rangeTotal(d), 0);
-  const grandProfit = paged.reduce((s, d) => s + d.companyProfit, 0);
+  const grandTotal  = filtered.reduce((s, d) => s + rangeTotal(d), 0);
+  const grandProfit = filtered.reduce((s, d) => s + d.companyProfit, 0);
   const rangeDays   = dates.length;
 
   const R = { total: 240, target: 120, profit: 0 };
@@ -861,7 +780,7 @@ export function GrossMatrix() {
 
             <div style={{ position: "relative", flexShrink: 0 }}>
               <Search size={13} style={{ position: "absolute", left: 9, top: "50%", transform: "translateY(-50%)", color: "var(--muted-foreground)", pointerEvents: "none" }} />
-              <input value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} placeholder="Search drivers…"
+              <input value={search} onChange={(e) => { setSearch(e.target.value); }} placeholder="Search drivers…"
                 style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "5px 10px 5px 28px", height: 32, width: 200, borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "var(--input-background)", color: "var(--foreground)", outline: "none" }}
                 onFocus={(e) => { e.currentTarget.style.borderColor = "var(--primary)"; e.currentTarget.style.boxShadow = "0 0 0 3px rgba(59,130,246,0.12)"; }}
                 onBlur={(e)  => { e.currentTarget.style.borderColor = "var(--border)";  e.currentTarget.style.boxShadow = "none"; }}
@@ -871,7 +790,7 @@ export function GrossMatrix() {
             <DateRangePicker
               from={dateFrom}
               to={dateTo}
-              onChange={(f, t) => { setDateFrom(f); setDateTo(t); setPage(1); }}
+              onChange={(f, t) => { setDateFrom(f); setDateTo(t); }}
             />
           </div>
 
@@ -906,13 +825,13 @@ export function GrossMatrix() {
                   </tr>
                 </thead>
                 <tbody>
-                  {paged.length === 0 ? (
+                  {filtered.length === 0 ? (
                     <tr>
                       <td colSpan={3 + dates.length + 3} style={{ padding: "48px 20px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
                         No drivers match your search.
                       </td>
                     </tr>
-                  ) : paged.map((driver, i) => {
+                  ) : filtered.map((driver, i) => {
                     const isEven   = i % 2 === 0;
                     const rowBg    = isEven ? "#ffffff" : "#F9FAFB";
                     const total    = rangeTotal(driver);
@@ -1011,7 +930,7 @@ export function GrossMatrix() {
                       Totals
                     </td>
                     {dates.map((iso) => {
-                      const dayTotal = paged.reduce((sum, dr) => {
+                      const dayTotal = filtered.reduce((sum, dr) => {
                         const cell = dr.dateMap[iso];
                         return sum + (cell?.type === "load" && cell.amount ? cell.amount : 0);
                       }, 0);
@@ -1034,7 +953,6 @@ export function GrossMatrix() {
             )}
           </div>
 
-          <PaginationBar total={filtered.length} page={safePage} pageSize={pageSize} onPage={setPage} onPageSize={setPageSize} />
         </div>
       </div>
     </div>

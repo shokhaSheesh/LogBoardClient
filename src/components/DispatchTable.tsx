@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
-import { MapPin, Lock, MessageSquare, ChevronDown, RefreshCw, Search, Navigation, Check, ArrowRight } from "lucide-react";
+import { MapPin, Lock, MessageSquare, ChevronDown, RefreshCw, Search, Navigation, Check, ArrowRight, History, X } from "lucide-react";
 import { Status, STATUS_CONFIG, ALL_STATUSES } from "../lib/statuses";
 
 type DriverType = "O/O" | "C/D";
@@ -477,6 +477,169 @@ function StopList({ origin, originDone, destination, stops, onToggleStop, onEdit
   );
 }
 
+// ── Change log ───────────────────────────────────────────────────────────────
+
+interface ChangeEntry {
+  id: string;
+  ts: number;
+  user: string;
+  userColor: string;
+  loadId: string;
+  driverName: string;
+  fieldLabel: string;
+  oldVal: string;
+  newVal: string;
+}
+
+const FIELD_LABELS: Partial<Record<string, string>> = {
+  name: "Driver Name", phone: "Phone", unit: "Unit", type: "Driver Type",
+  status: "Status", origin: "Origin", destination: "Destination",
+  location: "Location", etaKm: "Distance", speedMph: "Speed",
+  comments: "Comments", pickupAppt: "#1 Appt.", dropAppt: "#2 Appt.",
+  originDone: "Pickup",
+};
+
+function fmtFieldVal(field: string, val: unknown): string {
+  if (val === null || val === undefined || val === "") return "—";
+  if (field === "status")    return STATUS_CONFIG[val as Status]?.label ?? String(val);
+  if (field === "etaKm")     return val === 0 ? "At dest." : `${val} km`;
+  if (field === "speedMph")  return `${val} mph`;
+  if (field === "originDone") return val ? "Completed" : "Pending";
+  return String(val);
+}
+
+function fmtTs(ts: number): string {
+  const d = Date.now() - ts;
+  if (d < 60000)    return "just now";
+  if (d < 3600000)  return `${Math.floor(d / 60000)}m ago`;
+  if (d < 86400000) return `${Math.floor(d / 3600000)}h ago`;
+  if (d < 172800000) return "yesterday";
+  return new Date(ts).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+function groupChanges(entries: ChangeEntry[]) {
+  const now = Date.now();
+  const buckets: Record<string, ChangeEntry[]> = {};
+  entries.forEach((e) => {
+    const diff = now - e.ts;
+    const key = diff < 86400000 ? "Today" : diff < 172800000 ? "Yesterday" : "Older";
+    (buckets[key] ??= []).push(e);
+  });
+  return (["Today", "Yesterday", "Older"] as const).filter((k) => buckets[k]).map((k) => ({ label: k, items: buckets[k] }));
+}
+
+const _t = Date.now();
+const SEED_CHANGES: ChangeEntry[] = [
+  { id:"s1", ts:_t-110000,  user:"Sofia R.",  userColor:"#8B5CF6", loadId:"LD-00813", driverName:"Darnell Washington", fieldLabel:"Status",      oldVal:"Ready",         newVal:"En Route"     },
+  { id:"s2", ts:_t-310000,  user:"You",        userColor:"#3B82F6", loadId:"LD-00481", driverName:"Carlos Mendez",      fieldLabel:"Speed",       oldVal:"58 mph",        newVal:"62 mph"       },
+  { id:"s3", ts:_t-490000,  user:"Marcus T.",  userColor:"#10B981", loadId:"LD-00577", driverName:"Priya Sharma",       fieldLabel:"Location",    oldVal:"Austin, TX",    newVal:"Houston, TX"  },
+  { id:"s4", ts:_t-950000,  user:"You",        userColor:"#3B82F6", loadId:"LD-00610", driverName:"Linda Okafor",       fieldLabel:"Status",      oldVal:"Dispatched",    newVal:"En Route"     },
+  { id:"s5", ts:_t-1800000, user:"Sofia R.",   userColor:"#8B5CF6", loadId:"LD-00342", driverName:"Marcus Webb",        fieldLabel:"Status",      oldVal:"En Route",      newVal:"Delivered"    },
+  { id:"s6", ts:_t-3600000, user:"You",        userColor:"#3B82F6", loadId:"LD-00481", driverName:"Carlos Mendez",      fieldLabel:"Comments",    oldVal:"—",             newVal:"Fuel stop needed at Mile 220" },
+  { id:"s7", ts:_t-7200000, user:"Marcus T.",  userColor:"#10B981", loadId:"LD-00924", driverName:"Ray Kowalski",       fieldLabel:"#1 Appt.",    oldVal:"06/13 · 07:00", newVal:"06/13 · 08:00" },
+  { id:"s8", ts:_t-86400000,user:"You",        userColor:"#3B82F6", loadId:"LD-00813", driverName:"Darnell Washington", fieldLabel:"Driver Type", oldVal:"C/D",           newVal:"O/O"          },
+  { id:"s9", ts:_t-90000000,user:"Sofia R.",   userColor:"#8B5CF6", loadId:"LD-00157", driverName:"Tomás García",       fieldLabel:"Status",      oldVal:"En Route",      newVal:"Home"         },
+];
+
+// ── Changelog panel ───────────────────────────────────────────────────────────
+
+function StatusBadge({ label }: { label: string }) {
+  const s = ALL_STATUSES.find((x) => STATUS_CONFIG[x].label === label);
+  if (!s) return <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600, color: "var(--foreground)" }}>{label}</span>;
+  const cfg = STATUS_CONFIG[s];
+  return (
+    <span style={{ fontFamily: "var(--font-sans)", fontSize: 10, fontWeight: 700, color: cfg.color, backgroundColor: cfg.bg, borderRadius: 4, padding: "2px 7px", whiteSpace: "nowrap" }}>
+      {label}
+    </span>
+  );
+}
+
+function ValDisplay({ fieldLabel, val, muted }: { fieldLabel: string; val: string; muted?: boolean }) {
+  if (fieldLabel === "Status" && !muted) return <StatusBadge label={val} />;
+  return (
+    <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: muted ? 400 : 600, color: muted ? "var(--muted-foreground)" : "var(--foreground)", textDecoration: muted ? "line-through" : "none" }}>
+      {val}
+    </span>
+  );
+}
+
+function ChangelogPanel({ entries, onClose }: { entries: ChangeEntry[]; onClose: () => void }) {
+  const groups = groupChanges(entries);
+  return createPortal(
+    <>
+      <div onClick={onClose} style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.10)", zIndex: 290 }} />
+      <div style={{
+        position: "fixed", top: 0, right: 0, bottom: 0, width: 360,
+        backgroundColor: "var(--card)", borderLeft: "1px solid var(--border)",
+        boxShadow: "-8px 0 40px rgba(0,0,0,0.14)", zIndex: 291,
+        display: "flex", flexDirection: "column",
+      }}>
+        {/* Header */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "15px 18px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
+          <History size={15} style={{ color: "var(--primary)" }} />
+          <span style={{ fontFamily: "var(--font-sans)", fontSize: 14, fontWeight: 700, color: "var(--foreground)", flex: 1 }}>Change History</span>
+          <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, fontWeight: 600, color: "var(--muted-foreground)", backgroundColor: "var(--muted)", borderRadius: 10, padding: "2px 8px" }}>
+            {entries.length}
+          </span>
+          <button onClick={onClose} style={{ width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center", border: "none", borderRadius: 7, backgroundColor: "transparent", color: "var(--muted-foreground)", cursor: "pointer" }}
+            onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--muted)"; }}
+            onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = "transparent"; }}>
+            <X size={15} />
+          </button>
+        </div>
+
+        {/* List */}
+        <div style={{ flex: 1, overflowY: "auto", scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent" }}>
+          {entries.length === 0 ? (
+            <div style={{ padding: "48px 20px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>No changes yet.</div>
+          ) : groups.map((group) => (
+            <div key={group.label}>
+              {/* Group label */}
+              <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 18px 6px" }}>
+                <div style={{ flex: 1, height: 1, backgroundColor: "var(--border)" }} />
+                <span style={{ fontFamily: "var(--font-sans)", fontSize: 10, fontWeight: 700, color: "var(--muted-foreground)", letterSpacing: "0.08em", textTransform: "uppercase", flexShrink: 0 }}>{group.label}</span>
+                <div style={{ flex: 1, height: 1, backgroundColor: "var(--border)" }} />
+              </div>
+
+              {group.items.map((entry) => (
+                <div key={entry.id} style={{ display: "flex", gap: 11, padding: "10px 18px", borderBottom: "1px solid var(--border)" }}
+                  onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.backgroundColor = "var(--muted)"; }}
+                  onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.backgroundColor = "transparent"; }}>
+                  {/* Avatar */}
+                  <div style={{ width: 32, height: 32, borderRadius: "50%", backgroundColor: entry.userColor + "22", border: `1.5px solid ${entry.userColor}44`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 1 }}>
+                    <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 700, color: entry.userColor }}>
+                      {entry.user === "You" ? "Me" : entry.user.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase()}
+                    </span>
+                  </div>
+
+                  {/* Content */}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 2 }}>
+                      <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: 600, color: "var(--foreground)" }}>{entry.user}</span>
+                      <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--muted-foreground)", flexShrink: 0, marginLeft: 6 }}>{fmtTs(entry.ts)}</span>
+                    </div>
+                    <div style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "var(--muted-foreground)", marginBottom: 5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--primary)", fontWeight: 600 }}>{entry.loadId}</span>
+                      {" · "}<span style={{ color: "var(--foreground)" }}>{entry.driverName}</span>
+                      {" · "}{entry.fieldLabel}
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                      <ValDisplay fieldLabel={entry.fieldLabel} val={entry.oldVal} muted />
+                      <ArrowRight size={10} style={{ color: "var(--border)", flexShrink: 0 }} />
+                      <ValDisplay fieldLabel={entry.fieldLabel} val={entry.newVal} />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      </div>
+    </>,
+    document.body
+  );
+}
+
 // ── Main component ───────────────────────────────────────────────────────────
 
 export function DispatchTable() {
@@ -485,6 +648,8 @@ export function DispatchTable() {
   const [statusFilter, setStatusFilter] = useState<Status | "all">("all");
   const [filterOpen, setFilterOpen]     = useState(false);
   const [editCell, setEditCell]   = useState<{ loadId: string; field: string } | null>(null);
+  const [changelog, setChangelog] = useState<ChangeEntry[]>(SEED_CHANGES);
+  const [logOpen, setLogOpen]     = useState(false);
   const filterRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -493,8 +658,28 @@ export function DispatchTable() {
     return () => document.removeEventListener("mousedown", h);
   }, [filterOpen]);
 
-  const patch = (loadId: string, fields: Partial<Driver>) =>
+  const patch = (loadId: string, fields: Partial<Driver>) => {
+    const driver = rows.find((d) => d.loadId === loadId);
+    if (driver) {
+      const now = Date.now();
+      const entries: ChangeEntry[] = Object.entries(fields)
+        .filter(([field]) => !!FIELD_LABELS[field])
+        .map(([field, newVal], i) => ({
+          id: `${now}-${i}-${field}`,
+          ts: now,
+          user: "You",
+          userColor: "#3B82F6",
+          loadId,
+          driverName: driver.name,
+          fieldLabel: FIELD_LABELS[field]!,
+          oldVal: fmtFieldVal(field, driver[field as keyof Driver]),
+          newVal: fmtFieldVal(field, newVal),
+        }))
+        .filter((e) => e.oldVal !== e.newVal);
+      if (entries.length) setChangelog((prev) => [...entries, ...prev]);
+    }
     setRows((prev) => prev.map((d) => (d.loadId === loadId ? { ...d, ...fields } : d)));
+  };
 
   const isEdit = (loadId: string, field: string) => editCell?.loadId === loadId && editCell?.field === field;
   const startEdit = (loadId: string, field: string) => setEditCell({ loadId, field });
@@ -514,6 +699,7 @@ export function DispatchTable() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+      {logOpen && <ChangelogPanel entries={changelog} onClose={() => setLogOpen(false)} />}
 
       {/* ── Toolbar ── */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 16px", flexShrink: 0, backgroundColor: "var(--card)", borderBottom: "1px solid var(--border)", height: 52, gap: 10, borderRadius: "12px 12px 0 0" }}>
@@ -557,9 +743,21 @@ export function DispatchTable() {
           <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--muted-foreground)" }}>{visible.length} / {rows.length}</span>
         </div>
 
-        <button style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--primary)", backgroundColor: "var(--secondary)", border: "none", borderRadius: 7, padding: "5px 12px", cursor: "pointer" }}>
-          <RefreshCw size={12} /> Refresh
-        </button>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <button
+            onClick={() => setLogOpen(true)}
+            style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)", backgroundColor: "var(--muted)", border: "1px solid var(--border)", borderRadius: 7, padding: "5px 12px", cursor: "pointer", position: "relative" }}>
+            <History size={12} /> History
+            {changelog.length > 0 && (
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: 9, fontWeight: 700, color: "#fff", backgroundColor: "var(--primary)", borderRadius: 10, padding: "1px 5px", marginLeft: 2 }}>
+                {changelog.length}
+              </span>
+            )}
+          </button>
+          <button style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--primary)", backgroundColor: "var(--secondary)", border: "none", borderRadius: 7, padding: "5px 12px", cursor: "pointer" }}>
+            <RefreshCw size={12} /> Refresh
+          </button>
+        </div>
       </div>
 
       {/* ── Table ── */}
