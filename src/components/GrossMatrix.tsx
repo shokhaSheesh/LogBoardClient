@@ -80,6 +80,27 @@ function colLabel(iso: string) {
 }
 function fmt(n: number) { return `$${n.toLocaleString()}`; }
 
+// ─── Available loads ──────────────────────────────────────────────────────────
+
+const GROSS_LOADS = [
+  { id: "57760165", payout: 1250 }, { id: "57760191", payout: 1250 }, { id: "57760149", payout: 1250 },
+  { id: "57760170", payout: 1250 }, { id: "57760194", payout: 1250 }, { id: "57760198", payout: 1250 },
+  { id: "57760174", payout: 1250 }, { id: "57760213", payout: 1250 }, { id: "57760154", payout: 1250 },
+  { id: "57760151", payout: 1250 }, { id: "57760172", payout: 1250 }, { id: "57760179", payout: 1200 },
+  { id: "57760177", payout: 1250 }, { id: "57760233", payout: 1250 }, { id: "57760202", payout: 1250 },
+  { id: "57760203", payout: 1250 }, { id: "57760207", payout: 1250 }, { id: "57760228", payout: 1250 },
+  { id: "57760155", payout: 1250 }, { id: "57760157", payout: 1250 }, { id: "57760175", payout: 1250 },
+  { id: "57760173", payout: 1250 }, { id: "4332979",  payout: 550  }, { id: "4367209",  payout: 800  },
+  { id: "4332793",  payout: 550  }, { id: "4338260",  payout: 750  }, { id: "4349224",  payout: 825  },
+  { id: "127129288",payout: 3200 }, { id: "127120603",payout: 1450 }, { id: "127197643",payout: 565  },
+  { id: "126185",   payout: 3500 }, { id: "35101523", payout: 1000 }, { id: "35241535", payout: 2500 },
+  { id: "35132250", payout: 1550 }, { id: "35189864", payout: 2000 }, { id: "35243285", payout: 1900 },
+  { id: "0118551",  payout: 2000 }, { id: "0245461",  payout: 1450 }, { id: "0245328",  payout: 1450 },
+  { id: "127218503",payout: 1500 }, { id: "142896",   payout: 1550 }, { id: "142901",   payout: 1550 },
+  { id: "G064863703",payout: 900 }, { id: "T01359997",payout: 1500 }, { id: "T01358372",payout: 1500 },
+  { id: "T01356218",payout: 1800 }, { id: "374553",   payout: 1000 }, { id: "QUICKFREIGHT",payout: 1500 },
+];
+
 // ─── Cell display styles ──────────────────────────────────────────────────────
 
 function cellStyle(type: CellType): { bg: string; color: string; label?: string } {
@@ -113,6 +134,95 @@ function DayCellContent({ cell }: { cell: DayCell }) {
   }
   if (cell.type === "empty") return null;
   return <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 700, color: s.color, letterSpacing: "0.05em", textTransform: "uppercase" }}>{s.label}</span>;
+}
+
+// ─── Searchable load ID selector ──────────────────────────────────────────────
+
+function LoadIdSelect({ value, onSelect }: {
+  value: string;
+  onSelect: (id: string, payout: string) => void;
+}) {
+  const [query, setQuery] = useState(value);
+  const [open, setOpen]   = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  const filtered = GROSS_LOADS.filter((l) =>
+    l.id.toLowerCase().includes(query.toLowerCase())
+  );
+
+  function pick(load: { id: string; payout: number }) {
+    onSelect(load.id, String(load.payout));
+    setQuery(load.id);
+    setOpen(false);
+  }
+
+  // sync external clear
+  useEffect(() => { setQuery(value); }, [value]);
+
+  useEffect(() => {
+    if (!open) return;
+    const h = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [open]);
+
+  return (
+    <div ref={wrapRef} style={{ position: "relative" }}>
+      <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
+        <Search size={12} style={{ position: "absolute", left: 8, color: "#9CA3AF", pointerEvents: "none" }} />
+        <input
+          type="text"
+          placeholder="Search load ID…"
+          value={query}
+          onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
+          onFocus={() => setOpen(true)}
+          style={{
+            width: "100%", paddingLeft: 26, paddingRight: 8, height: 30,
+            borderRadius: 6, border: "1px solid #D1D5DB",
+            fontFamily: "var(--font-mono)", fontSize: 12, color: "#374151",
+            outline: "none", boxSizing: "border-box",
+          }}
+          onMouseDown={(e) => e.stopPropagation()}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") { setOpen(false); e.stopPropagation(); }
+            if (e.key === "Enter" && filtered.length === 1) { e.preventDefault(); pick(filtered[0]); }
+          }}
+        />
+      </div>
+      {open && filtered.length > 0 && (
+        <div
+          style={{
+            position: "absolute", top: "calc(100% + 3px)", left: 0, right: 0, zIndex: 10,
+            backgroundColor: "#fff", border: "1px solid #D1D5DB", borderRadius: 6,
+            boxShadow: "0 4px 16px rgba(0,0,0,0.12)",
+            maxHeight: 160, overflowY: "auto",
+            scrollbarWidth: "thin", scrollbarColor: "#D1D5DB transparent",
+          }}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          {filtered.map((load) => (
+            <button
+              key={load.id}
+              onMouseDown={(e) => { e.preventDefault(); pick(load); }}
+              style={{
+                display: "flex", alignItems: "center", justifyContent: "space-between",
+                width: "100%", padding: "6px 10px", border: "none",
+                backgroundColor: load.id === query ? "#EFF6FF" : "transparent",
+                cursor: "pointer", textAlign: "left",
+              }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = "#F0F9FF"; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = load.id === query ? "#EFF6FF" : "transparent"; }}
+            >
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "#374151" }}>{load.id}</span>
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 600, color: "#10B981" }}>${load.payout.toLocaleString()}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ─── Cell edit panel (portal) ─────────────────────────────────────────────────
@@ -225,14 +335,9 @@ function CellEditPanel({
                 onBlur={(e)  => { e.currentTarget.style.borderColor = "#D1D5DB"; }}
               />
             </div>
-            <input
-              type="text"
-              placeholder="Load ID"
+            <LoadIdSelect
               value={edit.loadId}
-              onChange={(e) => onLoadId(e.target.value)}
-              style={{ width: "100%", padding: "0 8px", height: 30, borderRadius: 6, border: "1px solid #D1D5DB", fontFamily: "var(--font-mono)", fontSize: 12, color: "#374151", outline: "none", boxSizing: "border-box" }}
-              onFocus={(e) => { e.currentTarget.style.borderColor = "#3B82F6"; }}
-              onBlur={(e)  => { e.currentTarget.style.borderColor = "#D1D5DB"; }}
+              onSelect={(id, payout) => { onLoadId(id); onAmount(payout); }}
             />
           </div>
         )}
@@ -403,14 +508,260 @@ function InlineNumberEdit({ value, onSave, prefix = "$", allowNeg = false }: {
   );
 }
 
-// ─── Date input style ─────────────────────────────────────────────────────────
+// ─── Date range picker ────────────────────────────────────────────────────────
 
-const dateInputStyle: React.CSSProperties = {
-  fontFamily: "var(--font-sans)", fontSize: 13,
-  padding: "5px 10px", height: 32, borderRadius: 6,
-  border: "1px solid var(--border)", backgroundColor: "var(--input-background)",
-  color: "var(--foreground)", outline: "none", cursor: "pointer",
-};
+type CalView = "days" | "months" | "years";
+
+const MONTH_NAMES_FULL  = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+const MONTH_NAMES_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const DAY_ABBR = ["Su","Mo","Tu","We","Th","Fr","Sa"];
+
+function isoDate(y: number, m: number, d: number) {
+  return `${y}-${String(m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+}
+function daysInMonth(y: number, m: number) { return new Date(y, m + 1, 0).getDate(); }
+function firstDow(y: number, m: number)    { return new Date(y, m, 1).getDay(); }
+
+function fmtRange(from: string, to: string) {
+  const f = (iso: string) => {
+    const [y, mo, d] = iso.split("-").map(Number);
+    return `${MONTH_NAMES_SHORT[mo - 1]} ${d}, ${y}`;
+  };
+  if (!from && !to) return "Select range";
+  if (!to || from === to) return f(from);
+  return `${f(from)} – ${f(to)}`;
+}
+
+interface DateRangePickerProps {
+  from: string;
+  to: string;
+  onChange: (from: string, to: string) => void;
+}
+
+function DateRangePicker({ from, to, onChange }: DateRangePickerProps) {
+  const [open, setOpen]           = useState(false);
+  const [view, setView]           = useState<CalView>("days");
+  const [dispYear, setDispYear]   = useState(() => from ? Number(from.slice(0, 4)) : new Date().getFullYear());
+  const [dispMonth, setDispMonth] = useState(() => from ? Number(from.slice(5, 7)) - 1 : new Date().getMonth());
+  const [pending, setPending]     = useState<string | null>(null);
+  const [hover, setHover]         = useState<string | null>(null);
+  const [rect, setRect]           = useState<DOMRect | null>(null);
+  const anchorRef = useRef<HTMLDivElement>(null);
+  const panelRef  = useRef<HTMLDivElement>(null);
+
+  const navBtn: React.CSSProperties = {
+    width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center",
+    border: "1px solid #E5E7EB", borderRadius: 7, backgroundColor: "#F9FAFB",
+    color: "#374151", fontSize: 15, cursor: "pointer", lineHeight: 1, flexShrink: 0,
+  };
+  const hdrBtn: React.CSSProperties = {
+    fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 700, color: "#111827",
+    background: "none", border: "none", cursor: "pointer", padding: "3px 10px",
+    borderRadius: 6, transition: "background 0.1s",
+  };
+
+  function openPicker() {
+    const r = anchorRef.current?.getBoundingClientRect();
+    if (r) setRect(r);
+    setView("days");
+    if (from) { setDispYear(Number(from.slice(0, 4))); setDispMonth(Number(from.slice(5, 7)) - 1); }
+    setPending(null); setHover(null);
+    setOpen(true);
+  }
+
+  useEffect(() => {
+    if (!open) return;
+    const h = (e: MouseEvent) => {
+      if (!anchorRef.current?.contains(e.target as Node) && !panelRef.current?.contains(e.target as Node)) {
+        setOpen(false); setPending(null);
+      }
+    };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [open]);
+
+  function pickDay(iso: string) {
+    if (!pending) { setPending(iso); }
+    else {
+      const [s, e] = iso >= pending ? [pending, iso] : [iso, pending];
+      onChange(s, e);
+      setPending(null); setHover(null); setOpen(false);
+    }
+  }
+
+  // Effective range to highlight (live while selecting)
+  const ps = pending ?? from;
+  const pe = pending ? (hover ?? pending) : to;
+  const [rs, re] = ps <= pe ? [ps, pe] : [pe, ps];
+
+  function renderDays() {
+    const fdow    = firstDow(dispYear, dispMonth);
+    const dim     = daysInMonth(dispYear, dispMonth);
+    const prevDim = daysInMonth(dispMonth === 0 ? dispYear - 1 : dispYear, dispMonth === 0 ? 11 : dispMonth - 1);
+    const cells: { iso: string; inMonth: boolean }[] = [];
+    for (let i = fdow - 1; i >= 0; i--) {
+      const pm = dispMonth === 0 ? 11 : dispMonth - 1;
+      const py = dispMonth === 0 ? dispYear - 1 : dispYear;
+      cells.push({ iso: isoDate(py, pm, prevDim - i), inMonth: false });
+    }
+    for (let d = 1; d <= dim; d++) cells.push({ iso: isoDate(dispYear, dispMonth, d), inMonth: true });
+    while (cells.length < 42) {
+      const nm = dispMonth === 11 ? 0 : dispMonth + 1;
+      const ny = dispMonth === 11 ? dispYear + 1 : dispYear;
+      cells.push({ iso: isoDate(ny, nm, cells.length - fdow - dim + 1), inMonth: false });
+    }
+
+    function prevM() { if (dispMonth === 0) { setDispMonth(11); setDispYear(y => y - 1); } else setDispMonth(m => m - 1); }
+    function nextM() { if (dispMonth === 11) { setDispMonth(0); setDispYear(y => y + 1); } else setDispMonth(m => m + 1); }
+
+    return (
+      <>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+          <button style={navBtn} onMouseDown={(e) => { e.preventDefault(); prevM(); }}>‹</button>
+          <button style={hdrBtn} onMouseDown={(e) => { e.preventDefault(); setView("months"); }}
+            onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = "#F3F4F6"; }}
+            onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = "transparent"; }}>
+            {MONTH_NAMES_FULL[dispMonth]} {dispYear}
+          </button>
+          <button style={navBtn} onMouseDown={(e) => { e.preventDefault(); nextM(); }}>›</button>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", marginBottom: 3 }}>
+          {DAY_ABBR.map((d) => (
+            <div key={d} style={{ textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 10, fontWeight: 600, color: "#9CA3AF", padding: "0 0 4px", letterSpacing: "0.04em" }}>{d}</div>
+          ))}
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)" }}>
+          {cells.map(({ iso, inMonth }) => {
+            const isS   = iso === rs;
+            const isE   = iso === re && re !== rs;
+            const inRng = iso > rs && iso < re;
+            const d     = Number(iso.slice(8));
+            let bg = "transparent", color = inMonth ? "#374151" : "#D1D5DB", br = "6px", fw: number | string = 400;
+            if (inRng) { bg = "#DBEAFE"; color = "#1D4ED8"; br = "0"; }
+            if (isS)   { bg = "#3B82F6"; color = "#fff"; br = "6px 0 0 6px"; fw = 700; }
+            if (isE)   { bg = "#3B82F6"; color = "#fff"; br = "0 6px 6px 0"; fw = 700; }
+            if (isS && isE) br = "6px";
+            return (
+              <div key={iso} style={{ height: 30, backgroundColor: bg, borderRadius: br, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
+                onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); if (inMonth) pickDay(iso); }}
+                onMouseEnter={() => { if (pending) setHover(iso); }}>
+                <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color, fontWeight: fw, width: 26, height: 26, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 5 }}>{d}</span>
+              </div>
+            );
+          })}
+        </div>
+
+        {pending && (
+          <div style={{ marginTop: 8, fontFamily: "var(--font-sans)", fontSize: 10, color: "#9CA3AF", textAlign: "center" }}>
+            Now click an end date
+          </div>
+        )}
+      </>
+    );
+  }
+
+  function renderMonths() {
+    return (
+      <>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+          <button style={navBtn} onMouseDown={(e) => { e.preventDefault(); setDispYear(y => y - 1); }}>‹</button>
+          <button style={hdrBtn} onMouseDown={(e) => { e.preventDefault(); setView("years"); }}
+            onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = "#F3F4F6"; }}
+            onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = "transparent"; }}>
+            {dispYear}
+          </button>
+          <button style={navBtn} onMouseDown={(e) => { e.preventDefault(); setDispYear(y => y + 1); }}>›</button>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 5 }}>
+          {MONTH_NAMES_SHORT.map((m, idx) => {
+            const active = idx === dispMonth;
+            return (
+              <button key={m}
+                onMouseDown={(e) => { e.preventDefault(); setDispMonth(idx); setView("days"); }}
+                style={{ padding: "9px 0", borderRadius: 7, border: "none", fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: active ? 700 : 400, backgroundColor: active ? "#3B82F6" : "#F3F4F6", color: active ? "#fff" : "#374151", cursor: "pointer" }}
+                onMouseEnter={(e) => { if (!active) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "#E5E7EB"; }}
+                onMouseLeave={(e) => { if (!active) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "#F3F4F6"; }}>
+                {m}
+              </button>
+            );
+          })}
+        </div>
+      </>
+    );
+  }
+
+  function renderYears() {
+    const base  = Math.floor(dispYear / 12) * 12;
+    const years = Array.from({ length: 12 }, (_, i) => base + i);
+    return (
+      <>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+          <button style={navBtn} onMouseDown={(e) => { e.preventDefault(); setDispYear(y => y - 12); }}>‹</button>
+          <span style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 700, color: "#111827" }}>{base} – {base + 11}</span>
+          <button style={navBtn} onMouseDown={(e) => { e.preventDefault(); setDispYear(y => y + 12); }}>›</button>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 5 }}>
+          {years.map((y) => {
+            const active = y === dispYear;
+            return (
+              <button key={y}
+                onMouseDown={(e) => { e.preventDefault(); setDispYear(y); setView("months"); }}
+                style={{ padding: "9px 0", borderRadius: 7, border: "none", fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: active ? 700 : 400, backgroundColor: active ? "#3B82F6" : "#F3F4F6", color: active ? "#fff" : "#374151", cursor: "pointer" }}
+                onMouseEnter={(e) => { if (!active) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "#E5E7EB"; }}
+                onMouseLeave={(e) => { if (!active) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "#F3F4F6"; }}>
+                {y}
+              </button>
+            );
+          })}
+        </div>
+      </>
+    );
+  }
+
+  const PANEL_W = 268;
+  const panelLeft = rect ? Math.min(rect.left, window.innerWidth - PANEL_W - 8) : 0;
+  const panelTop  = rect ? rect.bottom + 6 : 0;
+
+  return (
+    <>
+      <div ref={anchorRef} onClick={openPicker} style={{ flexShrink: 0 }}>
+        <button style={{
+          display: "inline-flex", alignItems: "center", gap: 7, height: 32, padding: "0 12px",
+          fontFamily: "var(--font-sans)", fontSize: 13,
+          backgroundColor: "var(--input-background)",
+          border: `1px solid ${open ? "var(--primary)" : "var(--border)"}`,
+          borderRadius: 6, color: "var(--foreground)", cursor: "pointer",
+          boxShadow: open ? "0 0 0 3px rgba(59,130,246,0.12)" : "none", outline: "none",
+          whiteSpace: "nowrap",
+        }}>
+          <Calendar size={13} style={{ color: "var(--muted-foreground)", flexShrink: 0 }} />
+          {fmtRange(from, to)}
+          <ChevronDown size={12} style={{ color: "var(--muted-foreground)", transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s", marginLeft: 2 }} />
+        </button>
+      </div>
+
+      {open && rect && createPortal(
+        <div
+          ref={panelRef}
+          onMouseDown={(e) => e.stopPropagation()}
+          style={{
+            position: "fixed", top: panelTop, left: panelLeft, zIndex: 9999,
+            width: PANEL_W, backgroundColor: "#fff",
+            border: "1.5px solid #3B82F6", borderRadius: 12,
+            boxShadow: "0 8px 32px rgba(0,0,0,0.18)", padding: 14,
+          }}
+        >
+          {view === "days"   && renderDays()}
+          {view === "months" && renderMonths()}
+          {view === "years"  && renderYears()}
+        </div>,
+        document.body
+      )}
+    </>
+  );
+}
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
@@ -478,7 +829,6 @@ export function GrossMatrix() {
   const grandTotal  = paged.reduce((s, d) => s + rangeTotal(d), 0);
   const grandProfit = paged.reduce((s, d) => s + d.companyProfit, 0);
   const rangeDays   = dates.length;
-  const formatDate  = (iso: string) => new Date(iso + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 
   const R = { total: 240, target: 120, profit: 0 };
 
@@ -518,23 +868,11 @@ export function GrossMatrix() {
               />
             </div>
 
-            <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
-              <Calendar size={14} style={{ color: "var(--muted-foreground)" }} />
-              <input type="date" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setPage(1); }} style={dateInputStyle}
-                onFocus={(e) => { e.currentTarget.style.borderColor = "var(--primary)"; }}
-                onBlur={(e)  => { e.currentTarget.style.borderColor = "var(--border)"; }}
-              />
-              <span style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>–</span>
-              <input type="date" value={dateTo} onChange={(e) => { setDateTo(e.target.value); setPage(1); }} style={dateInputStyle}
-                onFocus={(e) => { e.currentTarget.style.borderColor = "var(--primary)"; }}
-                onBlur={(e)  => { e.currentTarget.style.borderColor = "var(--border)"; }}
-              />
-            </div>
-            {dateFrom && dateTo && dateFrom <= dateTo && (
-              <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)", flexShrink: 0, whiteSpace: "nowrap" }}>
-                {formatDate(dateFrom)} – {formatDate(dateTo)}
-              </span>
-            )}
+            <DateRangePicker
+              from={dateFrom}
+              to={dateTo}
+              onChange={(f, t) => { setDateFrom(f); setDateTo(t); setPage(1); }}
+            />
           </div>
 
           {/* Table */}

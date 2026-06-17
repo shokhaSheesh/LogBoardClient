@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { Status, STATUS_CONFIG, ALL_STATUSES } from "../lib/statuses";
 import {
   User, Users, Plus, Pencil, Trash2, MapPin, MessageSquare,
@@ -17,10 +18,11 @@ interface SoloDriver {
   status: DriverStatus; truck: string; trailer: string; location: string; comment: string;
   weeklyGrossTarget?: number;
   currentLoad?: string;
+  nextLoad?: string;
 }
 
 const initSolo: SoloDriver[] = [
-  { id: 1,  name: "Carlos Mendez",      phone: "(214) 555-0132", type: "O/O", status: "enroute",    truck: "TRK-4481", trailer: "TRL-2210", location: "Dallas, TX",     comment: "Prefer night runs",       weeklyGrossTarget: 5000, currentLoad: "LD-00481" },
+  { id: 1,  name: "Carlos Mendez",      phone: "(214) 555-0132", type: "O/O", status: "enroute",    truck: "TRK-4481", trailer: "TRL-2210", location: "Dallas, TX",     comment: "Prefer night runs",       weeklyGrossTarget: 5000, currentLoad: "LD-00481", nextLoad: "LD-01551" },
   { id: 2,  name: "Angela Torres",      phone: "(312) 555-0871", type: "C/D", status: "ready",      truck: "TRK-2290", trailer: "TRL-0881", location: "Chicago, IL",    comment: "Available from 06:00",    weeklyGrossTarget: 3500 },
   { id: 3,  name: "Darnell Washington", phone: "(404) 555-0344", type: "O/O", status: "rest",       truck: "TRK-8813", trailer: "TRL-4430", location: "Atlanta, GA",    comment: "Waiting on load",         weeklyGrossTarget: 4000 },
   { id: 4,  name: "Priya Sharma",       phone: "(713) 555-0209", type: "C/D", status: "dispatched", truck: "TRK-5577", trailer: "TRL-1190", location: "Houston, TX",    comment: "Dock #7",                 weeklyGrossTarget: 4500, currentLoad: "LD-00577" },
@@ -35,10 +37,11 @@ interface TeamDriver {
   type: DriverType; status: DriverStatus; truck: string; trailer: string; comment: string;
   weeklyGrossTarget?: number;
   currentLoad?: string;
+  nextLoad?: string;
 }
 
 const initTeam: TeamDriver[] = [
-  { id: 1, name1: "Jean Eddy Simon",     name2: "Jean Wesly Herard",   phone1: "(504) 555-0112", phone2: "(504) 555-0224", type: "C/D", status: "enroute",    truck: "TRK-7701", trailer: "TRL-8810", comment: "Relay every 500 mi",   weeklyGrossTarget: 7000, currentLoad: "LD-01024" },
+  { id: 1, name1: "Jean Eddy Simon",     name2: "Jean Wesly Herard",   phone1: "(504) 555-0112", phone2: "(504) 555-0224", type: "C/D", status: "enroute",    truck: "TRK-7701", trailer: "TRL-8810", comment: "Relay every 500 mi",   weeklyGrossTarget: 7000, currentLoad: "LD-01024", nextLoad: "LD-01680" },
   { id: 2, name1: "Keavis Dyer",         name2: "James Schwein",       phone1: "(813) 555-0337", phone2: "(813) 555-0448", type: "O/O", status: "dispatched", truck: "TRK-4412", trailer: "TRL-2230", comment: "Coast-to-coast route", weeklyGrossTarget: 8000, currentLoad: "LD-01105" },
   { id: 3, name1: "Shokhnurbek Komilov", name2: "Umarkhon Kholmirzaev",phone1: "(469) 555-0891", phone2: "(469) 555-0902", type: "C/D", status: "rest",       truck: "TRK-6650", trailer: "TRL-9910", comment: "On standby"            },
   { id: 4, name1: "Bakhodir Azamov",     name2: "Ilhom Latipov",       phone1: "(832) 555-0563", phone2: "(832) 555-0674", type: "O/O", status: "ready",      truck: "TRK-1130", trailer: "TRL-4450", comment: "Midwest circuit",      weeklyGrossTarget: 6500 },
@@ -108,7 +111,7 @@ const TEAM_WEEKLY_LOADS: Record<number, LoadEntry[]> = {
 interface SelectOpt { value: string; label: string; dot?: string }
 
 function CustomSelect({
-  value, options, onChange, width, compact = false, dropUp = false,
+  value, options, onChange, width, compact = false, dropUp = false, searchable = false,
 }: {
   value: string;
   options: SelectOpt[];
@@ -116,8 +119,10 @@ function CustomSelect({
   width?: number | string;
   compact?: boolean;
   dropUp?: boolean;
+  searchable?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -130,12 +135,15 @@ function CustomSelect({
 
   const selected = options.find((o) => o.value === value);
   const h = compact ? 30 : 34;
+  const filtered = searchable && query
+    ? options.filter((o) => o.label.toLowerCase().includes(query.toLowerCase()))
+    : options;
 
   return (
     <div ref={ref} style={{ position: "relative", width: width ?? "100%" }}>
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => { setOpen((v) => !v); setQuery(""); }}
         style={{
           display: "flex", alignItems: "center", gap: 8, width: "100%",
           height: h, paddingLeft: 10, paddingRight: 8,
@@ -177,7 +185,28 @@ function CustomSelect({
           boxShadow: "0 8px 24px rgba(0,0,0,0.10)",
           zIndex: 200, overflow: "hidden",
         }}>
-          {options.map((opt) => {
+          {searchable && (
+            <div style={{ padding: "8px 8px 4px" }}>
+              <div style={{ position: "relative" }}>
+                <Search size={12} style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", color: "var(--muted-foreground)", pointerEvents: "none" }} />
+                <input
+                  autoFocus
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Search…"
+                  style={{
+                    width: "100%", height: 30, paddingLeft: 26, paddingRight: 8,
+                    fontFamily: "var(--font-sans)", fontSize: 12,
+                    border: "1px solid var(--border)", borderRadius: 6,
+                    backgroundColor: "var(--input-background)", color: "var(--foreground)",
+                    outline: "none", boxSizing: "border-box",
+                  }}
+                />
+              </div>
+            </div>
+          )}
+          <div style={{ maxHeight: 180, overflowY: "auto", scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent" }}>
+          {filtered.map((opt) => {
             const isActive = opt.value === value;
             return (
               <button
@@ -211,6 +240,7 @@ function CustomSelect({
               </button>
             );
           })}
+          </div>
         </div>
       )}
     </div>
@@ -355,6 +385,78 @@ function StatusBadge({ status }: { status: DriverStatus }) {
   );
 }
 
+function StatusDropdown({ value, onChange }: { value: Status; onChange: (s: Status) => void }) {
+  const [open, setOpen] = useState(false);
+  const [rect, setRect] = useState<DOMRect | null>(null);
+  const anchorRef = useRef<HTMLDivElement>(null);
+  const dropRef   = useRef<HTMLDivElement>(null);
+
+  const toggle = () => {
+    const r = anchorRef.current?.getBoundingClientRect();
+    if (r) setRect(r);
+    setOpen((v) => !v);
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    const h = (e: MouseEvent) => {
+      if (!anchorRef.current?.contains(e.target as Node) && !dropRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [open]);
+
+  const cfg = STATUS_CONFIG[value];
+
+  return (
+    <>
+      <div ref={anchorRef} onClick={toggle} style={{ cursor: "pointer", display: "inline-flex" }}>
+        <span style={{
+          display: "inline-flex", alignItems: "center", gap: 5,
+          fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600,
+          color: cfg.color, backgroundColor: cfg.bg,
+          borderRadius: 4, padding: "3px 8px", whiteSpace: "nowrap", userSelect: "none",
+        }}>
+          {cfg.label}
+          <ChevronDown size={10} style={{ opacity: 0.7, marginLeft: 1 }} />
+        </span>
+      </div>
+      {open && rect && createPortal(
+        <div ref={dropRef} style={{
+          position: "fixed", top: rect.bottom + 5, left: rect.left, zIndex: 9999,
+          backgroundColor: "var(--card)", border: "1px solid var(--border)",
+          borderRadius: 10, boxShadow: "0 10px 30px rgba(0,0,0,0.16)",
+          padding: "5px", minWidth: 168, display: "flex", flexDirection: "column", gap: 1,
+        }}>
+          {ALL_STATUSES.map((s) => {
+            const c = STATUS_CONFIG[s];
+            const active = s === value;
+            return (
+              <button key={s} onMouseDown={(e) => { e.preventDefault(); onChange(s); setOpen(false); }}
+                style={{
+                  display: "flex", alignItems: "center", gap: 8, padding: "6px 8px",
+                  border: "none", borderRadius: 6,
+                  backgroundColor: active ? c.bg : "transparent",
+                  cursor: "pointer", width: "100%", textAlign: "left",
+                }}
+                onMouseEnter={(e) => { if (!active) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--muted)"; }}
+                onMouseLeave={(e) => { if (!active) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "transparent"; }}
+              >
+                <span style={{ width: 10, height: 10, borderRadius: "50%", backgroundColor: c.bg, border: `2px solid ${c.bg}`, flexShrink: 0 }} />
+                <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: active ? 600 : 400, color: active ? c.color : "var(--foreground)", flex: 1 }}>
+                  {c.label}
+                </span>
+                {active && <Check size={12} style={{ color: c.color, flexShrink: 0 }} />}
+              </button>
+            );
+          })}
+        </div>,
+        document.body
+      )}
+    </>
+  );
+}
+
 function TypeBadge({ type }: { type: DriverType }) {
   return (
     <span style={{
@@ -399,6 +501,16 @@ const TYPE_OPTS: SelectOpt[] = [
   { value: "O/O", label: "O/O — Owner Operator" },
   { value: "C/D", label: "C/D — Company Driver"  },
 ];
+
+const TRUCK_OPTIONS: SelectOpt[] = [
+  "TRK-4481","TRK-2290","TRK-8813","TRK-5577","TRK-3342",
+  "TRK-6610","TRK-9924","TRK-1157","TRK-7701","TRK-4412","TRK-6650","TRK-1130",
+].map((v) => ({ value: v, label: v }));
+
+const TRAILER_OPTIONS: SelectOpt[] = [
+  "TRL-2210","TRL-0881","TRL-4430","TRL-1190","TRL-6620",
+  "TRL-3300","TRL-7710","TRL-5540","TRL-8810","TRL-2230","TRL-9910","TRL-4450",
+].map((v) => ({ value: v, label: v }));
 
 // ─── Field label ─────────────────────────────────────────────────────────────
 
@@ -458,34 +570,34 @@ function SoloModal({ driver, onClose, onSave }: {
 
         {/* Body */}
         <div style={{ padding: "20px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-          {([["name","Full Name"],["phone","Phone Number"],["truck","Truck Unit"],["trailer","Trailer Unit"],["location","Current Location"]] as [keyof SoloDriver, string][]).map(([k, label]) => (
-            <label key={k} style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-              <FieldLabel>{label}</FieldLabel>
-              <FieldInput value={(form[k] as string) ?? ""} onChange={(v) => set(k, v)} />
-            </label>
-          ))}
+          <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+            <FieldLabel>Full Name</FieldLabel>
+            <FieldInput value={(form.name as string) ?? ""} onChange={(v) => set("name", v)} />
+          </label>
 
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-            <FieldLabel>Current Load</FieldLabel>
-            <FieldInput value={(form.currentLoad as string) ?? ""} onChange={(v) => set("currentLoad", v)} placeholder="e.g. LD-00481" />
+            <FieldLabel>Phone Number</FieldLabel>
+            <FieldInput value={(form.phone as string) ?? ""} onChange={(v) => set("phone", v)} />
+          </label>
+
+          <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+            <FieldLabel>Truck Unit</FieldLabel>
+            <CustomSelect value={form.truck ?? ""} options={TRUCK_OPTIONS} onChange={(v) => set("truck", v)} searchable />
+          </label>
+
+          <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+            <FieldLabel>Trailer Unit</FieldLabel>
+            <CustomSelect value={form.trailer ?? ""} options={TRAILER_OPTIONS} onChange={(v) => set("trailer", v)} searchable />
           </label>
 
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
             <FieldLabel>Type</FieldLabel>
-            <CustomSelect
-              value={form.type ?? "O/O"}
-              options={TYPE_OPTS}
-              onChange={(v) => set("type", v)}
-            />
+            <CustomSelect value={form.type ?? "O/O"} options={TYPE_OPTS} onChange={(v) => set("type", v)} />
           </label>
 
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
             <FieldLabel>Status</FieldLabel>
-            <CustomSelect
-              value={form.status ?? "ready"}
-              options={STATUS_MODAL_OPTS}
-              onChange={(v) => set("status", v)}
-            />
+            <CustomSelect value={form.status ?? "ready"} options={STATUS_MODAL_OPTS} onChange={(v) => set("status", v)} />
           </label>
 
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
@@ -493,18 +605,10 @@ function SoloModal({ driver, onClose, onSave }: {
             <div style={{ position: "relative" }}>
               <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)", pointerEvents: "none" }}>$</span>
               <input
-                type="number"
-                min={0}
-                value={form.weeklyGrossTarget ?? ""}
+                type="number" min={0} value={form.weeklyGrossTarget ?? ""}
                 onChange={(e) => setForm((f) => ({ ...f, weeklyGrossTarget: e.target.value === "" ? undefined : Number(e.target.value) }))}
                 placeholder="e.g. 5000"
-                style={{
-                  fontFamily: "var(--font-sans)", fontSize: 13,
-                  padding: "7px 10px 7px 22px", borderRadius: 6, height: 34,
-                  border: "1px solid var(--border)", backgroundColor: "var(--input-background)",
-                  color: "var(--foreground)", outline: "none", width: "100%", boxSizing: "border-box",
-                  transition: "border-color 0.15s, box-shadow 0.15s",
-                }}
+                style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 10px 7px 22px", borderRadius: 6, height: 34, border: "1px solid var(--border)", backgroundColor: "var(--input-background)", color: "var(--foreground)", outline: "none", width: "100%", boxSizing: "border-box" }}
                 onFocus={(e) => { e.currentTarget.style.borderColor = "var(--primary)"; e.currentTarget.style.boxShadow = "0 0 0 3px rgba(59,130,246,0.12)"; }}
                 onBlur={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.boxShadow = "none"; }}
               />
@@ -557,34 +661,44 @@ function TeamModal({ driver, onClose, onSave }: {
         </div>
 
         <div style={{ padding: "20px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-          {textFields.map(([k, label]) => (
-            <label key={k} style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-              <FieldLabel>{label}</FieldLabel>
-              <FieldInput value={(form[k] as string) ?? ""} onChange={(v) => set(k, v)} />
-            </label>
-          ))}
+          <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+            <FieldLabel>Driver 1 Name</FieldLabel>
+            <FieldInput value={(form.name1 as string) ?? ""} onChange={(v) => set("name1", v)} />
+          </label>
 
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-            <FieldLabel>Current Load</FieldLabel>
-            <FieldInput value={(form.currentLoad as string) ?? ""} onChange={(v) => set("currentLoad", v)} placeholder="e.g. LD-01024" />
+            <FieldLabel>Driver 1 Phone</FieldLabel>
+            <FieldInput value={(form.phone1 as string) ?? ""} onChange={(v) => set("phone1", v)} />
+          </label>
+
+          <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+            <FieldLabel>Driver 2 Name</FieldLabel>
+            <FieldInput value={(form.name2 as string) ?? ""} onChange={(v) => set("name2", v)} />
+          </label>
+
+          <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+            <FieldLabel>Driver 2 Phone</FieldLabel>
+            <FieldInput value={(form.phone2 as string) ?? ""} onChange={(v) => set("phone2", v)} />
+          </label>
+
+          <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+            <FieldLabel>Truck Unit</FieldLabel>
+            <CustomSelect value={form.truck ?? ""} options={TRUCK_OPTIONS} onChange={(v) => set("truck", v)} searchable />
+          </label>
+
+          <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+            <FieldLabel>Trailer Unit</FieldLabel>
+            <CustomSelect value={form.trailer ?? ""} options={TRAILER_OPTIONS} onChange={(v) => set("trailer", v)} searchable />
           </label>
 
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
             <FieldLabel>Type</FieldLabel>
-            <CustomSelect
-              value={form.type ?? "C/D"}
-              options={TYPE_OPTS}
-              onChange={(v) => set("type", v)}
-            />
+            <CustomSelect value={form.type ?? "C/D"} options={TYPE_OPTS} onChange={(v) => set("type", v)} />
           </label>
 
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
             <FieldLabel>Status</FieldLabel>
-            <CustomSelect
-              value={form.status ?? "ready"}
-              options={STATUS_MODAL_OPTS}
-              onChange={(v) => set("status", v)}
-            />
+            <CustomSelect value={form.status ?? "ready"} options={STATUS_MODAL_OPTS} onChange={(v) => set("status", v)} />
           </label>
 
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
@@ -592,18 +706,10 @@ function TeamModal({ driver, onClose, onSave }: {
             <div style={{ position: "relative" }}>
               <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)", pointerEvents: "none" }}>$</span>
               <input
-                type="number"
-                min={0}
-                value={form.weeklyGrossTarget ?? ""}
+                type="number" min={0} value={form.weeklyGrossTarget ?? ""}
                 onChange={(e) => setForm((f) => ({ ...f, weeklyGrossTarget: e.target.value === "" ? undefined : Number(e.target.value) }))}
                 placeholder="e.g. 7000"
-                style={{
-                  fontFamily: "var(--font-sans)", fontSize: 13,
-                  padding: "7px 10px 7px 22px", borderRadius: 6, height: 34,
-                  border: "1px solid var(--border)", backgroundColor: "var(--input-background)",
-                  color: "var(--foreground)", outline: "none", width: "100%", boxSizing: "border-box",
-                  transition: "border-color 0.15s, box-shadow 0.15s",
-                }}
+                style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 10px 7px 22px", borderRadius: 6, height: 34, border: "1px solid var(--border)", backgroundColor: "var(--input-background)", color: "var(--foreground)", outline: "none", width: "100%", boxSizing: "border-box" }}
                 onFocus={(e) => { e.currentTarget.style.borderColor = "var(--primary)"; e.currentTarget.style.boxShadow = "0 0 0 3px rgba(59,130,246,0.12)"; }}
                 onBlur={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.boxShadow = "none"; }}
               />
@@ -1457,6 +1563,9 @@ function SoloTab({ onSelectDriver }: { onSelectDriver: (d: SoloDriver) => void }
   const [importing, setImporting]     = useState(false);
   let nextId = Math.max(0, ...rows.map((r) => r.id)) + 1;
 
+  const patchRow = (id: number, fields: Partial<SoloDriver>) =>
+    setRows((prev) => prev.map((d) => (d.id === id ? { ...d, ...fields } : d)));
+
   const openCreate = () => { setEditing({}); setModal("create"); };
   const openEdit   = (d: SoloDriver) => { setEditing(d); setModal("edit"); };
   const save = (d: SoloDriver) => {
@@ -1496,6 +1605,7 @@ function SoloTab({ onSelectDriver }: { onSelectDriver: (d: SoloDriver) => void }
               <TH width={72}>Type</TH>
               <TH width={110}>Status</TH>
               <TH width={120}>Current Load</TH>
+              <TH width={120}>Next Load</TH>
               <TH width={110}>Truck</TH>
               <TH width={110}>Trailer</TH>
               <TH width={160}>Location</TH>
@@ -1528,11 +1638,20 @@ function SoloTab({ onSelectDriver }: { onSelectDriver: (d: SoloDriver) => void }
                 </TD>
                 <TD mono>{d.phone}</TD>
                 <TD><TypeBadge type={d.type} /></TD>
-                <TD><StatusBadge status={d.status} /></TD>
+                <TD><StatusDropdown value={d.status} onChange={(s) => patchRow(d.id, { status: s })} /></TD>
                 <TD mono>
                   {d.currentLoad ? (
                     <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 600, color: "var(--primary)", backgroundColor: "var(--secondary)", borderRadius: 4, padding: "2px 7px" }}>
                       {d.currentLoad}
+                    </span>
+                  ) : (
+                    <span style={{ color: "var(--muted-foreground)" }}>—</span>
+                  )}
+                </TD>
+                <TD mono>
+                  {d.nextLoad ? (
+                    <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 600, color: "#F59E0B", backgroundColor: "#FEF3C7", borderRadius: 4, padding: "2px 7px" }}>
+                      {d.nextLoad}
                     </span>
                   ) : (
                     <span style={{ color: "var(--muted-foreground)" }}>—</span>
@@ -1562,7 +1681,7 @@ function SoloTab({ onSelectDriver }: { onSelectDriver: (d: SoloDriver) => void }
             ))}
             {paged.length === 0 && (
               <tr>
-                <td colSpan={10} style={{ padding: "40px 20px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
+                <td colSpan={11} style={{ padding: "40px 20px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
                   No drivers match your filters.
                 </td>
               </tr>
@@ -1602,6 +1721,9 @@ function TeamTab({ onSelectTeam }: { onSelectTeam: (d: TeamDriver) => void }) {
   const [pageSize, setPageSize]   = useState(20);
   const [importing, setImporting] = useState(false);
   let nextId = Math.max(0, ...rows.map((r) => r.id)) + 1;
+
+  const patchRow = (id: number, fields: Partial<TeamDriver>) =>
+    setRows((prev) => prev.map((d) => (d.id === id ? { ...d, ...fields } : d)));
 
   const openCreate = () => { setEditing({}); setModal("create"); };
   const openEdit   = (d: TeamDriver) => { setEditing(d); setModal("edit"); };
@@ -1644,6 +1766,7 @@ function TeamTab({ onSelectTeam }: { onSelectTeam: (d: TeamDriver) => void }) {
               <TH width={72}>Type</TH>
               <TH width={110}>Status</TH>
               <TH width={120}>Current Load</TH>
+              <TH width={120}>Next Load</TH>
               <TH width={110}>Truck</TH>
               <TH width={110}>Trailer</TH>
               <TH width={240}>Comment</TH>
@@ -1678,11 +1801,20 @@ function TeamTab({ onSelectTeam }: { onSelectTeam: (d: TeamDriver) => void }) {
                 </TD>
                 <TD mono>{d.phone2}</TD>
                 <TD><TypeBadge type={d.type} /></TD>
-                <TD><StatusBadge status={d.status} /></TD>
+                <TD><StatusDropdown value={d.status} onChange={(s) => patchRow(d.id, { status: s })} /></TD>
                 <TD mono>
                   {d.currentLoad ? (
                     <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 600, color: "var(--primary)", backgroundColor: "var(--secondary)", borderRadius: 4, padding: "2px 7px" }}>
                       {d.currentLoad}
+                    </span>
+                  ) : (
+                    <span style={{ color: "var(--muted-foreground)" }}>—</span>
+                  )}
+                </TD>
+                <TD mono>
+                  {d.nextLoad ? (
+                    <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 600, color: "#F59E0B", backgroundColor: "#FEF3C7", borderRadius: 4, padding: "2px 7px" }}>
+                      {d.nextLoad}
                     </span>
                   ) : (
                     <span style={{ color: "var(--muted-foreground)" }}>—</span>
@@ -1706,7 +1838,7 @@ function TeamTab({ onSelectTeam }: { onSelectTeam: (d: TeamDriver) => void }) {
             ))}
             {paged.length === 0 && (
               <tr>
-                <td colSpan={12} style={{ padding: "40px 20px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
+                <td colSpan={13} style={{ padding: "40px 20px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
                   No teams match your filters.
                 </td>
               </tr>

@@ -9,6 +9,7 @@ import { DriversPage } from "./pages/DriversPage";
 import { EquipmentsPage } from "./pages/EquipmentsPage";
 import { PayoutsPage } from "./pages/PayoutsPage";
 import { SettingsPage } from "./pages/SettingsPage";
+import { BillingPage } from "./pages/BillingPage";
 
 export const router = createBrowserRouter([
   {
@@ -27,6 +28,7 @@ export const router = createBrowserRouter([
       { path: "drivers", element: <DriversPage /> },
       { path: "equipments", element: <EquipmentsPage /> },
       { path: "payouts", element: <PayoutsPage /> },
+      { path: "billing",    element: <BillingPage />  },
       { path: "settings/*", element: <SettingsPage /> },
     ],
   },

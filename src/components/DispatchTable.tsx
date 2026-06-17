@@ -19,12 +19,14 @@ interface Driver {
   type: DriverType;
   status: Status;
   origin: string;
+  originDone?: boolean;
   destination: string;
   stops?: Stop[];
   pickupAppt: string;
   dropAppt: string;
   location: string;
   etaKm: number | null;
+  speedMph?: number | null;
   comments: string;
   lastUpdate: string;
 }
@@ -44,25 +46,25 @@ const INIT_DRIVERS: Driver[] = [
       { city: "Memphis, TN",    done: false, appt: "06/12 · 17:30" },
     ],
     pickupAppt: "06/12 · 08:00", dropAppt: "06/12 · 17:30",
-    location: "Little Rock, AR", etaKm: 235, comments: "Fuel stop needed at Mile 220", lastUpdate: "2m ago",
+    location: "Little Rock, AR", etaKm: 235, speedMph: 62, comments: "Fuel stop needed at Mile 220", lastUpdate: "2m ago",
   },
   {
     loadId: "LD-00290", name: "Angela Torres", phone: "(312) 555-0871", unit: "TRK-2290", type: "C/D", status: "home",
     origin: "Chicago, IL", destination: "—",
     pickupAppt: "—", dropAppt: "—",
-    location: "Chicago, IL", etaKm: null, comments: "Available from 06:00 tomorrow", lastUpdate: "18m ago",
+    location: "Chicago, IL", etaKm: null, speedMph: null, comments: "Available from 06:00 tomorrow", lastUpdate: "18m ago",
   },
   {
     loadId: "LD-00813", name: "Darnell Washington", phone: "(404) 555-0344", unit: "TRK-8813", type: "O/O", status: "ready",
     origin: "Atlanta, GA", destination: "Nashville, TN",
     pickupAppt: "06/12 · 11:00", dropAppt: "06/12 · 16:00",
-    location: "Chattanooga, TN", etaKm: 170, comments: "Waiting for load assignment", lastUpdate: "5m ago",
+    location: "Chattanooga, TN", etaKm: 170, speedMph: 58, comments: "Waiting for load assignment", lastUpdate: "5m ago",
   },
   {
     loadId: "LD-00577", name: "Priya Sharma", phone: "(713) 555-0209", unit: "TRK-5577", type: "C/D", status: "dispatched",
     origin: "Houston, TX", destination: "San Antonio, TX",
     pickupAppt: "06/12 · 14:30", dropAppt: "06/13 · 07:00",
-    location: "Houston, TX", etaKm: 320, comments: "Dock #7 — ETA 14:30", lastUpdate: "1m ago",
+    location: "Houston, TX", etaKm: 320, speedMph: 65, comments: "Dock #7 — ETA 14:30", lastUpdate: "1m ago",
   },
   {
     loadId: "LD-00342", name: "Marcus Webb", phone: "(602) 555-0518", unit: "TRK-3342", type: "O/O", status: "delivered",
@@ -72,7 +74,7 @@ const INIT_DRIVERS: Driver[] = [
       { city: "Los Angeles, CA",  done: true, appt: "06/12 · 10:45" },
     ],
     pickupAppt: "06/11 · 09:00", dropAppt: "06/12 · 10:45",
-    location: "Los Angeles, CA", etaKm: 0, comments: "POD signed, heading back empty", lastUpdate: "12m ago",
+    location: "Los Angeles, CA", etaKm: 0, speedMph: null, comments: "POD signed, heading back empty", lastUpdate: "12m ago",
   },
   {
     loadId: "LD-00610", name: "Linda Okafor", phone: "(720) 555-0763", unit: "TRK-6610", type: "C/D", status: "enroute",
@@ -83,19 +85,19 @@ const INIT_DRIVERS: Driver[] = [
       { city: "Kansas City, MO",  done: false, appt: "06/12 · 19:00" },
     ],
     pickupAppt: "06/12 · 06:30", dropAppt: "06/12 · 19:00",
-    location: "Hays, KS", etaKm: 415, comments: "Weather delay — I-70 construction", lastUpdate: "7m ago",
+    location: "Hays, KS", etaKm: 415, speedMph: 70, comments: "Weather delay — I-70 construction", lastUpdate: "7m ago",
   },
   {
     loadId: "LD-00924", name: "Ray Kowalski", phone: "(702) 555-0487", unit: "TRK-9924", type: "O/O", status: "ready",
     origin: "Las Vegas, NV", destination: "Salt Lake City, UT",
     pickupAppt: "06/13 · 08:00", dropAppt: "06/13 · 15:30",
-    location: "St. George, UT", etaKm: 430, comments: "Call before dispatching", lastUpdate: "34m ago",
+    location: "St. George, UT", etaKm: 430, speedMph: 55, comments: "Call before dispatching", lastUpdate: "34m ago",
   },
   {
     loadId: "LD-00157", name: "Tomás García", phone: "(305) 555-0622", unit: "TRK-1157", type: "C/D", status: "home",
     origin: "Miami, FL", destination: "—",
     pickupAppt: "—", dropAppt: "—",
-    location: "Miami, FL", etaKm: null, comments: "Day off — return Monday", lastUpdate: "3h ago",
+    location: "Miami, FL", etaKm: null, speedMph: null, comments: "Day off — return Monday", lastUpdate: "3h ago",
   },
 ];
 
@@ -327,14 +329,18 @@ function InlineCell({ value, onCommit, mono, fontSize = 12, color = "var(--foreg
 
 // ── Stop list display ────────────────────────────────────────────────────────
 
-function StopList({ origin, destination, stops, onToggleStop, onEditStop }: {
+function StopList({ origin, originDone, destination, stops, onToggleStop, onEditStop, onToggleOrigin, onEditOrigin }: {
   origin: string;
+  originDone?: boolean;
   destination: string;
   stops?: Stop[];
   onToggleStop?: (idx: number) => void;
   onEditStop?: (idx: number, city: string) => void;
+  onToggleOrigin?: () => void;
+  onEditOrigin?: (city: string) => void;
 }) {
   const [editingStop, setEditingStop] = useState<number | null>(null);
+  const [editingOrigin, setEditingOrigin] = useState(false);
   const [draft, setDraft] = useState("");
 
   const labelStyle: React.CSSProperties = {
@@ -347,11 +353,11 @@ function StopList({ origin, destination, stops, onToggleStop, onEditStop }: {
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-          <span style={labelStyle}>FROM</span>
+          <span style={labelStyle}>#1</span>
           <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--foreground)" }}>{origin}</span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-          <span style={labelStyle}>TO</span>
+          <span style={labelStyle}>#2</span>
           <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: destination === "—" ? "var(--muted-foreground)" : "var(--foreground)" }}>{destination}</span>
         </div>
       </div>
@@ -360,10 +366,44 @@ function StopList({ origin, destination, stops, onToggleStop, onEditStop }: {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-      {/* Origin */}
+      {/* Origin — stop #1 */}
       <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-        <span style={labelStyle}>FROM</span>
-        <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--foreground)" }}>{origin}</span>
+        <span style={labelStyle}>#1</span>
+        <button
+          onClick={() => onToggleOrigin?.()}
+          title={originDone ? "Mark incomplete" : "Mark complete"}
+          style={{ width: 16, height: 16, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, border: "none", background: "none", cursor: onToggleOrigin ? "pointer" : "default", padding: 0 }}
+        >
+          {originDone ? (
+            <span style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 16, height: 16, borderRadius: "50%", backgroundColor: "#D1FAE5" }}>
+              <Check size={9} style={{ color: "#10B981" }} />
+            </span>
+          ) : (
+            <span style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 16, height: 16, borderRadius: "50%", backgroundColor: "var(--secondary)" }}>
+              <ArrowRight size={9} style={{ color: "var(--primary)" }} />
+            </span>
+          )}
+        </button>
+        {editingOrigin ? (
+          <input
+            autoFocus
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={() => { onEditOrigin?.(draft); setEditingOrigin(false); }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") { e.preventDefault(); onEditOrigin?.(draft); setEditingOrigin(false); }
+              if (e.key === "Escape") setEditingOrigin(false);
+            }}
+            style={{ border: "none", outline: "none", background: "transparent", fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--foreground)", padding: 0, flex: 1, borderBottom: "1.5px solid var(--primary)" }}
+          />
+        ) : (
+          <span
+            onClick={() => { setDraft(origin); setEditingOrigin(true); }}
+            style={{ fontFamily: "var(--font-sans)", fontSize: 12, cursor: "text", color: originDone ? "var(--muted-foreground)" : "var(--foreground)", textDecoration: originDone ? "line-through" : "none" }}
+          >
+            {origin}
+          </span>
+        )}
       </div>
 
       {/* Stops */}
@@ -374,14 +414,16 @@ function StopList({ origin, destination, stops, onToggleStop, onEditStop }: {
 
         return (
           <div key={idx} style={{ display: "flex", alignItems: "center", gap: 5 }}>
+            {/* Stop number label */}
+            <span style={{ ...labelStyle }}>#{idx + 2}</span>
             {/* Clickable icon — toggles done */}
             <button
               onClick={() => onToggleStop?.(idx)}
               title={stop.done ? "Mark incomplete" : "Mark complete"}
               style={{
-                width: 30, display: "flex", justifyContent: "flex-end", flexShrink: 0,
-                paddingRight: 2, border: "none", background: "none", cursor: onToggleStop ? "pointer" : "default",
-                padding: 0,
+                width: 16, height: 16, display: "flex", alignItems: "center", justifyContent: "center",
+                flexShrink: 0, border: "none", background: "none",
+                cursor: onToggleStop ? "pointer" : "default", padding: 0,
               }}
             >
               {stop.done ? (
@@ -393,7 +435,7 @@ function StopList({ origin, destination, stops, onToggleStop, onEditStop }: {
                   <ArrowRight size={9} style={{ color: "var(--primary)" }} />
                 </span>
               ) : (
-                <span style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: "var(--border)", display: "inline-block", margin: "0 4px" }} />
+                <span style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: "var(--border)", display: "inline-block" }} />
               )}
             </button>
 
@@ -439,23 +481,11 @@ function StopList({ origin, destination, stops, onToggleStop, onEditStop }: {
 
 export function DispatchTable() {
   const [rows, setRows]           = useState<Driver[]>(INIT_DRIVERS);
-  const [cursorPos, setCursorPos] = useState({ x: 0, y: 0, visible: false });
   const [search, setSearch]       = useState("");
   const [statusFilter, setStatusFilter] = useState<Status | "all">("all");
   const [filterOpen, setFilterOpen]     = useState(false);
   const [editCell, setEditCell]   = useState<{ loadId: string; field: string } | null>(null);
   const filterRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    let frame: number; let t = 0;
-    const animate = () => {
-      t += 0.012;
-      setCursorPos({ x: 540 + Math.sin(t) * 100, y: 199 + Math.cos(t * 0.6) * 6, visible: true });
-      frame = requestAnimationFrame(animate);
-    };
-    animate();
-    return () => cancelAnimationFrame(frame);
-  }, []);
 
   useEffect(() => {
     const h = (e: MouseEvent) => { if (filterRef.current && !filterRef.current.contains(e.target as Node)) setFilterOpen(false); };
@@ -534,18 +564,6 @@ export function DispatchTable() {
 
       {/* ── Table ── */}
       <div style={{ flex: 1, overflow: "auto", position: "relative", scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent" }}>
-
-        {/* Flying cursor */}
-        {cursorPos.visible && (
-          <div style={{ position: "absolute", left: cursorPos.x, top: cursorPos.y, pointerEvents: "none", zIndex: 50, transform: "translate(-2px, -2px)" }}>
-            <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-              <path d="M4 2L16 10L9.5 11.5L7 18L4 2Z" fill={LOCKED_BY.color} stroke="#fff" strokeWidth="1.5" />
-            </svg>
-            <div style={{ fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600, color: "#fff", backgroundColor: LOCKED_BY.color, borderRadius: 4, padding: "1px 6px", marginTop: 2, whiteSpace: "nowrap", boxShadow: "0 2px 6px rgba(0,0,0,0.25)" }}>
-              {LOCKED_BY.name}
-            </div>
-          </div>
-        )}
 
         <table style={{ width: "max-content", minWidth: "100%", borderCollapse: "separate", borderSpacing: 0, tableLayout: "fixed" }}>
           <colgroup>
@@ -637,8 +655,11 @@ export function DispatchTable() {
                   <td style={td({ borderRight: border, verticalAlign: "top", paddingTop: 12, paddingBottom: 12 })}>
                     <StopList
                       origin={driver.origin}
+                      originDone={driver.originDone}
                       destination={driver.destination}
                       stops={driver.stops}
+                      onToggleOrigin={() => patch(driver.loadId, { originDone: !driver.originDone })}
+                      onEditOrigin={(city) => patch(driver.loadId, { origin: city })}
                       onToggleStop={(idx) => {
                         const updated = driver.stops!.map((s, i) => i === idx ? { ...s, done: !s.done } : s);
                         patch(driver.loadId, { stops: updated });
@@ -667,7 +688,7 @@ export function DispatchTable() {
 
                           {/* Pickup row — always present */}
                           <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                            <span style={{ ...labelStyle, color: pickupDone ? "var(--muted-foreground)" : "#10B981" }}>PU</span>
+                            <span style={{ ...labelStyle, color: "var(--muted-foreground)" }}>#1</span>
                             {isEdit(driver.loadId, "pickupAppt")
                               ? <InlineCell value={driver.pickupAppt} mono onCommit={(v) => { patch(driver.loadId, { pickupAppt: v }); stopEdit(); }} />
                               : <span onClick={() => startEdit(driver.loadId, "pickupAppt")} style={{ cursor: "text", fontFamily: "var(--font-mono)", fontSize: 11, color: driver.pickupAppt === "—" || pickupDone ? "var(--muted-foreground)" : "var(--foreground)", textDecoration: pickupDone ? "line-through" : "none" }}>{driver.pickupAppt}</span>
@@ -682,20 +703,7 @@ export function DispatchTable() {
 
                             return (
                               <div key={idx} style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                                {/* Mirror the same icon used in StopList */}
-                                <div style={{ width: 30, display: "flex", justifyContent: "flex-end", flexShrink: 0 }}>
-                                  {stop.done ? (
-                                    <span style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 16, height: 16, borderRadius: "50%", backgroundColor: "#D1FAE5" }}>
-                                      <Check size={9} style={{ color: "#10B981" }} />
-                                    </span>
-                                  ) : isCurrent ? (
-                                    <span style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 16, height: 16, borderRadius: "50%", backgroundColor: "var(--secondary)" }}>
-                                      <ArrowRight size={9} style={{ color: "var(--primary)" }} />
-                                    </span>
-                                  ) : (
-                                    <span style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: "var(--border)", display: "inline-block", margin: "0 4px" }} />
-                                  )}
-                                </div>
+                                <span style={{ ...labelStyle, color: "var(--muted-foreground)" }}>#{idx + 2}</span>
                                 {isEdit(driver.loadId, fieldKey)
                                   ? <InlineCell value={stop.appt ?? ""} mono placeholder="MM/DD · HH:MM"
                                       onCommit={(v) => {
@@ -720,7 +728,7 @@ export function DispatchTable() {
                             const dropDone = false;
                             return (
                               <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                                <span style={{ ...labelStyle, color: dropDone ? "var(--muted-foreground)" : "#EF4444" }}>DR</span>
+                                <span style={{ ...labelStyle, color: "var(--muted-foreground)" }}>#2</span>
                                 {isEdit(driver.loadId, "dropAppt")
                                   ? <InlineCell value={driver.dropAppt} mono onCommit={(v) => { patch(driver.loadId, { dropAppt: v }); stopEdit(); }} />
                                   : <span onClick={() => startEdit(driver.loadId, "dropAppt")} style={{ cursor: "text", fontFamily: "var(--font-mono)", fontSize: 11, color: driver.dropAppt === "—" ? "var(--muted-foreground)" : "var(--foreground)" }}>{driver.dropAppt}</span>
@@ -746,20 +754,34 @@ export function DispatchTable() {
                   </td>
 
                   {/* ETA */}
-                  <td style={td({ borderRight: border })}>
-                    {isEdit(driver.loadId, "etaKm") ? (
-                      <InlineCell value={driver.etaKm === null ? "" : String(driver.etaKm)} mono placeholder="km"
-                        onCommit={(v) => { patch(driver.loadId, { etaKm: v === "" ? null : Number(v) }); stopEdit(); }} />
-                    ) : driver.etaKm === null ? (
-                      <span onClick={() => startEdit(driver.loadId, "etaKm")} style={{ cursor: "text", fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--muted-foreground)" }}>—</span>
-                    ) : driver.etaKm === 0 ? (
-                      <span onClick={() => startEdit(driver.loadId, "etaKm")} style={{ cursor: "text", fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 600, color: "#10B981" }}>At dest.</span>
-                    ) : (
-                      <div onClick={() => startEdit(driver.loadId, "etaKm")} style={{ cursor: "text", display: "flex", alignItems: "center", gap: 5 }}>
-                        <Navigation size={11} style={{ color: kmColor, flexShrink: 0 }} />
-                        <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 600, color: kmColor, whiteSpace: "nowrap" }}>~{driver.etaKm} km</span>
-                      </div>
-                    )}
+                  <td style={td({ borderRight: border, verticalAlign: "top", paddingTop: 12, paddingBottom: 12 })}>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                      {/* Distance */}
+                      {isEdit(driver.loadId, "etaKm") ? (
+                        <InlineCell value={driver.etaKm === null ? "" : String(driver.etaKm)} mono placeholder="km"
+                          onCommit={(v) => { patch(driver.loadId, { etaKm: v === "" ? null : Number(v) }); stopEdit(); }} />
+                      ) : driver.etaKm === null ? (
+                        <span onClick={() => startEdit(driver.loadId, "etaKm")} style={{ cursor: "text", fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--muted-foreground)" }}>—</span>
+                      ) : driver.etaKm === 0 ? (
+                        <span onClick={() => startEdit(driver.loadId, "etaKm")} style={{ cursor: "text", fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 600, color: "#10B981" }}>At dest.</span>
+                      ) : (
+                        <div onClick={() => startEdit(driver.loadId, "etaKm")} style={{ cursor: "text", display: "flex", alignItems: "center", gap: 5 }}>
+                          <Navigation size={11} style={{ color: kmColor, flexShrink: 0 }} />
+                          <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 600, color: kmColor, whiteSpace: "nowrap" }}>~{driver.etaKm} km</span>
+                        </div>
+                      )}
+                      {/* Speed */}
+                      {isEdit(driver.loadId, "speedMph") ? (
+                        <InlineCell value={driver.speedMph == null ? "" : String(driver.speedMph)} mono placeholder="mph"
+                          onCommit={(v) => { patch(driver.loadId, { speedMph: v === "" ? null : Number(v) }); stopEdit(); }} />
+                      ) : driver.speedMph != null ? (
+                        <span onClick={() => startEdit(driver.loadId, "speedMph")} style={{ cursor: "text", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--muted-foreground)", whiteSpace: "nowrap" }}>
+                          {driver.speedMph} mph
+                        </span>
+                      ) : driver.etaKm !== null && driver.etaKm !== 0 ? (
+                        <span onClick={() => startEdit(driver.loadId, "speedMph")} style={{ cursor: "text", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--border)" }}>— mph</span>
+                      ) : null}
+                    </div>
                   </td>
 
                   {/* Comments */}

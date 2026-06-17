@@ -9,6 +9,7 @@ import {
   Users,
   Truck,
   DollarSign,
+  CreditCard,
   Settings,
   ChevronRight,
   ChevronDown,
@@ -258,7 +259,6 @@ const navItems = [
   { icon: Users,           label: "Drivers",     path: "drivers"     },
   { icon: Truck,           label: "Equipments",  path: "equipments"  },
   { icon: DollarSign,      label: "Payouts",     path: "payouts"     },
-  { icon: Settings,        label: "Settings",    path: "settings"    },
 ];
 
 // ─── Active-user presence data (placeholder) ────────────────────────────────
@@ -268,6 +268,109 @@ const activeUsers = [
   { initials: "MT", color: "#F59E0B", name: "Marcus T." },
   { initials: "JR", color: "#10B981", name: "Jake R." },
 ];
+
+// ─── User menu ───────────────────────────────────────────────────────────────
+
+const USER_MENU_ITEMS: { icon: React.ElementType; label: string; path: string }[] = [
+  { icon: CreditCard, label: "Billing",  path: "/workspace/billing"  },
+  { icon: Settings,   label: "Settings", path: "/workspace/settings" },
+];
+
+function UserMenu({ collapsed }: { collapsed: boolean }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const popupRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState({ bottom: 0, left: 0, width: 0 });
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (
+        ref.current && !ref.current.contains(t) &&
+        popupRef.current && !popupRef.current.contains(t)
+      ) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const handleOpen = () => {
+    if (ref.current) {
+      const r = ref.current.getBoundingClientRect();
+      setPos({ bottom: window.innerHeight - r.top + 6, left: r.left, width: r.width });
+    }
+    setOpen((v) => !v);
+  };
+
+  return (
+    <div ref={ref} className="mx-2 mb-3">
+      <button
+        onClick={handleOpen}
+        style={{
+          width: "100%", display: "flex", alignItems: "center", gap: 10,
+          backgroundColor: open ? "var(--sidebar-primary)" : "var(--sidebar-accent)",
+          border: "none", borderRadius: 12, cursor: "pointer", textAlign: "left",
+          padding: collapsed ? "10px 0" : "12px",
+          justifyContent: collapsed ? "center" : "flex-start",
+          transition: "background-color 0.15s",
+        }}
+        onMouseEnter={(e) => { if (!open) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--sidebar-accent-hover, rgba(255,255,255,0.06))"; }}
+        onMouseLeave={(e) => { if (!open) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--sidebar-accent)"; }}
+      >
+        <div style={{ width: 34, height: 34, borderRadius: "50%", background: "linear-gradient(135deg, #3B82F6, #6366F1)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 600, color: "#fff", flexShrink: 0 }}>
+          SS
+        </div>
+        {!collapsed && (
+          <>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 500, color: "#F1F5F9", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                Shokhruz S.
+              </div>
+              <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--sidebar-foreground)", opacity: 0.65 }}>
+                Admin · Online
+              </div>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+              <div style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: "#10B981" }} />
+              <ChevronDown size={13} style={{ color: "var(--sidebar-foreground)", opacity: 0.5, transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s" }} />
+            </div>
+          </>
+        )}
+      </button>
+
+      {open && createPortal(
+        <div ref={popupRef} style={{
+          position: "fixed", bottom: pos.bottom, left: pos.left,
+          width: Math.max(pos.width, 180),
+          backgroundColor: "var(--card)", border: "1px solid var(--border)",
+          borderRadius: 10, boxShadow: "0 8px 24px rgba(0,0,0,0.14)",
+          zIndex: 500, overflow: "hidden", padding: "4px 0",
+        }}>
+          {USER_MENU_ITEMS.map(({ icon: Icon, label, path }) => (
+            <NavLink
+              key={path}
+              to={path}
+              onClick={() => setOpen(false)}
+              style={({ isActive }) => ({
+                display: "flex", alignItems: "center", gap: 10,
+                padding: "9px 14px", textDecoration: "none",
+                fontFamily: "var(--font-sans)", fontSize: 13,
+                color: isActive ? "var(--primary)" : "var(--foreground)",
+                backgroundColor: isActive ? "var(--secondary)" : "transparent",
+              })}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLAnchorElement).style.backgroundColor = "var(--muted)"; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLAnchorElement).style.backgroundColor = ""; }}
+            >
+              <Icon size={14} style={{ flexShrink: 0 }} />
+              {label}
+            </NavLink>
+          ))}
+        </div>,
+        document.body
+      )}
+    </div>
+  );
+}
 
 // ─── Sidebar ────────────────────────────────────────────────────────────────
 
@@ -378,61 +481,7 @@ function Sidebar({ collapsed, onToggle, accounts, activeAccountId, onSwitch, onA
       </nav>
 
       {/* User profile card */}
-      <div
-        className="mx-2 mb-3 rounded-xl flex items-center gap-3"
-        style={{
-          backgroundColor: "var(--sidebar-accent)",
-          padding: collapsed ? "10px 0" : "12px",
-          justifyContent: collapsed ? "center" : "flex-start",
-          transition: "padding 300ms ease-in-out",
-        }}
-      >
-        <div
-          className="rounded-full flex items-center justify-center shrink-0"
-          style={{
-            width: 34,
-            height: 34,
-            background: "linear-gradient(135deg, #3B82F6, #6366F1)",
-            fontSize: 12,
-            fontWeight: 600,
-            color: "#fff",
-          }}
-        >
-          SS
-        </div>
-        {!collapsed && (
-          <div className="flex-1 min-w-0">
-            <div
-              style={{
-                fontSize: 13,
-                fontWeight: 500,
-                color: "#F1F5F9",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}
-            >
-              Shokhruz S.
-            </div>
-            <div
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 10,
-                color: "var(--sidebar-foreground)",
-                opacity: 0.65,
-              }}
-            >
-              Admin · Online
-            </div>
-          </div>
-        )}
-        {!collapsed && (
-          <div
-            className="rounded-full shrink-0"
-            style={{ width: 8, height: 8, backgroundColor: "#10B981" }}
-          />
-        )}
-      </div>
+      <UserMenu collapsed={collapsed} />
     </aside>
   );
 }
