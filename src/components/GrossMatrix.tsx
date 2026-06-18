@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from "react";
-import { Search, Calendar, Check, ChevronDown } from "lucide-react";
+import { Search, Calendar, Check, ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { createPortal } from "react-dom";
 import { Status, STATUS_CONFIG, ALL_STATUSES } from "../lib/statuses";
 
@@ -40,7 +40,7 @@ function toDateMap(weekStart: string, days: DayCell[]): Record<string, DayCell> 
   return map;
 }
 
-const W = "2026-06-09";
+const W = "2026-06-08";
 
 const INITIAL_DRIVERS: DriverRow[] = [
   { id: 1,  name: "Carlos Mendez",        driverType: "C/D", unit: "001", weeklyTarget: 4000,  companyProfit: -4500, dateMap: toDateMap(W, [mkLoad(1250,"57760165"), mkLoad(1250,"57760191"), home, home, home, home, home]) },
@@ -83,23 +83,28 @@ function fmt(n: number) { return `$${n.toLocaleString()}`; }
 // ─── Available loads ──────────────────────────────────────────────────────────
 
 const GROSS_LOADS = [
-  { id: "57760165", payout: 1250 }, { id: "57760191", payout: 1250 }, { id: "57760149", payout: 1250 },
-  { id: "57760170", payout: 1250 }, { id: "57760194", payout: 1250 }, { id: "57760198", payout: 1250 },
-  { id: "57760174", payout: 1250 }, { id: "57760213", payout: 1250 }, { id: "57760154", payout: 1250 },
-  { id: "57760151", payout: 1250 }, { id: "57760172", payout: 1250 }, { id: "57760179", payout: 1200 },
-  { id: "57760177", payout: 1250 }, { id: "57760233", payout: 1250 }, { id: "57760202", payout: 1250 },
-  { id: "57760203", payout: 1250 }, { id: "57760207", payout: 1250 }, { id: "57760228", payout: 1250 },
-  { id: "57760155", payout: 1250 }, { id: "57760157", payout: 1250 }, { id: "57760175", payout: 1250 },
-  { id: "57760173", payout: 1250 }, { id: "4332979",  payout: 550  }, { id: "4367209",  payout: 800  },
-  { id: "4332793",  payout: 550  }, { id: "4338260",  payout: 750  }, { id: "4349224",  payout: 825  },
-  { id: "127129288",payout: 3200 }, { id: "127120603",payout: 1450 }, { id: "127197643",payout: 565  },
-  { id: "126185",   payout: 3500 }, { id: "35101523", payout: 1000 }, { id: "35241535", payout: 2500 },
-  { id: "35132250", payout: 1550 }, { id: "35189864", payout: 2000 }, { id: "35243285", payout: 1900 },
-  { id: "0118551",  payout: 2000 }, { id: "0245461",  payout: 1450 }, { id: "0245328",  payout: 1450 },
-  { id: "127218503",payout: 1500 }, { id: "142896",   payout: 1550 }, { id: "142901",   payout: 1550 },
-  { id: "G064863703",payout: 900 }, { id: "T01359997",payout: 1500 }, { id: "T01358372",payout: 1500 },
-  { id: "T01356218",payout: 1800 }, { id: "374553",   payout: 1000 }, { id: "QUICKFREIGHT",payout: 1500 },
+  { id: "57760165", payout: 1250, totalMiles: 318 }, { id: "57760191", payout: 1250, totalMiles: 325 }, { id: "57760149", payout: 1250, totalMiles: 312 },
+  { id: "57760170", payout: 1250, totalMiles: 320 }, { id: "57760194", payout: 1250, totalMiles: 315 }, { id: "57760198", payout: 1250, totalMiles: 308 },
+  { id: "57760174", payout: 1250, totalMiles: 322 }, { id: "57760213", payout: 1250, totalMiles: 316 }, { id: "57760154", payout: 1250, totalMiles: 311 },
+  { id: "57760151", payout: 1250, totalMiles: 319 }, { id: "57760172", payout: 1250, totalMiles: 314 }, { id: "57760179", payout: 1200, totalMiles: 310 },
+  { id: "57760177", payout: 1250, totalMiles: 321 }, { id: "57760233", payout: 1250, totalMiles: 317 }, { id: "57760202", payout: 1250, totalMiles: 313 },
+  { id: "57760203", payout: 1250, totalMiles: 324 }, { id: "57760207", payout: 1250, totalMiles: 318 }, { id: "57760228", payout: 1250, totalMiles: 323 },
+  { id: "57760155", payout: 1250, totalMiles: 316 }, { id: "57760157", payout: 1250, totalMiles: 320 }, { id: "57760175", payout: 1250, totalMiles: 315 },
+  { id: "57760173", payout: 1250, totalMiles: 319 }, { id: "4332979",  payout: 550,  totalMiles: 175 }, { id: "4367209",  payout: 800,  totalMiles: 232 },
+  { id: "4332793",  payout: 550,  totalMiles: 170 }, { id: "4338260",  payout: 750,  totalMiles: 210 }, { id: "4349224",  payout: 825,  totalMiles: 240 },
+  { id: "127129288",payout: 3200, totalMiles: 780 }, { id: "127120603",payout: 1450, totalMiles: 420 }, { id: "127197643",payout: 565,  totalMiles: 162 },
+  { id: "126185",   payout: 3500, totalMiles: 840 }, { id: "35101523", payout: 1000, totalMiles: 290 }, { id: "35241535", payout: 2500, totalMiles: 630 },
+  { id: "35132250", payout: 1550, totalMiles: 430 }, { id: "35189864", payout: 2000, totalMiles: 520 }, { id: "35243285", payout: 1900, totalMiles: 510 },
+  { id: "0118551",  payout: 2000, totalMiles: 530 }, { id: "0245461",  payout: 1450, totalMiles: 400 }, { id: "0245328",  payout: 1450, totalMiles: 395 },
+  { id: "127218503",payout: 1500, totalMiles: 410 }, { id: "142896",   payout: 1550, totalMiles: 420 }, { id: "142901",   payout: 1550, totalMiles: 425 },
+  { id: "G064863703",payout: 900, totalMiles: 250 }, { id: "T01359997",payout: 1500, totalMiles: 400 }, { id: "T01358372",payout: 1500, totalMiles: 405 },
+  { id: "T01356218",payout: 1800, totalMiles: 470 }, { id: "374553",   payout: 1000, totalMiles: 280 }, { id: "QUICKFREIGHT",payout: 1500, totalMiles: 395 },
 ];
+
+const GROSS_MILES_MAP = new Map(GROSS_LOADS.map((l) => [l.id, l.totalMiles]));
+function getLoadMiles(loadId: string): number {
+  return loadId.split("/").reduce((s, id) => s + (GROSS_MILES_MAP.get(id.trim()) ?? 0), 0);
+}
 
 // ─── Cell display styles ──────────────────────────────────────────────────────
 
@@ -693,8 +698,20 @@ function DateRangePicker({ from, to, onChange }: DateRangePickerProps) {
 export function GrossMatrix() {
   const [rows,     setRows]     = useState<DriverRow[]>(INITIAL_DRIVERS);
   const [search,   setSearch]   = useState("");
-  const [dateFrom, setDateFrom] = useState("2026-06-09");
-  const [dateTo,   setDateTo]   = useState("2026-06-15");
+  const [dateFrom, setDateFrom] = useState("2026-06-08");
+  const [dateTo,   setDateTo]   = useState("2026-06-14");
+
+  function shiftWeek(dir: -1 | 1) {
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const fmt = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    const d = new Date(dateFrom + "T00:00:00");
+    // Snap to Monday of current week first, then shift — avoids overlap when dateFrom isn't a Monday
+    const dow = d.getDay();
+    d.setDate(d.getDate() + (dow === 0 ? -6 : 1 - dow) + dir * 7);
+    setDateFrom(fmt(d));
+    d.setDate(d.getDate() + 6);
+    setDateTo(fmt(d));
+  }
 
   // Cell editing
   const [editState, setEditState] = useState<EditState | null>(null);
@@ -749,6 +766,7 @@ export function GrossMatrix() {
   const grandProfit = filtered.reduce((s, d) => s + d.companyProfit, 0);
   const rangeDays   = dates.length;
 
+
   const R = { total: 240, target: 120, profit: 0 };
 
   return (
@@ -787,11 +805,31 @@ export function GrossMatrix() {
               />
             </div>
 
+            <button
+              onClick={() => shiftWeek(-1)}
+              title="Previous week"
+              style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 30, height: 30, borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "var(--input-background)", color: "var(--muted-foreground)", cursor: "pointer", flexShrink: 0, outline: "none" }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--muted)"; (e.currentTarget as HTMLButtonElement).style.color = "var(--foreground)"; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--input-background)"; (e.currentTarget as HTMLButtonElement).style.color = "var(--muted-foreground)"; }}
+            >
+              <ChevronLeft size={15} />
+            </button>
+
             <DateRangePicker
               from={dateFrom}
               to={dateTo}
               onChange={(f, t) => { setDateFrom(f); setDateTo(t); }}
             />
+
+            <button
+              onClick={() => shiftWeek(1)}
+              title="Next week"
+              style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 30, height: 30, borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "var(--input-background)", color: "var(--muted-foreground)", cursor: "pointer", flexShrink: 0, outline: "none" }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--muted)"; (e.currentTarget as HTMLButtonElement).style.color = "var(--foreground)"; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--input-background)"; (e.currentTarget as HTMLButtonElement).style.color = "var(--muted-foreground)"; }}
+            >
+              <ChevronRight size={15} />
+            </button>
           </div>
 
           {/* Table */}
@@ -835,6 +873,11 @@ export function GrossMatrix() {
                     const isEven   = i % 2 === 0;
                     const rowBg    = isEven ? "#ffffff" : "#F9FAFB";
                     const total    = rangeTotal(driver);
+                    const driverMiles = dates.reduce((s, iso) => {
+                      const cell = driver.dateMap[iso];
+                      return s + (cell?.type === "load" && cell.loadId ? getLoadMiles(cell.loadId) : 0);
+                    }, 0);
+                    const driverRpm = driverMiles > 0 && total > 0 ? total / driverMiles : null;
                     const targetPct = driver.weeklyTarget ? Math.min(100, Math.round((total / driver.weeklyTarget) * 100)) : null;
                     const barColor  = targetPct === null ? "#3B82F6" : targetPct >= 100 ? "#10B981" : targetPct >= 70 ? "#F59E0B" : "#3B82F6";
 
@@ -888,6 +931,11 @@ export function GrossMatrix() {
                         {/* Total */}
                         <td style={{ width: 110, minWidth: 110, padding: "0 12px", textAlign: "right", verticalAlign: "middle", borderLeft: "2px solid #CBD5E1", borderBottom: "1px solid #E5E7EB", backgroundColor: isEven ? "#EFF6FF" : "#DBEAFE", position: "sticky", right: R.total, zIndex: 10 }}>
                           <div style={{ fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 700, color: "#1D4ED8", whiteSpace: "nowrap" }}>{fmt(total)}</div>
+                          {driverRpm !== null && (
+                            <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "#10B981", marginTop: 2, whiteSpace: "nowrap" }}>
+                              ${driverRpm.toFixed(2)}/mi
+                            </div>
+                          )}
                         </td>
 
                         {/* Target — inline editable */}

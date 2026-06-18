@@ -4,7 +4,7 @@ import {
   Package, Plus, Pencil, Trash2, X, Check, MapPin,
   Search, ChevronDown, ChevronLeft, ChevronRight,
   ClipboardList, Sparkles,
-  ArrowLeft, ArrowRight, Building2, User, DollarSign, Clock, History, CalendarDays,
+  ArrowLeft, ArrowRight, Building2, User, DollarSign, Clock, History, CalendarDays, Navigation,
 } from "lucide-react";
 import { Status, STATUS_CONFIG as SHARED_STATUS_CONFIG, ALL_STATUSES as SHARED_ALL_STATUSES } from "../lib/statuses";
 
@@ -28,6 +28,7 @@ interface Load {
   destination: string;
   stops?: Stop[];
   payout: number;
+  totalMiles?: number;
   dispatcher: string;
 }
 
@@ -46,21 +47,21 @@ const STATUS_MODAL_OPTS: SelectOpt[] = SHARED_ALL_STATUSES.map((s) => ({ value: 
 // ─── Seed data ────────────────────────────────────────────────────────────────
 
 const initLoads: Load[] = [
-  { id: 1,  loadId: "LD-00481", broker: "Echo Global",      driver: "Carlos Mendez",       status: "enroute",     pickupAppt: "06/12 · 08:00", dropAppt: "06/12 · 17:30", origin: "Dallas, TX",       destination: "Memphis, TN",       stops: [{ city: "Texarkana, TX", done: true, appt: "06/12 · 10:30" }, { city: "Little Rock, AR", done: true, appt: "06/12 · 13:00" }, { city: "Memphis, TN", done: false, appt: "06/12 · 17:30" }], payout: 1850, dispatcher: "Jake R."   },
-  { id: 2,  loadId: "LD-00290", broker: "Coyote Logistics", driver: "Angela Torres",        status: "delivered",   pickupAppt: "06/11 · 07:00", dropAppt: "06/11 · 16:00", origin: "Chicago, IL",      destination: "Indianapolis, IN",  payout: 1200, dispatcher: "Sofia R."  },
-  { id: 3,  loadId: "LD-00813", broker: "XPO Logistics",    driver: "Darnell Washington",   status: "dispatched",  pickupAppt: "06/12 · 11:00", dropAppt: "06/12 · 16:00", origin: "Atlanta, GA",      destination: "Nashville, TN",     payout: 950,  dispatcher: "Marcus T." },
-  { id: 4,  loadId: "LD-00577", broker: "Total Quality",    driver: "Priya Sharma",         status: "enroute",     pickupAppt: "06/12 · 14:30", dropAppt: "06/13 · 07:00", origin: "Houston, TX",      destination: "San Antonio, TX",   payout: 750,  dispatcher: "Jake R."   },
-  { id: 5,  loadId: "LD-00342", broker: "Mode Transport",   driver: "Marcus Webb",          status: "delivered",   pickupAppt: "06/11 · 09:00", dropAppt: "06/12 · 10:45", origin: "Phoenix, AZ",      destination: "Los Angeles, CA",   stops: [{ city: "Tucson, AZ", done: true, appt: "06/11 · 11:00" }, { city: "Los Angeles, CA", done: true, appt: "06/12 · 10:45" }], payout: 2100, dispatcher: "Sofia R."  },
-  { id: 6,  loadId: "LD-00610", broker: "Arrive Logistics", driver: "Linda Okafor",         status: "enroute",     pickupAppt: "06/12 · 06:30", dropAppt: "06/12 · 19:00", origin: "Denver, CO",       destination: "Kansas City, MO",   stops: [{ city: "Salina, KS", done: true, appt: "06/12 · 10:00" }, { city: "Topeka, KS", done: false, appt: "06/12 · 13:30" }, { city: "Kansas City, MO", done: false, appt: "06/12 · 19:00" }], payout: 1400, dispatcher: "Marcus T." },
-  { id: 7,  loadId: "LD-00924", broker: "GlobalTranz",      driver: "Ray Kowalski",         status: "reserved",    pickupAppt: "06/13 · 08:00", dropAppt: "06/13 · 15:30", origin: "Las Vegas, NV",    destination: "Salt Lake City, UT",payout: 880,  dispatcher: "Jake R."   },
-  { id: 8,  loadId: "LD-00157", broker: "Transplace",       driver: "—",                    status: "reserved",    pickupAppt: "06/14 · 09:00", dropAppt: "06/14 · 18:00", origin: "Miami, FL",        destination: "Orlando, FL",       payout: 620,  dispatcher: "Sofia R."  },
-  { id: 9,  loadId: "LD-01024", broker: "RXO",              driver: "Jean Eddy Simon",      status: "dispatched",  pickupAppt: "06/13 · 06:00", dropAppt: "06/14 · 08:00", origin: "Nashville, TN",    destination: "Charlotte, NC",     stops: [{ city: "Greensboro, NC", done: false, appt: "06/14 · 06:00" }, { city: "Charlotte, NC", done: false, appt: "06/14 · 08:00" }], payout: 1650, dispatcher: "Marcus T." },
-  { id: 10, loadId: "LD-01105", broker: "Uber Freight",     driver: "Keavis Dyer",          status: "enroute",     pickupAppt: "06/12 · 10:00", dropAppt: "06/13 · 14:00", origin: "Columbus, OH",     destination: "Pittsburgh, PA",    stops: [{ city: "Wheeling, WV", done: false, appt: "06/13 · 10:00" }, { city: "Pittsburgh, PA", done: false, appt: "06/13 · 14:00" }], payout: 980,  dispatcher: "Jake R."   },
-  { id: 11, loadId: "LD-01233", broker: "CH Robinson",      driver: "Shokhnurbek Komilov",  status: "delivered",   pickupAppt: "06/10 · 07:30", dropAppt: "06/11 · 12:00", origin: "Seattle, WA",      destination: "Portland, OR",      payout: 540,  dispatcher: "Sofia R."  },
-  { id: 12, loadId: "LD-01344", broker: "Schneider",        driver: "Bakhodir Azamov",      status: "delivered",   pickupAppt: "06/11 · 08:00", dropAppt: "06/12 · 09:00", origin: "Minneapolis, MN",  destination: "Chicago, IL",       payout: 1100, dispatcher: "Marcus T." },
-  { id: 13, loadId: "LD-01412", broker: "Landstar",         driver: "Tomás García",         status: "re_update",   pickupAppt: "06/12 · 08:00", dropAppt: "06/12 · 14:00", origin: "Detroit, MI",      destination: "Cleveland, OH",     payout: 0,    dispatcher: "Jake R."   },
-  { id: 14, loadId: "LD-01551", broker: "Echo Global",      driver: "Carlos Mendez",        status: "re_update",   pickupAppt: "06/09 · 10:00", dropAppt: "06/09 · 16:00", origin: "St. Louis, MO",    destination: "Kansas City, MO",   payout: 150,  dispatcher: "Sofia R."  },
-  { id: 15, loadId: "LD-01680", broker: "Coyote Logistics", driver: "—",                    status: "reserved",    pickupAppt: "06/15 · 07:00", dropAppt: "06/16 · 11:00", origin: "San Diego, CA",    destination: "Las Vegas, NV",     payout: 1750, dispatcher: "Marcus T." },
+  { id: 1,  loadId: "LD-00481", broker: "Echo Global",      driver: "Carlos Mendez",       status: "enroute",     pickupAppt: "06/12 · 08:00", dropAppt: "06/12 · 17:30", origin: "Dallas, TX",       destination: "Memphis, TN",       stops: [{ city: "Texarkana, TX", done: true, appt: "06/12 · 10:30" }, { city: "Little Rock, AR", done: true, appt: "06/12 · 13:00" }, { city: "Memphis, TN", done: false, appt: "06/12 · 17:30" }], payout: 1850, totalMiles: 548, dispatcher: "Jake R."   },
+  { id: 2,  loadId: "LD-00290", broker: "Coyote Logistics", driver: "Angela Torres",        status: "delivered",   pickupAppt: "06/11 · 07:00", dropAppt: "06/11 · 16:00", origin: "Chicago, IL",      destination: "Indianapolis, IN",  payout: 1200, totalMiles: 182, dispatcher: "Sofia R."  },
+  { id: 3,  loadId: "LD-00813", broker: "XPO Logistics",    driver: "Darnell Washington",   status: "dispatched",  pickupAppt: "06/12 · 11:00", dropAppt: "06/12 · 16:00", origin: "Atlanta, GA",      destination: "Nashville, TN",     payout: 950,  totalMiles: 250, dispatcher: "Marcus T." },
+  { id: 4,  loadId: "LD-00577", broker: "Total Quality",    driver: "Priya Sharma",         status: "enroute",     pickupAppt: "06/12 · 14:30", dropAppt: "06/13 · 07:00", origin: "Houston, TX",      destination: "San Antonio, TX",   payout: 750,  totalMiles: 197, dispatcher: "Jake R."   },
+  { id: 5,  loadId: "LD-00342", broker: "Mode Transport",   driver: "Marcus Webb",          status: "delivered",   pickupAppt: "06/11 · 09:00", dropAppt: "06/12 · 10:45", origin: "Phoenix, AZ",      destination: "Los Angeles, CA",   stops: [{ city: "Tucson, AZ", done: true, appt: "06/11 · 11:00" }, { city: "Los Angeles, CA", done: true, appt: "06/12 · 10:45" }], payout: 2100, totalMiles: 372, dispatcher: "Sofia R."  },
+  { id: 6,  loadId: "LD-00610", broker: "Arrive Logistics", driver: "Linda Okafor",         status: "enroute",     pickupAppt: "06/12 · 06:30", dropAppt: "06/12 · 19:00", origin: "Denver, CO",       destination: "Kansas City, MO",   stops: [{ city: "Salina, KS", done: true, appt: "06/12 · 10:00" }, { city: "Topeka, KS", done: false, appt: "06/12 · 13:30" }, { city: "Kansas City, MO", done: false, appt: "06/12 · 19:00" }], payout: 1400, totalMiles: 603, dispatcher: "Marcus T." },
+  { id: 7,  loadId: "LD-00924", broker: "GlobalTranz",      driver: "Ray Kowalski",         status: "reserved",    pickupAppt: "06/13 · 08:00", dropAppt: "06/13 · 15:30", origin: "Las Vegas, NV",    destination: "Salt Lake City, UT",payout: 880,  totalMiles: 421, dispatcher: "Jake R."   },
+  { id: 8,  loadId: "LD-00157", broker: "Transplace",       driver: "—",                    status: "reserved",    pickupAppt: "06/14 · 09:00", dropAppt: "06/14 · 18:00", origin: "Miami, FL",        destination: "Orlando, FL",       payout: 620,  totalMiles: 236, dispatcher: "Sofia R."  },
+  { id: 9,  loadId: "LD-01024", broker: "RXO",              driver: "Jean Eddy Simon",      status: "dispatched",  pickupAppt: "06/13 · 06:00", dropAppt: "06/14 · 08:00", origin: "Nashville, TN",    destination: "Charlotte, NC",     stops: [{ city: "Greensboro, NC", done: false, appt: "06/14 · 06:00" }, { city: "Charlotte, NC", done: false, appt: "06/14 · 08:00" }], payout: 1650, totalMiles: 409, dispatcher: "Marcus T." },
+  { id: 10, loadId: "LD-01105", broker: "Uber Freight",     driver: "Keavis Dyer",          status: "enroute",     pickupAppt: "06/12 · 10:00", dropAppt: "06/13 · 14:00", origin: "Columbus, OH",     destination: "Pittsburgh, PA",    stops: [{ city: "Wheeling, WV", done: false, appt: "06/13 · 10:00" }, { city: "Pittsburgh, PA", done: false, appt: "06/13 · 14:00" }], payout: 980,  totalMiles: 188, dispatcher: "Jake R."   },
+  { id: 11, loadId: "LD-01233", broker: "CH Robinson",      driver: "Shokhnurbek Komilov",  status: "delivered",   pickupAppt: "06/10 · 07:30", dropAppt: "06/11 · 12:00", origin: "Seattle, WA",      destination: "Portland, OR",      payout: 540,  totalMiles: 174, dispatcher: "Sofia R."  },
+  { id: 12, loadId: "LD-01344", broker: "Schneider",        driver: "Bakhodir Azamov",      status: "delivered",   pickupAppt: "06/11 · 08:00", dropAppt: "06/12 · 09:00", origin: "Minneapolis, MN",  destination: "Chicago, IL",       payout: 1100, totalMiles: 408, dispatcher: "Marcus T." },
+  { id: 13, loadId: "LD-01412", broker: "Landstar",         driver: "Tomás García",         status: "re_update",   pickupAppt: "06/12 · 08:00", dropAppt: "06/12 · 14:00", origin: "Detroit, MI",      destination: "Cleveland, OH",     payout: 0,    totalMiles: 170, dispatcher: "Jake R."   },
+  { id: 14, loadId: "LD-01551", broker: "Echo Global",      driver: "Carlos Mendez",        status: "re_update",   pickupAppt: "06/09 · 10:00", dropAppt: "06/09 · 16:00", origin: "St. Louis, MO",    destination: "Kansas City, MO",   payout: 150,  totalMiles: 248, dispatcher: "Sofia R."  },
+  { id: 15, loadId: "LD-01680", broker: "Coyote Logistics", driver: "—",                    status: "reserved",    pickupAppt: "06/15 · 07:00", dropAppt: "06/16 · 11:00", origin: "San Diego, CA",    destination: "Las Vegas, NV",     payout: 1750, totalMiles: 332, dispatcher: "Marcus T." },
 ];
 
 // ─── Change log ───────────────────────────────────────────────────────────────
@@ -939,8 +940,8 @@ function LoadModal({ load, onClose, onSave }: {
             </label>
           </div>
 
-          {/* Status + Payout */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+          {/* Status + Payout + Total Miles */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14 }}>
             <label style={labelStyle}>
               <span style={capStyle}>Status</span>
               <CustomSelect value={form.status ?? "reserved"} options={STATUS_MODAL_OPTS} onChange={(v) => set("status", v as Status)} />
@@ -948,6 +949,10 @@ function LoadModal({ load, onClose, onSave }: {
             <label style={labelStyle}>
               <span style={capStyle}>Payout ($)</span>
               <input type="number" value={form.payout ?? ""} onChange={(e) => set("payout", Number(e.target.value))} style={{ ...inputStyle, fontFamily: "var(--font-mono)" }} placeholder="0" onFocus={focusInput} onBlur={blurInput} />
+            </label>
+            <label style={labelStyle}>
+              <span style={capStyle}>Total Miles</span>
+              <input type="number" value={form.totalMiles ?? ""} onChange={(e) => set("totalMiles", e.target.value ? Number(e.target.value) : undefined)} style={{ ...inputStyle, fontFamily: "var(--font-mono)" }} placeholder="0" onFocus={focusInput} onBlur={blurInput} />
             </label>
           </div>
 
@@ -1103,6 +1108,20 @@ function LoadDetail({ load, onBack }: { load: Load; onBack: () => void }) {
           {load.payout === 0 ? "—" : `$${load.payout.toLocaleString()}`}
         </span>
       ),
+    },
+    {
+      icon: <Navigation size={13} />,
+      label: "Total Miles",
+      value: load.totalMiles ? (
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ fontFamily: "var(--font-mono)", fontWeight: 700 }}>{load.totalMiles.toLocaleString()} mi</span>
+          {load.payout > 0 && (
+            <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "#10B981", backgroundColor: "#D1FAE5", borderRadius: 4, padding: "1px 6px" }}>
+              ${(load.payout / load.totalMiles).toFixed(2)}/mi RPM
+            </span>
+          )}
+        </div>
+      ) : <span style={{ color: "var(--muted-foreground)", fontStyle: "italic" }}>Not set</span>,
     },
   ];
 
@@ -1454,6 +1473,7 @@ export function LoadsPage() {
                   <TH width={120}>Status</TH>
                   <TH width={190}>Appt Times</TH>
                   <TH width={240}>Route</TH>
+                  <TH width={100} align="right">Miles</TH>
                   <TH width={100} align="right">Payout</TH>
                   <TH width={120}>Dispatcher</TH>
                   <TH width={90} align="center">Actions</TH>
@@ -1571,6 +1591,22 @@ export function LoadsPage() {
                       })()}
                     </td>
                     <td style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", verticalAlign: "middle", textAlign: "right" }}>
+                      {l.totalMiles ? (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 1, alignItems: "flex-end" }}>
+                          <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 600, color: "var(--foreground)" }}>
+                            {l.totalMiles.toLocaleString()} mi
+                          </span>
+                          {l.payout > 0 && (
+                            <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "#10B981" }}>
+                              ${(l.payout / l.totalMiles).toFixed(2)}/mi
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--muted-foreground)" }}>—</span>
+                      )}
+                    </td>
+                    <td style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", verticalAlign: "middle", textAlign: "right" }}>
                       <span style={{
                         fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 700,
                         color: l.payout === 0 ? "var(--muted-foreground)" : l.status === "re_update" ? "#EF4444" : "#10B981",
@@ -1591,7 +1627,7 @@ export function LoadsPage() {
                 ))}
                 {paged.length === 0 && (
                   <tr>
-                    <td colSpan={10} style={{ padding: "40px 20px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
+                    <td colSpan={11} style={{ padding: "40px 20px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
                       No loads match your filters.
                     </td>
                   </tr>
