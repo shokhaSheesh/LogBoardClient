@@ -723,8 +723,8 @@ function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
         setToast({ type: "success", msg: "Truck created successfully" });
       } else {
         await api.put<TruckRow>(`/trucks/${d.id}`, d);
-        setRows((prev) => prev.map((x) => (x.id === d.id ? { ...x, ...d } : x)));
         setModal(null);
+        setFetchKey((k) => k + 1);
         setToast({ type: "success", msg: "Truck updated successfully" });
       }
     } catch (e) {
@@ -906,8 +906,8 @@ function TrailersTab({ onCountChange }: { onCountChange: (n: number) => void }) 
         setToast({ type: "success", msg: "Trailer created successfully" });
       } else {
         await api.put<TrailerRow>(`/trailers/${d.id}`, d);
-        setRows((prev) => prev.map((x) => (x.id === d.id ? { ...x, ...d } : x)));
         setModal(null);
+        setFetchKey((k) => k + 1);
         setToast({ type: "success", msg: "Trailer updated successfully" });
       }
     } catch (e) {
