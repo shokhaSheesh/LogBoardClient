@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { Status, STATUS_CONFIG, ALL_STATUSES } from "../lib/statuses";
+import { api } from "../lib/api";
 import {
   User, Users, Plus, Pencil, Trash2, MapPin, MessageSquare,
   X, Check, Search, ChevronDown, ChevronLeft, ChevronRight,
@@ -11,100 +12,89 @@ import {
 type DriverStatus = Status;
 type DriverType   = "O/O" | "C/D";
 
-// ─── Data ────────────────────────────────────────────────────────────────────
+// ─── Types ───────────────────────────────────────────────────────────────────
 
 interface SoloDriver {
-  id: number; name: string; phone: string; type: DriverType;
+  id: string; name: string; phone: string; type: DriverType;
   status: DriverStatus; truck: string; trailer: string; location: string; comment: string;
   weeklyGrossTarget?: number;
   currentLoad?: string;
   nextLoad?: string;
 }
 
-const initSolo: SoloDriver[] = [
-  { id: 1,  name: "Carlos Mendez",      phone: "(214) 555-0132", type: "O/O", status: "enroute",    truck: "TRK-4481", trailer: "TRL-2210", location: "Dallas, TX",     comment: "Prefer night runs",       weeklyGrossTarget: 5000, currentLoad: "LD-00481", nextLoad: "LD-01551" },
-  { id: 2,  name: "Angela Torres",      phone: "(312) 555-0871", type: "C/D", status: "ready",      truck: "TRK-2290", trailer: "TRL-0881", location: "Chicago, IL",    comment: "Available from 06:00",    weeklyGrossTarget: 3500 },
-  { id: 3,  name: "Darnell Washington", phone: "(404) 555-0344", type: "O/O", status: "rest",       truck: "TRK-8813", trailer: "TRL-4430", location: "Atlanta, GA",    comment: "Waiting on load",         weeklyGrossTarget: 4000 },
-  { id: 4,  name: "Priya Sharma",       phone: "(713) 555-0209", type: "C/D", status: "dispatched", truck: "TRK-5577", trailer: "TRL-1190", location: "Houston, TX",    comment: "Dock #7",                 weeklyGrossTarget: 4500, currentLoad: "LD-00577" },
-  { id: 5,  name: "Marcus Webb",        phone: "(602) 555-0518", type: "O/O", status: "delivered",  truck: "TRK-3342", trailer: "TRL-6620", location: "Phoenix, AZ",    comment: "POD signed",              weeklyGrossTarget: 3000, currentLoad: "LD-00342" },
-  { id: 6,  name: "Linda Okafor",       phone: "(720) 555-0763", type: "C/D", status: "home",       truck: "TRK-6610", trailer: "TRL-3300", location: "Denver, CO",     comment: "I-70 construction delay"  },
-  { id: 7,  name: "Ray Kowalski",       phone: "(702) 555-0487", type: "O/O", status: "ready",      truck: "TRK-9924", trailer: "TRL-7710", location: "Las Vegas, NV",  comment: "Call before dispatching", weeklyGrossTarget: 4500 },
-  { id: 8,  name: "Tomás García",       phone: "(305) 555-0622", type: "C/D", status: "re_update",  truck: "TRK-1157", trailer: "TRL-5540", location: "Miami, FL",      comment: "Contract ended"           },
-];
-
 interface TeamDriver {
-  id: number; name1: string; name2: string; phone1: string; phone2: string;
+  id: string; name1: string; name2: string; phone1: string; phone2: string;
   type: DriverType; status: DriverStatus; truck: string; trailer: string; comment: string;
   weeklyGrossTarget?: number;
   currentLoad?: string;
   nextLoad?: string;
 }
 
-const initTeam: TeamDriver[] = [
-  { id: 1, name1: "Jean Eddy Simon",     name2: "Jean Wesly Herard",   phone1: "(504) 555-0112", phone2: "(504) 555-0224", type: "C/D", status: "enroute",    truck: "TRK-7701", trailer: "TRL-8810", comment: "Relay every 500 mi",   weeklyGrossTarget: 7000, currentLoad: "LD-01024", nextLoad: "LD-01680" },
-  { id: 2, name1: "Keavis Dyer",         name2: "James Schwein",       phone1: "(813) 555-0337", phone2: "(813) 555-0448", type: "O/O", status: "dispatched", truck: "TRK-4412", trailer: "TRL-2230", comment: "Coast-to-coast route", weeklyGrossTarget: 8000, currentLoad: "LD-01105" },
-  { id: 3, name1: "Shokhnurbek Komilov", name2: "Umarkhon Kholmirzaev",phone1: "(469) 555-0891", phone2: "(469) 555-0902", type: "C/D", status: "rest",       truck: "TRK-6650", trailer: "TRL-9910", comment: "On standby"            },
-  { id: 4, name1: "Bakhodir Azamov",     name2: "Ilhom Latipov",       phone1: "(832) 555-0563", phone2: "(832) 555-0674", type: "O/O", status: "ready",      truck: "TRK-1130", trailer: "TRL-4450", comment: "Midwest circuit",      weeklyGrossTarget: 6500 },
-];
+// ─── API ↔ local shape mappers ───────────────────────────────────────────────
 
-// ─── Loads data ───────────────────────────────────────────────────────────────
-
-interface LoadEntry {
-  id: string; origin: string; destination: string;
-  miles: number; rate: number; date: string; status: Status;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function toSolo(d: any): SoloDriver {
+  return {
+    id: d.id,
+    name: d.name ?? "",
+    phone: d.phone ?? "",
+    type: (d.type as DriverType) ?? "O/O",
+    status: (d.status as DriverStatus) ?? "ready",
+    truck: d.truck ?? "",
+    trailer: d.trailer ?? "",
+    location: d.location ?? "",
+    comment: d.comment ?? "",
+    weeklyGrossTarget: d.weekly_gross_target || undefined,
+    currentLoad: d.current_load || undefined,
+    nextLoad: d.next_load || undefined,
+  };
 }
 
-const WEEKLY_LOADS: Record<number, LoadEntry[]> = {
-  1: [
-    { id: "LD-4481", origin: "Dallas, TX",        destination: "Nashville, TN",    miles: 648, rate: 1620, date: "Mon Jun 9",  status: "delivered"  },
-    { id: "LD-4482", origin: "Nashville, TN",     destination: "Chicago, IL",      miles: 474, rate: 1185, date: "Wed Jun 11", status: "delivered"  },
-    { id: "LD-4483", origin: "Chicago, IL",       destination: "Kansas City, MO",  miles: 503, rate: 1257, date: "Fri Jun 13", status: "enroute"    },
-  ],
-  2: [
-    { id: "LD-2290", origin: "Chicago, IL",       destination: "Detroit, MI",      miles: 281, rate: 843,  date: "Mon Jun 9",  status: "delivered"  },
-    { id: "LD-2291", origin: "Detroit, MI",       destination: "Columbus, OH",     miles: 171, rate: 513,  date: "Tue Jun 10", status: "delivered"  },
-    { id: "LD-2292", origin: "Columbus, OH",      destination: "Indianapolis, IN", miles: 175, rate: 525,  date: "Thu Jun 12", status: "reserved"   },
-  ],
-  3: [
-    { id: "LD-8813", origin: "Atlanta, GA",       destination: "Charlotte, NC",    miles: 244, rate: 610,  date: "Mon Jun 9",  status: "delivered"  },
-  ],
-  4: [
-    { id: "LD-5577", origin: "Houston, TX",       destination: "San Antonio, TX",  miles: 197, rate: 591,  date: "Mon Jun 9",  status: "delivered"  },
-    { id: "LD-5578", origin: "San Antonio, TX",   destination: "El Paso, TX",      miles: 549, rate: 1372, date: "Tue Jun 10", status: "delivered"  },
-    { id: "LD-5579", origin: "El Paso, TX",       destination: "Albuquerque, NM",  miles: 268, rate: 804,  date: "Thu Jun 12", status: "enroute"    },
-  ],
-  5: [
-    { id: "LD-3342", origin: "Phoenix, AZ",       destination: "Las Vegas, NV",    miles: 297, rate: 742,  date: "Tue Jun 10", status: "delivered"  },
-    { id: "LD-3343", origin: "Las Vegas, NV",     destination: "Los Angeles, CA",  miles: 270, rate: 810,  date: "Wed Jun 11", status: "delivered"  },
-    { id: "LD-3344", origin: "Los Angeles, CA",   destination: "San Diego, CA",    miles: 120, rate: 360,  date: "Fri Jun 13", status: "enroute"    },
-  ],
-  6: [],
-  7: [
-    { id: "LD-9924", origin: "Las Vegas, NV",     destination: "Salt Lake City, UT", miles: 419, rate: 1047, date: "Wed Jun 11", status: "delivered"  },
-    { id: "LD-9925", origin: "Salt Lake City, UT", destination: "Denver, CO",       miles: 525, rate: 1312, date: "Fri Jun 13", status: "enroute"    },
-  ],
-  8: [],
-};
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function toTeam(d: any): TeamDriver {
+  return {
+    id: d.id,
+    name1: d.name ?? "",
+    name2: d.name2 ?? "",
+    phone1: d.phone ?? "",
+    phone2: d.phone2 ?? "",
+    type: (d.type as DriverType) ?? "C/D",
+    status: (d.status as DriverStatus) ?? "ready",
+    truck: d.truck ?? "",
+    trailer: d.trailer ?? "",
+    comment: d.comment ?? "",
+    weeklyGrossTarget: d.weekly_gross_target || undefined,
+    currentLoad: d.current_load || undefined,
+    nextLoad: d.next_load || undefined,
+  };
+}
 
-const TEAM_WEEKLY_LOADS: Record<number, LoadEntry[]> = {
-  1: [
-    { id: "LD-7701", origin: "New Orleans, LA",  destination: "Memphis, TN",      miles: 393, rate: 982,  date: "Mon Jun 9",  status: "delivered"  },
-    { id: "LD-7702", origin: "Memphis, TN",      destination: "St. Louis, MO",    miles: 281, rate: 702,  date: "Tue Jun 10", status: "delivered"  },
-    { id: "LD-7703", origin: "St. Louis, MO",    destination: "Indianapolis, IN", miles: 242, rate: 605,  date: "Thu Jun 12", status: "delivered"  },
-    { id: "LD-7704", origin: "Indianapolis, IN", destination: "Cincinnati, OH",   miles: 112, rate: 336,  date: "Fri Jun 13", status: "enroute"    },
-  ],
-  2: [
-    { id: "LD-4412", origin: "Tampa, FL",        destination: "Charlotte, NC",    miles: 586, rate: 1465, date: "Mon Jun 9",  status: "delivered"  },
-    { id: "LD-4413", origin: "Charlotte, NC",    destination: "Philadelphia, PA", miles: 480, rate: 1200, date: "Wed Jun 11", status: "delivered"  },
-    { id: "LD-4414", origin: "Philadelphia, PA", destination: "Boston, MA",       miles: 305, rate: 915,  date: "Fri Jun 13", status: "enroute"    },
-  ],
-  3: [],
-  4: [
-    { id: "LD-1130", origin: "Dallas, TX",       destination: "Oklahoma City, OK",miles: 208, rate: 520,  date: "Mon Jun 9",  status: "delivered"  },
-    { id: "LD-1131", origin: "Oklahoma City, OK",destination: "Wichita, KS",      miles: 160, rate: 400,  date: "Tue Jun 10", status: "delivered"  },
-    { id: "LD-1132", origin: "Wichita, KS",      destination: "Kansas City, MO",  miles: 193, rate: 482,  date: "Thu Jun 12", status: "reserved"   },
-  ],
-};
+function fromSolo(d: Partial<SoloDriver>) {
+  return {
+    name: d.name ?? "",
+    phone: d.phone ?? "",
+    type: d.type ?? "O/O",
+    team: false,
+    status: d.status ?? "ready",
+    location: d.location ?? "",
+    comment: d.comment ?? "",
+    weekly_gross_target: d.weeklyGrossTarget ?? 0,
+  };
+}
+
+function fromTeam(d: Partial<TeamDriver>) {
+  return {
+    name: d.name1 ?? "",
+    name2: d.name2 ?? "",
+    phone: d.phone1 ?? "",
+    phone2: d.phone2 ?? "",
+    type: d.type ?? "C/D",
+    team: true,
+    status: d.status ?? "ready",
+    comment: d.comment ?? "",
+    weekly_gross_target: d.weeklyGrossTarget ?? 0,
+  };
+}
 
 // ─── Custom Select ────────────────────────────────────────────────────────────
 
@@ -502,15 +492,8 @@ const TYPE_OPTS: SelectOpt[] = [
   { value: "C/D", label: "C/D — Company Driver"  },
 ];
 
-const TRUCK_OPTIONS: SelectOpt[] = [
-  "TRK-4481","TRK-2290","TRK-8813","TRK-5577","TRK-3342",
-  "TRK-6610","TRK-9924","TRK-1157","TRK-7701","TRK-4412","TRK-6650","TRK-1130",
-].map((v) => ({ value: v, label: v }));
-
-const TRAILER_OPTIONS: SelectOpt[] = [
-  "TRL-2210","TRL-0881","TRL-4430","TRL-1190","TRL-6620",
-  "TRL-3300","TRL-7710","TRL-5540","TRL-8810","TRL-2230","TRL-9910","TRL-4450",
-].map((v) => ({ value: v, label: v }));
+// Truck/trailer options are fetched per-tab from /trucks and /trailers
+const EMPTY_OPTS: SelectOpt[] = [];
 
 // ─── Field label ─────────────────────────────────────────────────────────────
 
@@ -548,8 +531,9 @@ const FieldInput = ({ value, onChange, placeholder }: { value: string; onChange:
 
 // ─── Modals ───────────────────────────────────────────────────────────────────
 
-function SoloModal({ driver, onClose, onSave }: {
+function SoloModal({ driver, onClose, onSave, truckOpts, trailerOpts, saving }: {
   driver: Partial<SoloDriver>; onClose: () => void; onSave: (d: SoloDriver) => void;
+  truckOpts: SelectOpt[]; trailerOpts: SelectOpt[]; saving?: boolean;
 }) {
   const [form, setForm] = useState<Partial<SoloDriver>>(driver);
   const set = (k: keyof SoloDriver, v: string) => setForm((f) => ({ ...f, [k]: v }));
@@ -582,12 +566,12 @@ function SoloModal({ driver, onClose, onSave }: {
 
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
             <FieldLabel>Truck Unit</FieldLabel>
-            <CustomSelect value={form.truck ?? ""} options={TRUCK_OPTIONS} onChange={(v) => set("truck", v)} searchable />
+            <CustomSelect value={form.truck ?? ""} options={truckOpts} onChange={(v) => set("truck", v)} searchable />
           </label>
 
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
             <FieldLabel>Trailer Unit</FieldLabel>
-            <CustomSelect value={form.trailer ?? ""} options={TRAILER_OPTIONS} onChange={(v) => set("trailer", v)} searchable />
+            <CustomSelect value={form.trailer ?? ""} options={trailerOpts} onChange={(v) => set("trailer", v)} searchable />
           </label>
 
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
@@ -626,8 +610,8 @@ function SoloModal({ driver, onClose, onSave }: {
           <button onClick={onClose} style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 16px", borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "var(--muted)", color: "var(--foreground)", cursor: "pointer" }}>
             Cancel
           </button>
-          <button onClick={() => onSave(form as SoloDriver)} style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 16px", borderRadius: 6, border: "none", backgroundColor: "var(--primary)", color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
-            <Check size={14} /> {isNew ? "Create Driver" : "Save Changes"}
+          <button onClick={() => onSave(form as SoloDriver)} disabled={saving} style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 16px", borderRadius: 6, border: "none", backgroundColor: saving ? "var(--muted)" : "var(--primary)", color: saving ? "var(--muted-foreground)" : "#fff", cursor: saving ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+            <Check size={14} /> {saving ? "Saving…" : isNew ? "Create Driver" : "Save Changes"}
           </button>
         </div>
       </div>
@@ -635,8 +619,9 @@ function SoloModal({ driver, onClose, onSave }: {
   );
 }
 
-function TeamModal({ driver, onClose, onSave }: {
+function TeamModal({ driver, onClose, onSave, truckOpts, trailerOpts, saving }: {
   driver: Partial<TeamDriver>; onClose: () => void; onSave: (d: TeamDriver) => void;
+  truckOpts: SelectOpt[]; trailerOpts: SelectOpt[]; saving?: boolean;
 }) {
   const [form, setForm] = useState<Partial<TeamDriver>>(driver);
   const set = (k: keyof TeamDriver, v: string) => setForm((f) => ({ ...f, [k]: v }));
@@ -683,12 +668,12 @@ function TeamModal({ driver, onClose, onSave }: {
 
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
             <FieldLabel>Truck Unit</FieldLabel>
-            <CustomSelect value={form.truck ?? ""} options={TRUCK_OPTIONS} onChange={(v) => set("truck", v)} searchable />
+            <CustomSelect value={form.truck ?? ""} options={truckOpts} onChange={(v) => set("truck", v)} searchable />
           </label>
 
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
             <FieldLabel>Trailer Unit</FieldLabel>
-            <CustomSelect value={form.trailer ?? ""} options={TRAILER_OPTIONS} onChange={(v) => set("trailer", v)} searchable />
+            <CustomSelect value={form.trailer ?? ""} options={trailerOpts} onChange={(v) => set("trailer", v)} searchable />
           </label>
 
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
@@ -726,8 +711,8 @@ function TeamModal({ driver, onClose, onSave }: {
           <button onClick={onClose} style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 16px", borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "var(--muted)", color: "var(--foreground)", cursor: "pointer" }}>
             Cancel
           </button>
-          <button onClick={() => onSave(form as TeamDriver)} style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 16px", borderRadius: 6, border: "none", backgroundColor: "var(--primary)", color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
-            <Check size={14} /> {isNew ? "Create Team" : "Save Changes"}
+          <button onClick={() => onSave(form as TeamDriver)} disabled={saving} style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 16px", borderRadius: 6, border: "none", backgroundColor: saving ? "var(--muted)" : "var(--primary)", color: saving ? "var(--muted-foreground)" : "#fff", cursor: saving ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+            <Check size={14} /> {saving ? "Saving…" : isNew ? "Create Team" : "Save Changes"}
           </button>
         </div>
       </div>
@@ -1017,7 +1002,7 @@ function AddMenu({ entityLabel, onManual, onImport, onEld }: {
 // ─── Driver Detail ────────────────────────────────────────────────────────────
 
 function DriverDetail({ driver, onBack }: { driver: SoloDriver; onBack: () => void }) {
-  const loads = WEEKLY_LOADS[driver.id] ?? [];
+  const loads: { id: string; origin: string; destination: string; miles: number; rate: number; date: string; status: Status }[] = [];
   const totalGross = loads.reduce((s, l) => s + l.rate, 0);
   const totalMiles = loads.reduce((s, l) => s + l.miles, 0);
   const avgRate    = totalMiles > 0 ? totalGross / totalMiles : 0;
@@ -1251,7 +1236,7 @@ function DriverDetail({ driver, onBack }: { driver: SoloDriver; onBack: () => vo
 // ─── Team Detail ─────────────────────────────────────────────────────────────
 
 function TeamDetail({ team, onBack }: { team: TeamDriver; onBack: () => void }) {
-  const loads = TEAM_WEEKLY_LOADS[team.id] ?? [];
+  const loads: { id: string; origin: string; destination: string; miles: number; rate: number; date: string; status: Status }[] = [];
   const totalGross = loads.reduce((s, l) => s + l.rate, 0);
   const totalMiles = loads.reduce((s, l) => s + l.miles, 0);
   const avgRate    = totalMiles > 0 ? totalGross / totalMiles : 0;
@@ -1551,29 +1536,77 @@ function Toolbar({
 
 // ─── Solo Tab ─────────────────────────────────────────────────────────────────
 
-function SoloTab({ onSelectDriver }: { onSelectDriver: (d: SoloDriver) => void }) {
-  const [rows, setRows]               = useState<SoloDriver[]>(initSolo);
+function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDriver) => void; onCountChange: (n: number) => void }) {
+  const [rows, setRows]               = useState<SoloDriver[]>([]);
+  const [loading, setLoading]         = useState(true);
+  const [error, setError]             = useState("");
+  const [truckOpts, setTruckOpts]     = useState<SelectOpt[]>(EMPTY_OPTS);
+  const [trailerOpts, setTrailerOpts] = useState<SelectOpt[]>(EMPTY_OPTS);
   const [modal, setModal]             = useState<"create" | "edit" | null>(null);
   const [editing, setEditing]         = useState<Partial<SoloDriver>>({});
   const [deleting, setDeleting]       = useState<SoloDriver | null>(null);
+  const [saving, setSaving]           = useState(false);
   const [search, setSearch]           = useState("");
   const [statusFilter, setStatus]     = useState("All");
   const [page, setPage]               = useState(1);
   const [pageSize, setPageSize]       = useState(20);
   const [importing, setImporting]     = useState(false);
-  let nextId = Math.max(0, ...rows.map((r) => r.id)) + 1;
 
-  const patchRow = (id: number, fields: Partial<SoloDriver>) =>
-    setRows((prev) => prev.map((d) => (d.id === id ? { ...d, ...fields } : d)));
+  useEffect(() => {
+    setLoading(true);
+    Promise.all([
+      api.get<any[]>("/drivers"),
+      api.get<any[]>("/trucks"),
+      api.get<any[]>("/trailers"),
+    ])
+      .then(([drivers, trucks, trailers]) => {
+        const solo = (drivers ?? []).filter((d) => !d.team).map(toSolo);
+        setRows(solo);
+        onCountChange(solo.length);
+        setTruckOpts((trucks ?? []).map((t) => ({ value: t.unit ?? t.id, label: t.unit ?? t.id })));
+        setTrailerOpts((trailers ?? []).map((t) => ({ value: t.unit ?? t.id, label: t.unit ?? t.id })));
+      })
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const patchRow = async (id: string, fields: Partial<SoloDriver>) => {
+    const existing = rows.find((d) => d.id === id);
+    if (!existing) return;
+    const updated = { ...existing, ...fields };
+    setRows((prev) => prev.map((d) => (d.id === id ? updated : d)));
+    api.put(`/drivers/${id}`, fromSolo(updated)).catch(() => {
+      setRows((prev) => prev.map((d) => (d.id === id ? existing : d)));
+    });
+  };
 
   const openCreate = () => { setEditing({}); setModal("create"); };
   const openEdit   = (d: SoloDriver) => { setEditing(d); setModal("edit"); };
-  const save = (d: SoloDriver) => {
-    if (modal === "create") setRows((r) => [...r, { ...d, id: nextId++ }]);
-    else setRows((r) => r.map((x) => (x.id === d.id ? d : x)));
-    setModal(null);
+  const save = async (d: SoloDriver) => {
+    setSaving(true);
+    try {
+      if (modal === "create") {
+        const created = await api.post<any>("/drivers", fromSolo(d));
+        setRows((r) => [...r, toSolo(created)]);
+        onCountChange(rows.length + 1);
+      } else {
+        const updated = await api.put<any>(`/drivers/${d.id}`, fromSolo(d));
+        setRows((r) => r.map((x) => (x.id === d.id ? toSolo(updated) : x)));
+      }
+      setModal(null);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Save failed");
+    } finally {
+      setSaving(false);
+    }
   };
-  const del = () => { if (deleting) setRows((r) => r.filter((x) => x.id !== deleting.id)); setDeleting(null); };
+  const del = async () => {
+    if (!deleting) return;
+    await api.delete(`/drivers/${deleting.id}`).catch(() => {});
+    setRows((r) => r.filter((x) => x.id !== deleting.id));
+    onCountChange(rows.length - 1);
+    setDeleting(null);
+  };
 
   const q = search.toLowerCase();
   const filtered = rows.filter((d) => {
@@ -1585,6 +1618,18 @@ function SoloTab({ onSelectDriver }: { onSelectDriver: (d: SoloDriver) => void }
 
   const handleSearch  = (v: string) => { setSearch(v);  setPage(1); };
   const handleStatus  = (v: string) => { setStatus(v);  setPage(1); };
+
+  if (loading) return (
+    <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
+      Loading drivers…
+    </div>
+  );
+
+  if (error) return (
+    <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "#ef4444" }}>
+      {error}
+    </div>
+  );
 
   return (
     <>
@@ -1621,7 +1666,7 @@ function SoloTab({ onSelectDriver }: { onSelectDriver: (d: SoloDriver) => void }
                 onMouseEnter={(e) => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = "rgba(59,130,246,0.03)"; }}
                 onMouseLeave={(e) => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = i % 2 === 0 ? "var(--card)" : "var(--background)"; }}
               >
-                <TD mono center>{d.id}</TD>
+                <TD mono center>{i + 1 + (page - 1) * pageSize}</TD>
                 <TD>
                   <button
                     onClick={() => onSelectDriver(d)}
@@ -1696,7 +1741,7 @@ function SoloTab({ onSelectDriver }: { onSelectDriver: (d: SoloDriver) => void }
       />
 
       {(modal === "create" || modal === "edit") && (
-        <SoloModal driver={editing} onClose={() => setModal(null)} onSave={save} />
+        <SoloModal driver={editing} onClose={() => setModal(null)} onSave={save} truckOpts={truckOpts} trailerOpts={trailerOpts} saving={saving} />
       )}
       {deleting && (
         <DeleteConfirm label={deleting.name} onClose={() => setDeleting(null)} onConfirm={del} />
@@ -1710,29 +1755,77 @@ function SoloTab({ onSelectDriver }: { onSelectDriver: (d: SoloDriver) => void }
 
 // ─── Team Tab ─────────────────────────────────────────────────────────────────
 
-function TeamTab({ onSelectTeam }: { onSelectTeam: (d: TeamDriver) => void }) {
-  const [rows, setRows]           = useState<TeamDriver[]>(initTeam);
-  const [modal, setModal]         = useState<"create" | "edit" | null>(null);
-  const [editing, setEditing]     = useState<Partial<TeamDriver>>({});
-  const [deleting, setDeleting]   = useState<TeamDriver | null>(null);
-  const [search, setSearch]       = useState("");
-  const [statusFilter, setStatus] = useState("All");
-  const [page, setPage]           = useState(1);
-  const [pageSize, setPageSize]   = useState(20);
-  const [importing, setImporting] = useState(false);
-  let nextId = Math.max(0, ...rows.map((r) => r.id)) + 1;
+function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver) => void; onCountChange: (n: number) => void }) {
+  const [rows, setRows]               = useState<TeamDriver[]>([]);
+  const [loading, setLoading]         = useState(true);
+  const [error, setError]             = useState("");
+  const [truckOpts, setTruckOpts]     = useState<SelectOpt[]>(EMPTY_OPTS);
+  const [trailerOpts, setTrailerOpts] = useState<SelectOpt[]>(EMPTY_OPTS);
+  const [modal, setModal]             = useState<"create" | "edit" | null>(null);
+  const [editing, setEditing]         = useState<Partial<TeamDriver>>({});
+  const [deleting, setDeleting]       = useState<TeamDriver | null>(null);
+  const [saving, setSaving]           = useState(false);
+  const [search, setSearch]           = useState("");
+  const [statusFilter, setStatus]     = useState("All");
+  const [page, setPage]               = useState(1);
+  const [pageSize, setPageSize]       = useState(20);
+  const [importing, setImporting]     = useState(false);
 
-  const patchRow = (id: number, fields: Partial<TeamDriver>) =>
-    setRows((prev) => prev.map((d) => (d.id === id ? { ...d, ...fields } : d)));
+  useEffect(() => {
+    setLoading(true);
+    Promise.all([
+      api.get<any[]>("/drivers"),
+      api.get<any[]>("/trucks"),
+      api.get<any[]>("/trailers"),
+    ])
+      .then(([drivers, trucks, trailers]) => {
+        const teams = (drivers ?? []).filter((d) => d.team).map(toTeam);
+        setRows(teams);
+        onCountChange(teams.length);
+        setTruckOpts((trucks ?? []).map((t) => ({ value: t.unit ?? t.id, label: t.unit ?? t.id })));
+        setTrailerOpts((trailers ?? []).map((t) => ({ value: t.unit ?? t.id, label: t.unit ?? t.id })));
+      })
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const patchRow = async (id: string, fields: Partial<TeamDriver>) => {
+    const existing = rows.find((d) => d.id === id);
+    if (!existing) return;
+    const updated = { ...existing, ...fields };
+    setRows((prev) => prev.map((d) => (d.id === id ? updated : d)));
+    api.put(`/drivers/${id}`, fromTeam(updated)).catch(() => {
+      setRows((prev) => prev.map((d) => (d.id === id ? existing : d)));
+    });
+  };
 
   const openCreate = () => { setEditing({}); setModal("create"); };
   const openEdit   = (d: TeamDriver) => { setEditing(d); setModal("edit"); };
-  const save = (d: TeamDriver) => {
-    if (modal === "create") setRows((r) => [...r, { ...d, id: nextId++ }]);
-    else setRows((r) => r.map((x) => (x.id === d.id ? d : x)));
-    setModal(null);
+  const save = async (d: TeamDriver) => {
+    setSaving(true);
+    try {
+      if (modal === "create") {
+        const created = await api.post<any>("/drivers", fromTeam(d));
+        setRows((r) => [...r, toTeam(created)]);
+        onCountChange(rows.length + 1);
+      } else {
+        const updated = await api.put<any>(`/drivers/${d.id}`, fromTeam(d));
+        setRows((r) => r.map((x) => (x.id === d.id ? toTeam(updated) : x)));
+      }
+      setModal(null);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Save failed");
+    } finally {
+      setSaving(false);
+    }
   };
-  const del = () => { if (deleting) setRows((r) => r.filter((x) => x.id !== deleting.id)); setDeleting(null); };
+  const del = async () => {
+    if (!deleting) return;
+    await api.delete(`/drivers/${deleting.id}`).catch(() => {});
+    setRows((r) => r.filter((x) => x.id !== deleting.id));
+    onCountChange(rows.length - 1);
+    setDeleting(null);
+  };
 
   const q = search.toLowerCase();
   const filtered = rows.filter((d) => {
@@ -1744,6 +1837,18 @@ function TeamTab({ onSelectTeam }: { onSelectTeam: (d: TeamDriver) => void }) {
 
   const handleSearch = (v: string) => { setSearch(v);  setPage(1); };
   const handleStatus = (v: string) => { setStatus(v);  setPage(1); };
+
+  if (loading) return (
+    <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
+      Loading teams…
+    </div>
+  );
+
+  if (error) return (
+    <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "#ef4444" }}>
+      {error}
+    </div>
+  );
 
   return (
     <>
@@ -1781,7 +1886,7 @@ function TeamTab({ onSelectTeam }: { onSelectTeam: (d: TeamDriver) => void }) {
                 onMouseEnter={(e) => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = "rgba(59,130,246,0.03)"; }}
                 onMouseLeave={(e) => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = i % 2 === 0 ? "var(--card)" : "var(--background)"; }}
               >
-                <TD mono center>{d.id}</TD>
+                <TD mono center>{i + 1 + (page - 1) * pageSize}</TD>
                 <TD>
                   <button
                     onClick={() => onSelectTeam(d)}
@@ -1853,7 +1958,7 @@ function TeamTab({ onSelectTeam }: { onSelectTeam: (d: TeamDriver) => void }) {
       />
 
       {(modal === "create" || modal === "edit") && (
-        <TeamModal driver={editing} onClose={() => setModal(null)} onSave={save} />
+        <TeamModal driver={editing} onClose={() => setModal(null)} onSave={save} truckOpts={truckOpts} trailerOpts={trailerOpts} saving={saving} />
       )}
       {deleting && (
         <DeleteConfirm label={`${deleting.name1} & ${deleting.name2}`} onClose={() => setDeleting(null)} onConfirm={del} />
@@ -1873,11 +1978,13 @@ export function DriversPage() {
   const [tab, setTab]               = useState<TabId>("solo");
   const [detailDriver, setDetail]   = useState<SoloDriver | null>(null);
   const [detailTeam, setDetailTeam] = useState<TeamDriver | null>(null);
+  const [soloCount, setSoloCount]   = useState(0);
+  const [teamCount, setTeamCount]   = useState(0);
   const inDetail = detailDriver !== null || detailTeam !== null;
 
   const tabs: { id: TabId; label: string; count: number; icon: React.ReactNode; color: string; bg: string }[] = [
-    { id: "solo", label: "Solo Drivers", count: initSolo.length, icon: <User size={15} />,  color: "#1D4ED8", bg: "#DBEAFE" },
-    { id: "team", label: "Team Drivers", count: initTeam.length, icon: <Users size={15} />, color: "#5B21B6", bg: "#EDE9FE" },
+    { id: "solo", label: "Solo Drivers", count: soloCount, icon: <User size={15} />,  color: "#1D4ED8", bg: "#DBEAFE" },
+    { id: "team", label: "Team Drivers", count: teamCount, icon: <Users size={15} />, color: "#5B21B6", bg: "#EDE9FE" },
   ];
 
   return (
@@ -1932,8 +2039,8 @@ export function DriversPage() {
             <TeamDetail team={detailTeam} onBack={() => setDetailTeam(null)} />
           ) : (
             <>
-              {tab === "solo" && <SoloTab onSelectDriver={setDetail} />}
-              {tab === "team" && <TeamTab onSelectTeam={setDetailTeam} />}
+              {tab === "solo" && <SoloTab onSelectDriver={setDetail} onCountChange={setSoloCount} />}
+              {tab === "team" && <TeamTab onSelectTeam={setDetailTeam} onCountChange={setTeamCount} />}
             </>
           )}
         </div>
