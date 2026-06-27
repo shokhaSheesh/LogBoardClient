@@ -7,6 +7,7 @@ import {
   X, Check, Search, ChevronDown, ChevronLeft, ChevronRight,
   ClipboardList, FileSpreadsheet, Radio, Upload, FileText,
   ArrowLeft, Phone, Truck, DollarSign, Route, Package, TrendingUp,
+  AlertCircle,
 } from "lucide-react";
 
 type DriverStatus = Status;
@@ -101,7 +102,7 @@ function fromTeam(d: Partial<TeamDriver>) {
 interface SelectOpt { value: string; label: string; dot?: string }
 
 function CustomSelect({
-  value, options, onChange, width, compact = false, dropUp = false, searchable = false,
+  value, options, onChange, width, compact = false, dropUp = false, searchable = false, disabled = false,
 }: {
   value: string;
   options: SelectOpt[];
@@ -110,6 +111,7 @@ function CustomSelect({
   compact?: boolean;
   dropUp?: boolean;
   searchable?: boolean;
+  disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -133,14 +135,17 @@ function CustomSelect({
     <div ref={ref} style={{ position: "relative", width: width ?? "100%" }}>
       <button
         type="button"
-        onClick={() => { setOpen((v) => !v); setQuery(""); }}
+        disabled={disabled}
+        onClick={() => { if (!disabled) { setOpen((v) => !v); setQuery(""); } }}
         style={{
           display: "flex", alignItems: "center", gap: 8, width: "100%",
           height: h, paddingLeft: 10, paddingRight: 8,
           fontFamily: "var(--font-sans)", fontSize: compact ? 12 : 13,
-          backgroundColor: "var(--input-background)",
+          backgroundColor: disabled ? "var(--muted)" : "var(--input-background)",
           border: `1px solid ${open ? "var(--primary)" : "var(--border)"}`,
-          borderRadius: 7, color: "var(--foreground)", cursor: "pointer",
+          borderRadius: 7, color: disabled ? "var(--muted-foreground)" : "var(--foreground)",
+          cursor: disabled ? "not-allowed" : "pointer",
+          opacity: disabled ? 0.55 : 1,
           boxShadow: open ? "0 0 0 3px rgba(59,130,246,0.12)" : "none",
           transition: "border-color 0.15s, box-shadow 0.15s",
           outline: "none",
@@ -495,36 +500,83 @@ const TYPE_OPTS: SelectOpt[] = [
 // Truck/trailer options are fetched per-tab from /trucks and /trailers
 const EMPTY_OPTS: SelectOpt[] = [];
 
+// ─── Toast ────────────────────────────────────────────────────────────────────
+
+function Toast({ msg, type, onClose }: { msg: string; type: "success" | "error"; onClose: () => void }) {
+  useEffect(() => {
+    const t = setTimeout(onClose, 3500);
+    return () => clearTimeout(t);
+  }, []);
+  return (
+    <div style={{
+      position: "fixed", bottom: 24, right: 24, zIndex: 9999,
+      backgroundColor: type === "success" ? "#10B981" : "#EF4444",
+      color: "#fff", borderRadius: 8, padding: "10px 16px",
+      display: "flex", alignItems: "center", gap: 8,
+      boxShadow: "0 4px 20px rgba(0,0,0,0.18)",
+      fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 500,
+    }}>
+      {type === "success" ? <Check size={15} /> : <AlertCircle size={15} />}
+      {msg}
+      <button onClick={onClose} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.75)", cursor: "pointer", display: "flex", padding: 0, marginLeft: 4 }}>
+        <X size={13} />
+      </button>
+    </div>
+  );
+}
+
 // ─── Field label ─────────────────────────────────────────────────────────────
 
-const FieldLabel = ({ children }: { children: React.ReactNode }) => (
-  <span style={{
-    fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600,
-    color: "var(--muted-foreground)", textTransform: "uppercase", letterSpacing: "0.06em",
-  }}>
-    {children}
+const PendingBadge = () => (
+  <span style={{ fontSize: 8, fontWeight: 700, color: "#D97706", backgroundColor: "#FEF3C7", border: "1px solid #FDE68A", borderRadius: 4, padding: "1px 4px", letterSpacing: "0.04em", textTransform: "uppercase" as const, marginLeft: 4 }}>
+    backend pending
   </span>
 );
 
-const FieldInput = ({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder?: string }) => (
+const FieldLabel = ({ children, required, pending, error }: { children: React.ReactNode; required?: boolean; pending?: boolean; error?: boolean }) => (
+  <span style={{
+    display: "flex", alignItems: "center",
+    fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600,
+    color: error ? "#EF4444" : "var(--muted-foreground)", textTransform: "uppercase", letterSpacing: "0.06em",
+  }}>
+    {children}
+    {required && <span style={{ color: "#EF4444", marginLeft: 2 }}>*</span>}
+    {pending && <PendingBadge />}
+  </span>
+);
+
+const FieldInput = ({ value, onChange, onBlur, placeholder, error, disabled }: {
+  value: string; onChange: (v: string) => void; onBlur?: () => void; placeholder?: string; error?: boolean; disabled?: boolean;
+}) => (
   <input
     value={value}
     onChange={(e) => onChange(e.target.value)}
     placeholder={placeholder}
+    disabled={disabled}
     style={{
       fontFamily: "var(--font-sans)", fontSize: 13,
       padding: "7px 10px", borderRadius: 6, height: 34,
-      border: "1px solid var(--border)", backgroundColor: "var(--input-background)",
-      color: "var(--foreground)", outline: "none", width: "100%", boxSizing: "border-box",
+      border: `1px solid ${error ? "#EF4444" : "var(--border)"}`,
+      backgroundColor: disabled ? "var(--muted)" : error ? "rgba(239,68,68,0.04)" : "var(--input-background)",
+      color: disabled ? "var(--muted-foreground)" : "var(--foreground)",
+      boxShadow: error ? "0 0 0 3px rgba(239,68,68,0.10)" : "none",
+      outline: "none", width: "100%", boxSizing: "border-box" as const,
+      cursor: disabled ? "not-allowed" : undefined,
+      opacity: disabled ? 0.55 : 1,
       transition: "border-color 0.15s, box-shadow 0.15s",
     }}
     onFocus={(e) => {
-      e.currentTarget.style.borderColor = "var(--primary)";
-      e.currentTarget.style.boxShadow = "0 0 0 3px rgba(59,130,246,0.12)";
+      if (!disabled && !error) {
+        e.currentTarget.style.borderColor = "var(--primary)";
+        e.currentTarget.style.boxShadow = "0 0 0 3px rgba(59,130,246,0.12)";
+      }
     }}
     onBlur={(e) => {
-      e.currentTarget.style.borderColor = "var(--border)";
-      e.currentTarget.style.boxShadow = "none";
+      onBlur?.();
+      if (!disabled) {
+        e.currentTarget.style.borderColor = error ? "#EF4444" : "var(--border)";
+        e.currentTarget.style.boxShadow = error ? "0 0 0 3px rgba(239,68,68,0.10)" : "none";
+      }
     }}
   />
 );
@@ -536,8 +588,18 @@ function SoloModal({ driver, onClose, onSave, truckOpts, trailerOpts, saving }: 
   truckOpts: SelectOpt[]; trailerOpts: SelectOpt[]; saving?: boolean;
 }) {
   const [form, setForm] = useState<Partial<SoloDriver>>(driver);
+  const [touched, setTouched] = useState<Partial<Record<keyof SoloDriver, boolean>>>({});
   const set = (k: keyof SoloDriver, v: string) => setForm((f) => ({ ...f, [k]: v }));
+  const touch = (k: keyof SoloDriver) => setTouched((t) => ({ ...t, [k]: true }));
   const isNew = !driver.id;
+
+  const err = (k: keyof SoloDriver) => touched[k] && !form[k]?.toString().trim();
+
+  const handleSave = () => {
+    setTouched({ name: true, phone: true });
+    if (!form.name?.trim() || !form.phone?.trim()) return;
+    onSave(form as SoloDriver);
+  };
 
   return (
     <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -555,23 +617,25 @@ function SoloModal({ driver, onClose, onSave, truckOpts, trailerOpts, saving }: 
         {/* Body */}
         <div style={{ padding: "20px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-            <FieldLabel>Full Name</FieldLabel>
-            <FieldInput value={(form.name as string) ?? ""} onChange={(v) => set("name", v)} />
+            <FieldLabel required error={!!err("name")}>Full Name</FieldLabel>
+            <FieldInput value={form.name ?? ""} onChange={(v) => set("name", v)} onBlur={() => touch("name")} error={!!err("name")} />
+            {err("name") && <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "#EF4444" }}>Name is required</span>}
           </label>
 
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-            <FieldLabel>Phone Number</FieldLabel>
-            <FieldInput value={(form.phone as string) ?? ""} onChange={(v) => set("phone", v)} />
+            <FieldLabel required error={!!err("phone")}>Phone Number</FieldLabel>
+            <FieldInput value={form.phone ?? ""} onChange={(v) => set("phone", v)} onBlur={() => touch("phone")} error={!!err("phone")} />
+            {err("phone") && <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "#EF4444" }}>Phone is required</span>}
           </label>
 
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-            <FieldLabel>Truck Unit</FieldLabel>
-            <CustomSelect value={form.truck ?? ""} options={truckOpts} onChange={(v) => set("truck", v)} searchable />
+            <FieldLabel pending>Truck Unit</FieldLabel>
+            <CustomSelect value={form.truck ?? ""} options={truckOpts} onChange={(v) => set("truck", v)} searchable disabled />
           </label>
 
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-            <FieldLabel>Trailer Unit</FieldLabel>
-            <CustomSelect value={form.trailer ?? ""} options={trailerOpts} onChange={(v) => set("trailer", v)} searchable />
+            <FieldLabel pending>Trailer Unit</FieldLabel>
+            <CustomSelect value={form.trailer ?? ""} options={trailerOpts} onChange={(v) => set("trailer", v)} searchable disabled />
           </label>
 
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
@@ -601,7 +665,7 @@ function SoloModal({ driver, onClose, onSave, truckOpts, trailerOpts, saving }: 
 
           <label style={{ display: "flex", flexDirection: "column", gap: 5, gridColumn: "1 / -1" }}>
             <FieldLabel>Comment</FieldLabel>
-            <FieldInput value={(form.comment as string) ?? ""} onChange={(v) => set("comment", v)} />
+            <FieldInput value={form.comment ?? ""} onChange={(v) => set("comment", v)} />
           </label>
         </div>
 
@@ -610,7 +674,7 @@ function SoloModal({ driver, onClose, onSave, truckOpts, trailerOpts, saving }: 
           <button onClick={onClose} style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 16px", borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "var(--muted)", color: "var(--foreground)", cursor: "pointer" }}>
             Cancel
           </button>
-          <button onClick={() => onSave(form as SoloDriver)} disabled={saving} style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 16px", borderRadius: 6, border: "none", backgroundColor: saving ? "var(--muted)" : "var(--primary)", color: saving ? "var(--muted-foreground)" : "#fff", cursor: saving ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+          <button onClick={handleSave} disabled={saving} style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 16px", borderRadius: 6, border: "none", backgroundColor: saving ? "var(--muted)" : "var(--primary)", color: saving ? "var(--muted-foreground)" : "#fff", cursor: saving ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 6 }}>
             <Check size={14} /> {saving ? "Saving…" : isNew ? "Create Driver" : "Save Changes"}
           </button>
         </div>
@@ -624,14 +688,18 @@ function TeamModal({ driver, onClose, onSave, truckOpts, trailerOpts, saving }: 
   truckOpts: SelectOpt[]; trailerOpts: SelectOpt[]; saving?: boolean;
 }) {
   const [form, setForm] = useState<Partial<TeamDriver>>(driver);
+  const [touched, setTouched] = useState<Partial<Record<keyof TeamDriver, boolean>>>({});
   const set = (k: keyof TeamDriver, v: string) => setForm((f) => ({ ...f, [k]: v }));
+  const touch = (k: keyof TeamDriver) => setTouched((t) => ({ ...t, [k]: true }));
   const isNew = !driver.id;
 
-  const textFields: [keyof TeamDriver, string][] = [
-    ["name1","Driver 1 Name"], ["phone1","Driver 1 Phone"],
-    ["name2","Driver 2 Name"], ["phone2","Driver 2 Phone"],
-    ["truck","Truck Unit"],    ["trailer","Trailer Unit"],
-  ];
+  const err = (k: keyof TeamDriver) => touched[k] && !form[k]?.toString().trim();
+
+  const handleSave = () => {
+    setTouched({ name1: true, phone1: true, name2: true, phone2: true });
+    if (!form.name1?.trim() || !form.phone1?.trim() || !form.name2?.trim() || !form.phone2?.trim()) return;
+    onSave(form as TeamDriver);
+  };
 
   return (
     <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -647,33 +715,37 @@ function TeamModal({ driver, onClose, onSave, truckOpts, trailerOpts, saving }: 
 
         <div style={{ padding: "20px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-            <FieldLabel>Driver 1 Name</FieldLabel>
-            <FieldInput value={(form.name1 as string) ?? ""} onChange={(v) => set("name1", v)} />
+            <FieldLabel required error={!!err("name1")}>Driver 1 Name</FieldLabel>
+            <FieldInput value={form.name1 ?? ""} onChange={(v) => set("name1", v)} onBlur={() => touch("name1")} error={!!err("name1")} />
+            {err("name1") && <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "#EF4444" }}>Driver 1 name is required</span>}
           </label>
 
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-            <FieldLabel>Driver 1 Phone</FieldLabel>
-            <FieldInput value={(form.phone1 as string) ?? ""} onChange={(v) => set("phone1", v)} />
+            <FieldLabel required error={!!err("phone1")}>Driver 1 Phone</FieldLabel>
+            <FieldInput value={form.phone1 ?? ""} onChange={(v) => set("phone1", v)} onBlur={() => touch("phone1")} error={!!err("phone1")} />
+            {err("phone1") && <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "#EF4444" }}>Driver 1 phone is required</span>}
           </label>
 
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-            <FieldLabel>Driver 2 Name</FieldLabel>
-            <FieldInput value={(form.name2 as string) ?? ""} onChange={(v) => set("name2", v)} />
+            <FieldLabel required error={!!err("name2")}>Driver 2 Name</FieldLabel>
+            <FieldInput value={form.name2 ?? ""} onChange={(v) => set("name2", v)} onBlur={() => touch("name2")} error={!!err("name2")} />
+            {err("name2") && <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "#EF4444" }}>Driver 2 name is required</span>}
           </label>
 
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-            <FieldLabel>Driver 2 Phone</FieldLabel>
-            <FieldInput value={(form.phone2 as string) ?? ""} onChange={(v) => set("phone2", v)} />
+            <FieldLabel required error={!!err("phone2")}>Driver 2 Phone</FieldLabel>
+            <FieldInput value={form.phone2 ?? ""} onChange={(v) => set("phone2", v)} onBlur={() => touch("phone2")} error={!!err("phone2")} />
+            {err("phone2") && <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "#EF4444" }}>Driver 2 phone is required</span>}
           </label>
 
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-            <FieldLabel>Truck Unit</FieldLabel>
-            <CustomSelect value={form.truck ?? ""} options={truckOpts} onChange={(v) => set("truck", v)} searchable />
+            <FieldLabel pending>Truck Unit</FieldLabel>
+            <CustomSelect value={form.truck ?? ""} options={truckOpts} onChange={(v) => set("truck", v)} searchable disabled />
           </label>
 
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-            <FieldLabel>Trailer Unit</FieldLabel>
-            <CustomSelect value={form.trailer ?? ""} options={trailerOpts} onChange={(v) => set("trailer", v)} searchable />
+            <FieldLabel pending>Trailer Unit</FieldLabel>
+            <CustomSelect value={form.trailer ?? ""} options={trailerOpts} onChange={(v) => set("trailer", v)} searchable disabled />
           </label>
 
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
@@ -703,7 +775,7 @@ function TeamModal({ driver, onClose, onSave, truckOpts, trailerOpts, saving }: 
 
           <label style={{ display: "flex", flexDirection: "column", gap: 5, gridColumn: "1 / -1" }}>
             <FieldLabel>Comment</FieldLabel>
-            <FieldInput value={(form.comment as string) ?? ""} onChange={(v) => set("comment", v)} />
+            <FieldInput value={form.comment ?? ""} onChange={(v) => set("comment", v)} />
           </label>
         </div>
 
@@ -711,7 +783,7 @@ function TeamModal({ driver, onClose, onSave, truckOpts, trailerOpts, saving }: 
           <button onClick={onClose} style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 16px", borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "var(--muted)", color: "var(--foreground)", cursor: "pointer" }}>
             Cancel
           </button>
-          <button onClick={() => onSave(form as TeamDriver)} disabled={saving} style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 16px", borderRadius: 6, border: "none", backgroundColor: saving ? "var(--muted)" : "var(--primary)", color: saving ? "var(--muted-foreground)" : "#fff", cursor: saving ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+          <button onClick={handleSave} disabled={saving} style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 16px", borderRadius: 6, border: "none", backgroundColor: saving ? "var(--muted)" : "var(--primary)", color: saving ? "var(--muted-foreground)" : "#fff", cursor: saving ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 6 }}>
             <Check size={14} /> {saving ? "Saving…" : isNew ? "Create Team" : "Save Changes"}
           </button>
         </div>
@@ -1551,6 +1623,7 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
   const [page, setPage]               = useState(1);
   const [pageSize, setPageSize]       = useState(20);
   const [importing, setImporting]     = useState(false);
+  const [toast, setToast]             = useState<{ type: "success" | "error"; msg: string } | null>(null);
 
   useEffect(() => {
     setLoading(true);
@@ -1589,22 +1662,29 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
         const created = await api.post<any>("/drivers", fromSolo(d));
         setRows((r) => [...r, toSolo(created)]);
         onCountChange(rows.length + 1);
+        setToast({ type: "success", msg: `${d.name} added successfully` });
       } else {
         const updated = await api.put<any>(`/drivers/${d.id}`, fromSolo(d));
         setRows((r) => r.map((x) => (x.id === d.id ? toSolo(updated) : x)));
+        setToast({ type: "success", msg: `${d.name} updated successfully` });
       }
       setModal(null);
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Save failed");
+      setToast({ type: "error", msg: e instanceof Error ? e.message : "Save failed" });
     } finally {
       setSaving(false);
     }
   };
   const del = async () => {
     if (!deleting) return;
-    await api.delete(`/drivers/${deleting.id}`).catch(() => {});
-    setRows((r) => r.filter((x) => x.id !== deleting.id));
-    onCountChange(rows.length - 1);
+    try {
+      await api.delete(`/drivers/${deleting.id}`);
+      setRows((r) => r.filter((x) => x.id !== deleting.id));
+      onCountChange(rows.length - 1);
+      setToast({ type: "success", msg: `${deleting.name} removed` });
+    } catch (e) {
+      setToast({ type: "error", msg: e instanceof Error ? e.message : "Delete failed" });
+    }
     setDeleting(null);
   };
 
@@ -1749,6 +1829,7 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
       {importing && (
         <ImportModal entityLabel="Driver" onClose={() => setImporting(false)} />
       )}
+      {toast && <Toast type={toast.type} msg={toast.msg} onClose={() => setToast(null)} />}
     </>
   );
 }
@@ -1770,6 +1851,7 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
   const [page, setPage]               = useState(1);
   const [pageSize, setPageSize]       = useState(20);
   const [importing, setImporting]     = useState(false);
+  const [toast, setToast]             = useState<{ type: "success" | "error"; msg: string } | null>(null);
 
   useEffect(() => {
     setLoading(true);
@@ -1808,22 +1890,29 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
         const created = await api.post<any>("/drivers", fromTeam(d));
         setRows((r) => [...r, toTeam(created)]);
         onCountChange(rows.length + 1);
+        setToast({ type: "success", msg: `${d.name1} & ${d.name2} added successfully` });
       } else {
         const updated = await api.put<any>(`/drivers/${d.id}`, fromTeam(d));
         setRows((r) => r.map((x) => (x.id === d.id ? toTeam(updated) : x)));
+        setToast({ type: "success", msg: `Team updated successfully` });
       }
       setModal(null);
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Save failed");
+      setToast({ type: "error", msg: e instanceof Error ? e.message : "Save failed" });
     } finally {
       setSaving(false);
     }
   };
   const del = async () => {
     if (!deleting) return;
-    await api.delete(`/drivers/${deleting.id}`).catch(() => {});
-    setRows((r) => r.filter((x) => x.id !== deleting.id));
-    onCountChange(rows.length - 1);
+    try {
+      await api.delete(`/drivers/${deleting.id}`);
+      setRows((r) => r.filter((x) => x.id !== deleting.id));
+      onCountChange(rows.length - 1);
+      setToast({ type: "success", msg: `${deleting.name1} & ${deleting.name2} removed` });
+    } catch (e) {
+      setToast({ type: "error", msg: e instanceof Error ? e.message : "Delete failed" });
+    }
     setDeleting(null);
   };
 
@@ -1966,6 +2055,7 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
       {importing && (
         <ImportModal entityLabel="Team" onClose={() => setImporting(false)} />
       )}
+      {toast && <Toast type={toast.type} msg={toast.msg} onClose={() => setToast(null)} />}
     </>
   );
 }
