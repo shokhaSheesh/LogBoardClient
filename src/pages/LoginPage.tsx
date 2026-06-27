@@ -17,8 +17,12 @@ export function LoginPage() {
     setError("");
     setSubmitting(true);
     try {
-      await login(email, password);
-      navigate("/workspace/dashboard", { replace: true });
+      const { mustChangePassword } = await login(email, password);
+      if (mustChangePassword) {
+        navigate("/workspace/settings/credentials", { replace: true });
+      } else {
+        navigate("/workspace/dashboard", { replace: true });
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
     } finally {

@@ -286,8 +286,8 @@ function UserMenu({ collapsed }: { collapsed: boolean }) {
   const popupRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ bottom: 0, left: 0, width: 0 });
 
-  const initials = user?.name
-    ? user.name.trim().split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? "").join("")
+  const initials = user?.full_name
+    ? user.full_name.trim().split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? "").join("")
     : "??";
 
   useEffect(() => {
@@ -338,7 +338,7 @@ function UserMenu({ collapsed }: { collapsed: boolean }) {
           <>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 13, fontWeight: 500, color: "#F1F5F9", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {user?.name ?? "—"}
+                {user?.full_name ?? "—"}
               </div>
               <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--sidebar-foreground)", opacity: 0.65 }}>
                 {user?.role ?? "—"} · Online

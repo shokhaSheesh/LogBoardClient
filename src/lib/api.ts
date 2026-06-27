@@ -1,4 +1,4 @@
-const BASE = import.meta.env.VITE_API_URL ?? "/api/v1";
+const BASE = (import.meta.env.VITE_API_BASE ?? "http://localhost:8080") + "/api/v1";
 
 function getToken(): string | null {
   return localStorage.getItem("auth_token");
@@ -10,6 +10,14 @@ export function setToken(token: string): void {
 
 export function clearToken(): void {
   localStorage.removeItem("auth_token");
+}
+
+export function getCompanyId(): string {
+  return localStorage.getItem("active_company_id") ?? "";
+}
+
+export function setCompanyId(id: string): void {
+  localStorage.setItem("active_company_id", id);
 }
 
 async function request<T>(
@@ -24,6 +32,9 @@ async function request<T>(
   const token = getToken();
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
+  const companyId = getCompanyId();
+  if (companyId) headers["X-Company-ID"] = companyId;
+
   const res = await fetch(`${BASE}${path}`, {
     method,
     headers,
@@ -36,13 +47,17 @@ async function request<T>(
     throw new Error("Unauthorized");
   }
 
-  const data = await res.json().catch(() => ({}));
+  if (res.status === 204) return undefined as T;
+
+  const json = await res.json().catch(() => ({}));
 
   if (!res.ok) {
-    throw new Error(data?.error ?? `HTTP ${res.status}`);
+    const msg = json?.error?.message ?? json?.error ?? `HTTP ${res.status}`;
+    throw new Error(msg);
   }
 
-  return data as T;
+  // All success responses are wrapped: { "data": ... }
+  return (json.data ?? json) as T;
 }
 
 export const api = {

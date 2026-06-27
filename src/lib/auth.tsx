@@ -5,19 +5,23 @@ import {
   useEffect,
   useState,
 } from "react";
-import { api, clearToken, setToken } from "./api";
+import { api, clearToken, setToken, setCompanyId } from "./api";
 
 export interface AuthUser {
-  id: string | number;
-  name: string;
+  id: string;
+  kind: string;
+  role: "owner" | "dispatcher" | "updater";
+  login: string;
   email: string;
-  role: string;
+  full_name: string;
+  company_id: string;
+  must_change_password: boolean;
 }
 
 interface AuthState {
   user: AuthUser | null;
   loading: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<{ mustChangePassword: boolean }>;
   logout: () => Promise<void>;
 }
 
@@ -47,15 +51,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     );
     setToken(data.token);
     setUser(data.user);
+
+    // For owners, company_id is "" — they pick a company via the account switcher.
+    // For dispatcher/updater, persist their company immediately.
+    if (data.user.company_id) {
+      setCompanyId(data.user.company_id);
+    }
+
+    return { mustChangePassword: data.user.must_change_password };
   }, []);
 
   const logout = useCallback(async () => {
     try {
       await api.post("/auth/logout");
     } catch {
-      // ignore
+      // ignore — token may already be expired
     }
     clearToken();
+    localStorage.removeItem("active_company_id");
     setUser(null);
   }, []);
 
