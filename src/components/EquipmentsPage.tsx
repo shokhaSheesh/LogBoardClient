@@ -144,9 +144,9 @@ function CustomSelect({
 const PAGE_SIZES = [20, 40, 60, 100];
 
 function Pagination({
-  total, page, pageSize, onPage, onPageSize,
+  total, page, pageSize, onPage, onPageSize, totalPending = false,
 }: {
-  total: number; page: number; pageSize: number;
+  total: number; page: number; pageSize: number; totalPending?: boolean;
   onPage: (p: number) => void; onPageSize: (s: number) => void;
 }) {
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
@@ -193,8 +193,15 @@ function Pagination({
       backgroundColor: "var(--card)", flexShrink: 0,
     }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)", whiteSpace: "nowrap" }}>
-          {total === 0 ? "No results" : `Showing ${from}–${to} of ${total}`}
+        <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 6 }}>
+          {total === 0 ? "No results" : `Showing ${from}–${to}`}
+          {totalPending ? (
+            <span style={{ fontSize: 9, fontWeight: 700, color: "#D97706", backgroundColor: "#FEF3C7", border: "1px solid #FDE68A", borderRadius: 4, padding: "1px 5px", letterSpacing: "0.04em", textTransform: "uppercase" }}>
+              total pending
+            </span>
+          ) : (
+            <span>of {total}</span>
+          )}
         </span>
         <span style={{ color: "var(--border)", userSelect: "none" }}>·</span>
         <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)", whiteSpace: "nowrap" }}>
@@ -285,16 +292,16 @@ function EquipModal({ title, row, onClose, onSave, saving = false }: {
   const touch = (k: keyof EquipRow) => setTouched((t) => ({ ...t, [k]: true }));
   const isNew = !row.id;
 
-  // [key, label, mono, required]
-  const fields: [keyof EquipRow, string, boolean, boolean][] = [
-    ["unit",   "Unit #",  false, true],
-    ["make",   "Make",    false, false],
-    ["model",  "Model",   false, false],
-    ["vin",    "VIN",     true,  false],
+  // [key, label, mono, required, backendPending]
+  const fields: [keyof EquipRow, string, boolean, boolean, boolean][] = [
+    ["unit",   "Unit #",  false, true,  false],
+    ["make",   "Make",    false, false, false],
+    ["model",  "Model",   false, false, false],
+    ["vin",    "VIN",     true,  false, false],
+    ["driver", "Driver",  false, false, true],
   ];
 
   const handleSave = () => {
-    // Touch all required fields to show errors
     const allTouched: Partial<Record<keyof EquipRow, boolean>> = {};
     fields.forEach(([k, , , req]) => { if (req) allTouched[k] = true; });
     setTouched(allTouched);
@@ -311,14 +318,21 @@ function EquipModal({ title, row, onClose, onSave, saving = false }: {
           <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted-foreground)" }}><X size={16} /></button>
         </div>
         <div style={{ padding: "20px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-          {fields.map(([k, label, mono, required]) => {
+          {fields.map(([k, label, mono, required, pending]) => {
             const isEmpty = required && touched[k] && !form[k]?.toString().trim();
             return (
               <label key={k} style={{ display: "flex", flexDirection: "column", gap: 5, gridColumn: k === "vin" ? "1 / -1" : undefined }}>
-                <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600, color: isEmpty ? "#EF4444" : "var(--muted-foreground)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                  {label}{required && <span style={{ color: "#EF4444", marginLeft: 2 }}>*</span>}
+                <span style={{ display: "flex", alignItems: "center", gap: 5, fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600, color: isEmpty ? "#EF4444" : "var(--muted-foreground)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                  {label}
+                  {required && <span style={{ color: "#EF4444" }}>*</span>}
+                  {pending && (
+                    <span style={{ fontSize: 8, fontWeight: 700, color: "#D97706", backgroundColor: "#FEF3C7", border: "1px solid #FDE68A", borderRadius: 4, padding: "1px 4px", letterSpacing: "0.04em", textTransform: "uppercase" }}>
+                      backend pending
+                    </span>
+                  )}
                 </span>
                 <input
+                  disabled={pending}
                   value={(form[k] as string) ?? ""}
                   onChange={(e) => set(k, e.target.value)}
                   onBlur={() => touch(k)}
@@ -326,11 +340,13 @@ function EquipModal({ title, row, onClose, onSave, saving = false }: {
                     fontFamily: mono ? "var(--font-mono)" : "var(--font-sans)",
                     fontSize: 13, padding: "7px 10px", borderRadius: 6,
                     border: `1px solid ${isEmpty ? "#EF4444" : "var(--border)"}`,
-                    backgroundColor: isEmpty ? "rgba(239,68,68,0.04)" : "var(--input-background)",
-                    color: "var(--foreground)", outline: "none",
+                    backgroundColor: pending ? "var(--muted)" : isEmpty ? "rgba(239,68,68,0.04)" : "var(--input-background)",
+                    color: pending ? "var(--muted-foreground)" : "var(--foreground)",
+                    outline: "none", cursor: pending ? "not-allowed" : undefined,
                     letterSpacing: mono ? "0.04em" : undefined,
                     boxShadow: isEmpty ? "0 0 0 3px rgba(239,68,68,0.10)" : "none",
                     transition: "border-color 0.15s, box-shadow 0.15s",
+                    opacity: pending ? 0.55 : 1,
                   }}
                 />
                 {isEmpty && (
@@ -678,18 +694,23 @@ function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
     <>
       {/* Toolbar */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "space-between", padding: "14px 16px", borderBottom: "1px solid var(--border)", backgroundColor: "var(--card)", flexShrink: 0 }}>
-        <div style={{ position: "relative" }}>
-          <Search size={14} style={{ position: "absolute", left: 9, top: "50%", transform: "translateY(-50%)", color: "var(--muted-foreground)", pointerEvents: "none" }} />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search trucks…"
-            style={{
-              fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 10px 7px 30px",
-              borderRadius: 7, border: "1px solid var(--border)", backgroundColor: "var(--card)",
-              color: "var(--foreground)", outline: "none", width: 220,
-            }}
-          />
+        <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+          <div style={{ position: "relative" }}>
+            <Search size={14} style={{ position: "absolute", left: 9, top: "50%", transform: "translateY(-50%)", color: "var(--muted-foreground)", pointerEvents: "none" }} />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search trucks…"
+              style={{
+                fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 10px 7px 30px",
+                borderRadius: 7, border: "1px solid var(--border)", backgroundColor: "var(--card)",
+                color: "var(--foreground)", outline: "none", width: 220,
+              }}
+            />
+          </div>
+          <span style={{ fontSize: 9, fontWeight: 700, color: "#D97706", backgroundColor: "#FEF3C7", border: "1px solid #FDE68A", borderRadius: 4, padding: "2px 6px", letterSpacing: "0.04em", textTransform: "uppercase", whiteSpace: "nowrap" }}>
+            backend pending
+          </span>
         </div>
         <AddMenu entityLabel="Truck" onManual={openCreate} onImport={() => setImporting(true)} />
       </div>
@@ -750,7 +771,7 @@ function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
         )}
       </div>
 
-      <Pagination total={total} page={page} pageSize={pageSize} onPage={setPage} onPageSize={(s) => { setPageSize(s); setPage(1); }} />
+      <Pagination total={total} page={page} pageSize={pageSize} onPage={setPage} onPageSize={(s) => { setPageSize(s); setPage(1); }} totalPending />
 
       {(modal === "create" || modal === "edit") && (
         <EquipModal title={modal === "create" ? "Add Truck" : "Edit Truck"} row={editing} onClose={() => setModal(null)} onSave={save} saving={saving} />
@@ -849,18 +870,23 @@ function TrailersTab({ onCountChange }: { onCountChange: (n: number) => void }) 
     <>
       {/* Toolbar */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "space-between", padding: "14px 16px", borderBottom: "1px solid var(--border)", backgroundColor: "var(--card)", flexShrink: 0 }}>
-        <div style={{ position: "relative" }}>
-          <Search size={14} style={{ position: "absolute", left: 9, top: "50%", transform: "translateY(-50%)", color: "var(--muted-foreground)", pointerEvents: "none" }} />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search trailers…"
-            style={{
-              fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 10px 7px 30px",
-              borderRadius: 7, border: "1px solid var(--border)", backgroundColor: "var(--card)",
-              color: "var(--foreground)", outline: "none", width: 220,
-            }}
-          />
+        <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+          <div style={{ position: "relative" }}>
+            <Search size={14} style={{ position: "absolute", left: 9, top: "50%", transform: "translateY(-50%)", color: "var(--muted-foreground)", pointerEvents: "none" }} />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search trailers…"
+              style={{
+                fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 10px 7px 30px",
+                borderRadius: 7, border: "1px solid var(--border)", backgroundColor: "var(--card)",
+                color: "var(--foreground)", outline: "none", width: 220,
+              }}
+            />
+          </div>
+          <span style={{ fontSize: 9, fontWeight: 700, color: "#D97706", backgroundColor: "#FEF3C7", border: "1px solid #FDE68A", borderRadius: 4, padding: "2px 6px", letterSpacing: "0.04em", textTransform: "uppercase", whiteSpace: "nowrap" }}>
+            backend pending
+          </span>
         </div>
         <AddMenu entityLabel="Trailer" onManual={openCreate} onImport={() => setImporting(true)} />
       </div>
@@ -921,7 +947,7 @@ function TrailersTab({ onCountChange }: { onCountChange: (n: number) => void }) 
         )}
       </div>
 
-      <Pagination total={total} page={page} pageSize={pageSize} onPage={setPage} onPageSize={(s) => { setPageSize(s); setPage(1); }} />
+      <Pagination total={total} page={page} pageSize={pageSize} onPage={setPage} onPageSize={(s) => { setPageSize(s); setPage(1); }} totalPending />
 
       {(modal === "create" || modal === "edit") && (
         <EquipModal title={modal === "create" ? "Add Trailer" : "Edit Trailer"} row={editing} onClose={() => setModal(null)} onSave={save} saving={saving} />
