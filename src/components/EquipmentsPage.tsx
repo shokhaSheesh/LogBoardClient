@@ -553,23 +553,19 @@ function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
   const [importing, setImporting] = useState(false);
   const [search, setSearch]       = useState("");
   const [debouncedQ, setDebouncedQ] = useState("");
-  const [statusFilter, setStatusFilter] = useState("");
   const [page, setPage]           = useState(1);
   const [pageSize, setPageSize]   = useState(20);
   const [saving, setSaving]       = useState(false);
 
-  // Debounce search input: only fire after 350ms idle
   useEffect(() => {
     const t = setTimeout(() => { setDebouncedQ(search); setPage(1); }, 350);
     return () => clearTimeout(t);
   }, [search]);
 
-  // Fetch whenever filters or pagination changes
   useEffect(() => {
     setLoading(true);
     api.getList<TruckRow>("/trucks", {
       q: debouncedQ || undefined,
-      status: statusFilter || undefined,
       page,
       limit: pageSize,
     })
@@ -580,7 +576,7 @@ function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [debouncedQ, statusFilter, page, pageSize]);
+  }, [debouncedQ, page, pageSize]);
 
   const openCreate = () => { setEditing({}); setModal("create"); };
   const openEdit   = (r: TruckRow) => { setEditing(r); setModal("edit"); };
@@ -628,30 +624,17 @@ function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
     <>
       {/* Toolbar */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "space-between", padding: "14px 16px", borderBottom: "1px solid var(--border)", backgroundColor: "var(--card)", flexShrink: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{ position: "relative" }}>
-            <Search size={14} style={{ position: "absolute", left: 9, top: "50%", transform: "translateY(-50%)", color: "var(--muted-foreground)", pointerEvents: "none" }} />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search trucks…"
-              style={{
-                fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 10px 7px 30px",
-                borderRadius: 7, border: "1px solid var(--border)", backgroundColor: "var(--card)",
-                color: "var(--foreground)", outline: "none", width: 220,
-              }}
-            />
-          </div>
-          <CustomSelect
-            value={statusFilter}
-            options={[
-              { value: "", label: "All Statuses" },
-              { value: "active", label: "Active" },
-              { value: "inactive", label: "Inactive" },
-              { value: "in_shop", label: "In Shop" },
-            ]}
-            onChange={(v) => { setStatusFilter(v); setPage(1); }}
-            width={160}
+        <div style={{ position: "relative" }}>
+          <Search size={14} style={{ position: "absolute", left: 9, top: "50%", transform: "translateY(-50%)", color: "var(--muted-foreground)", pointerEvents: "none" }} />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search trucks…"
+            style={{
+              fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 10px 7px 30px",
+              borderRadius: 7, border: "1px solid var(--border)", backgroundColor: "var(--card)",
+              color: "var(--foreground)", outline: "none", width: 220,
+            }}
           />
         </div>
         <AddMenu entityLabel="Truck" onManual={openCreate} onImport={() => setImporting(true)} />
@@ -737,7 +720,6 @@ function TrailersTab({ onCountChange }: { onCountChange: (n: number) => void }) 
   const [importing, setImporting] = useState(false);
   const [search, setSearch]       = useState("");
   const [debouncedQ, setDebouncedQ] = useState("");
-  const [statusFilter, setStatusFilter] = useState("");
   const [page, setPage]           = useState(1);
   const [pageSize, setPageSize]   = useState(20);
   const [saving, setSaving]       = useState(false);
@@ -751,7 +733,6 @@ function TrailersTab({ onCountChange }: { onCountChange: (n: number) => void }) 
     setLoading(true);
     api.getList<TrailerRow>("/trailers", {
       q: debouncedQ || undefined,
-      status: statusFilter || undefined,
       page,
       limit: pageSize,
     })
@@ -762,7 +743,7 @@ function TrailersTab({ onCountChange }: { onCountChange: (n: number) => void }) 
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [debouncedQ, statusFilter, page, pageSize]);
+  }, [debouncedQ, page, pageSize]);
 
   const openCreate = () => { setEditing({}); setModal("create"); };
   const openEdit   = (r: TrailerRow) => { setEditing(r); setModal("edit"); };
@@ -809,30 +790,17 @@ function TrailersTab({ onCountChange }: { onCountChange: (n: number) => void }) 
     <>
       {/* Toolbar */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "space-between", padding: "14px 16px", borderBottom: "1px solid var(--border)", backgroundColor: "var(--card)", flexShrink: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{ position: "relative" }}>
-            <Search size={14} style={{ position: "absolute", left: 9, top: "50%", transform: "translateY(-50%)", color: "var(--muted-foreground)", pointerEvents: "none" }} />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search trailers…"
-              style={{
-                fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 10px 7px 30px",
-                borderRadius: 7, border: "1px solid var(--border)", backgroundColor: "var(--card)",
-                color: "var(--foreground)", outline: "none", width: 220,
-              }}
-            />
-          </div>
-          <CustomSelect
-            value={statusFilter}
-            options={[
-              { value: "", label: "All Statuses" },
-              { value: "active", label: "Active" },
-              { value: "inactive", label: "Inactive" },
-              { value: "in_shop", label: "In Shop" },
-            ]}
-            onChange={(v) => { setStatusFilter(v); setPage(1); }}
-            width={160}
+        <div style={{ position: "relative" }}>
+          <Search size={14} style={{ position: "absolute", left: 9, top: "50%", transform: "translateY(-50%)", color: "var(--muted-foreground)", pointerEvents: "none" }} />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search trailers…"
+            style={{
+              fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 10px 7px 30px",
+              borderRadius: 7, border: "1px solid var(--border)", backgroundColor: "var(--card)",
+              color: "var(--foreground)", outline: "none", width: 220,
+            }}
           />
         </div>
         <AddMenu entityLabel="Trailer" onManual={openCreate} onImport={() => setImporting(true)} />
@@ -913,6 +881,12 @@ export function EquipmentsPage() {
   const [tab, setTab] = useState<TabId>("trucks");
   const [truckCount,   setTruckCount]   = useState(0);
   const [trailerCount, setTrailerCount] = useState(0);
+
+  // Fetch both counts immediately so tab badges are populated on first render
+  useEffect(() => {
+    api.getList("/trucks",   { limit: 1 }).then(({ total }) => setTruckCount(total)).catch(() => {});
+    api.getList("/trailers", { limit: 1 }).then(({ total }) => setTrailerCount(total)).catch(() => {});
+  }, []);
 
   const tabs: { id: TabId; label: string; count: number; icon: React.ReactNode; color: string; bg: string }[] = [
     { id: "trucks",   label: "Trucks",   count: truckCount,   icon: <Truck     size={15} />, color: "#1D4ED8", bg: "#DBEAFE" },
