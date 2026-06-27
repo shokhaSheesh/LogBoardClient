@@ -544,6 +544,7 @@ function AddMenu({ entityLabel, onManual, onImport }: {
 
 function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
   const [rows, setRows]           = useState<TruckRow[]>([]);
+  const [total, setTotal]         = useState(0);
   const [loading, setLoading]     = useState(true);
   const [error, setError]         = useState("");
   const [modal, setModal]         = useState<"create" | "edit" | null>(null);
@@ -551,17 +552,35 @@ function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
   const [deleting, setDeleting]   = useState<TruckRow | null>(null);
   const [importing, setImporting] = useState(false);
   const [search, setSearch]       = useState("");
+  const [debouncedQ, setDebouncedQ] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
   const [page, setPage]           = useState(1);
   const [pageSize, setPageSize]   = useState(20);
   const [saving, setSaving]       = useState(false);
 
+  // Debounce search input: only fire after 350ms idle
+  useEffect(() => {
+    const t = setTimeout(() => { setDebouncedQ(search); setPage(1); }, 350);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  // Fetch whenever filters or pagination changes
   useEffect(() => {
     setLoading(true);
-    api.get<TruckRow[]>("/trucks")
-      .then((data) => { setRows(data); onCountChange(data.length); })
+    api.getList<TruckRow>("/trucks", {
+      q: debouncedQ || undefined,
+      status: statusFilter || undefined,
+      page,
+      limit: pageSize,
+    })
+      .then(({ items, total: t }) => {
+        setRows(items);
+        setTotal(t);
+        onCountChange(t);
+      })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
-  }, []);
+  }, [debouncedQ, statusFilter, page, pageSize]);
 
   const openCreate = () => { setEditing({}); setModal("create"); };
   const openEdit   = (r: TruckRow) => { setEditing(r); setModal("edit"); };
@@ -572,12 +591,14 @@ function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
     try {
       if (modal === "create") {
         const created = await api.post<TruckRow>("/trucks", d);
-        setRows((prev) => { const next = [...prev, created]; onCountChange(next.length); return next; });
+        setModal(null);
+        // Refetch to get correct total
+        setPage(1); setDebouncedQ(""); setSearch("");
       } else {
-        const updated = await api.put<TruckRow>(`/trucks/${d.id}`, d);
-        setRows((prev) => prev.map((x) => (x.id === d.id ? updated : x)));
+        await api.put<TruckRow>(`/trucks/${d.id}`, d);
+        setRows((prev) => prev.map((x) => (x.id === d.id ? { ...x, ...d } : x)));
+        setModal(null);
       }
-      setModal(null);
     } catch (e) {
       alert(e instanceof Error ? e.message : "Save failed");
     } finally {
@@ -589,28 +610,13 @@ function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
     if (!deleting) return;
     try {
       await api.delete(`/trucks/${deleting.id}`);
-      setRows((prev) => { const next = prev.filter((x) => x.id !== deleting.id); onCountChange(next.length); return next; });
+      setRows((prev) => prev.filter((x) => x.id !== deleting.id));
+      setTotal((t) => { const n = t - 1; onCountChange(n); return n; });
     } catch (e) {
       alert(e instanceof Error ? e.message : "Delete failed");
     }
     setDeleting(null);
   };
-
-  const q = search.toLowerCase();
-  const filtered = rows.filter((r) =>
-    !q || r.unit?.toLowerCase().includes(q) || r.driver?.toLowerCase().includes(q) ||
-    r.make?.toLowerCase().includes(q) || r.model?.toLowerCase().includes(q) || r.vin?.toLowerCase().includes(q)
-  );
-
-  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
-  const safePage = Math.min(page, totalPages);
-  const paginated = filtered.slice((safePage - 1) * pageSize, safePage * pageSize);
-
-  if (loading) return (
-    <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--muted-foreground)", fontSize: 13 }}>
-      Loading trucks…
-    </div>
-  );
 
   if (error) return (
     <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "#EF4444", fontSize: 13 }}>
@@ -621,18 +627,31 @@ function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
   return (
     <>
       {/* Toolbar */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", borderBottom: "1px solid var(--border)", backgroundColor: "var(--card)", flexShrink: 0 }}>
-        <div style={{ position: "relative" }}>
-          <Search size={14} style={{ position: "absolute", left: 9, top: "50%", transform: "translateY(-50%)", color: "var(--muted-foreground)", pointerEvents: "none" }} />
-          <input
-            value={search}
-            onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-            placeholder="Search trucks…"
-            style={{
-              fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 10px 7px 30px",
-              borderRadius: 7, border: "1px solid var(--border)", backgroundColor: "var(--card)",
-              color: "var(--foreground)", outline: "none", width: 220,
-            }}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "space-between", padding: "14px 16px", borderBottom: "1px solid var(--border)", backgroundColor: "var(--card)", flexShrink: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ position: "relative" }}>
+            <Search size={14} style={{ position: "absolute", left: 9, top: "50%", transform: "translateY(-50%)", color: "var(--muted-foreground)", pointerEvents: "none" }} />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search trucks…"
+              style={{
+                fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 10px 7px 30px",
+                borderRadius: 7, border: "1px solid var(--border)", backgroundColor: "var(--card)",
+                color: "var(--foreground)", outline: "none", width: 220,
+              }}
+            />
+          </div>
+          <CustomSelect
+            value={statusFilter}
+            options={[
+              { value: "", label: "All Statuses" },
+              { value: "active", label: "Active" },
+              { value: "inactive", label: "Inactive" },
+              { value: "in_shop", label: "In Shop" },
+            ]}
+            onChange={(v) => { setStatusFilter(v); setPage(1); }}
+            width={160}
           />
         </div>
         <AddMenu entityLabel="Truck" onManual={openCreate} onImport={() => setImporting(true)} />
@@ -640,6 +659,11 @@ function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
 
       {/* Table */}
       <div style={{ flex: 1, overflow: "auto", scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent" }}>
+        {loading ? (
+          <div style={{ padding: "40px 24px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
+            Loading trucks…
+          </div>
+        ) : (
         <table style={{ width: "max-content", minWidth: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
           <thead>
             <tr>
@@ -653,13 +677,13 @@ function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
             </tr>
           </thead>
           <tbody>
-            {paginated.map((r, i) => (
+            {rows.map((r, i) => (
               <tr key={r.id}
                 style={{ backgroundColor: i % 2 === 0 ? "var(--card)" : "var(--background)" }}
                 onMouseEnter={(e) => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = "rgba(59,130,246,0.03)"; }}
                 onMouseLeave={(e) => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = i % 2 === 0 ? "var(--card)" : "var(--background)"; }}
               >
-                <TD mono center>{(safePage - 1) * pageSize + i + 1}</TD>
+                <TD mono center>{(page - 1) * pageSize + i + 1}</TD>
                 <td style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", verticalAlign: "middle" }}>
                   <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 600, color: "var(--primary)", backgroundColor: "var(--secondary)", borderRadius: 4, padding: "2px 8px" }}>
                     {r.unit}
@@ -677,7 +701,7 @@ function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
                 </td>
               </tr>
             ))}
-            {paginated.length === 0 && (
+            {rows.length === 0 && (
               <tr>
                 <td colSpan={7} style={{ padding: "32px 24px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)", borderBottom: "1px solid var(--border)" }}>
                   No trucks found.
@@ -686,9 +710,10 @@ function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
             )}
           </tbody>
         </table>
+        )}
       </div>
 
-      <Pagination total={filtered.length} page={safePage} pageSize={pageSize} onPage={setPage} onPageSize={setPageSize} />
+      <Pagination total={total} page={page} pageSize={pageSize} onPage={setPage} onPageSize={(s) => { setPageSize(s); setPage(1); }} />
 
       {(modal === "create" || modal === "edit") && (
         <EquipModal title={modal === "create" ? "Add Truck" : "Edit Truck"} row={editing} onClose={() => setModal(null)} onSave={save} saving={saving} />
@@ -703,6 +728,7 @@ function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
 
 function TrailersTab({ onCountChange }: { onCountChange: (n: number) => void }) {
   const [rows, setRows]           = useState<TrailerRow[]>([]);
+  const [total, setTotal]         = useState(0);
   const [loading, setLoading]     = useState(true);
   const [error, setError]         = useState("");
   const [modal, setModal]         = useState<"create" | "edit" | null>(null);
@@ -710,17 +736,33 @@ function TrailersTab({ onCountChange }: { onCountChange: (n: number) => void }) 
   const [deleting, setDeleting]   = useState<TrailerRow | null>(null);
   const [importing, setImporting] = useState(false);
   const [search, setSearch]       = useState("");
+  const [debouncedQ, setDebouncedQ] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
   const [page, setPage]           = useState(1);
   const [pageSize, setPageSize]   = useState(20);
   const [saving, setSaving]       = useState(false);
 
   useEffect(() => {
+    const t = setTimeout(() => { setDebouncedQ(search); setPage(1); }, 350);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  useEffect(() => {
     setLoading(true);
-    api.get<TrailerRow[]>("/trailers")
-      .then((data) => { setRows(data); onCountChange(data.length); })
+    api.getList<TrailerRow>("/trailers", {
+      q: debouncedQ || undefined,
+      status: statusFilter || undefined,
+      page,
+      limit: pageSize,
+    })
+      .then(({ items, total: t }) => {
+        setRows(items);
+        setTotal(t);
+        onCountChange(t);
+      })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
-  }, []);
+  }, [debouncedQ, statusFilter, page, pageSize]);
 
   const openCreate = () => { setEditing({}); setModal("create"); };
   const openEdit   = (r: TrailerRow) => { setEditing(r); setModal("edit"); };
@@ -730,13 +772,14 @@ function TrailersTab({ onCountChange }: { onCountChange: (n: number) => void }) 
     setSaving(true);
     try {
       if (modal === "create") {
-        const created = await api.post<TrailerRow>("/trailers", d);
-        setRows((prev) => { const next = [...prev, created]; onCountChange(next.length); return next; });
+        await api.post<TrailerRow>("/trailers", d);
+        setModal(null);
+        setPage(1); setDebouncedQ(""); setSearch("");
       } else {
-        const updated = await api.put<TrailerRow>(`/trailers/${d.id}`, d);
-        setRows((prev) => prev.map((x) => (x.id === d.id ? updated : x)));
+        await api.put<TrailerRow>(`/trailers/${d.id}`, d);
+        setRows((prev) => prev.map((x) => (x.id === d.id ? { ...x, ...d } : x)));
+        setModal(null);
       }
-      setModal(null);
     } catch (e) {
       alert(e instanceof Error ? e.message : "Save failed");
     } finally {
@@ -748,28 +791,13 @@ function TrailersTab({ onCountChange }: { onCountChange: (n: number) => void }) 
     if (!deleting) return;
     try {
       await api.delete(`/trailers/${deleting.id}`);
-      setRows((prev) => { const next = prev.filter((x) => x.id !== deleting.id); onCountChange(next.length); return next; });
+      setRows((prev) => prev.filter((x) => x.id !== deleting.id));
+      setTotal((t) => { const n = t - 1; onCountChange(n); return n; });
     } catch (e) {
       alert(e instanceof Error ? e.message : "Delete failed");
     }
     setDeleting(null);
   };
-
-  const q = search.toLowerCase();
-  const filtered = rows.filter((r) =>
-    !q || r.unit?.toLowerCase().includes(q) || r.driver?.toLowerCase().includes(q) ||
-    r.make?.toLowerCase().includes(q) || r.model?.toLowerCase().includes(q) || r.vin?.toLowerCase().includes(q)
-  );
-
-  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
-  const safePage = Math.min(page, totalPages);
-  const paginated = filtered.slice((safePage - 1) * pageSize, safePage * pageSize);
-
-  if (loading) return (
-    <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--muted-foreground)", fontSize: 13 }}>
-      Loading trailers…
-    </div>
-  );
 
   if (error) return (
     <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "#EF4444", fontSize: 13 }}>
@@ -780,18 +808,31 @@ function TrailersTab({ onCountChange }: { onCountChange: (n: number) => void }) 
   return (
     <>
       {/* Toolbar */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", borderBottom: "1px solid var(--border)", backgroundColor: "var(--card)", flexShrink: 0 }}>
-        <div style={{ position: "relative" }}>
-          <Search size={14} style={{ position: "absolute", left: 9, top: "50%", transform: "translateY(-50%)", color: "var(--muted-foreground)", pointerEvents: "none" }} />
-          <input
-            value={search}
-            onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-            placeholder="Search trailers…"
-            style={{
-              fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 10px 7px 30px",
-              borderRadius: 7, border: "1px solid var(--border)", backgroundColor: "var(--card)",
-              color: "var(--foreground)", outline: "none", width: 220,
-            }}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "space-between", padding: "14px 16px", borderBottom: "1px solid var(--border)", backgroundColor: "var(--card)", flexShrink: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ position: "relative" }}>
+            <Search size={14} style={{ position: "absolute", left: 9, top: "50%", transform: "translateY(-50%)", color: "var(--muted-foreground)", pointerEvents: "none" }} />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search trailers…"
+              style={{
+                fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 10px 7px 30px",
+                borderRadius: 7, border: "1px solid var(--border)", backgroundColor: "var(--card)",
+                color: "var(--foreground)", outline: "none", width: 220,
+              }}
+            />
+          </div>
+          <CustomSelect
+            value={statusFilter}
+            options={[
+              { value: "", label: "All Statuses" },
+              { value: "active", label: "Active" },
+              { value: "inactive", label: "Inactive" },
+              { value: "in_shop", label: "In Shop" },
+            ]}
+            onChange={(v) => { setStatusFilter(v); setPage(1); }}
+            width={160}
           />
         </div>
         <AddMenu entityLabel="Trailer" onManual={openCreate} onImport={() => setImporting(true)} />
@@ -799,6 +840,11 @@ function TrailersTab({ onCountChange }: { onCountChange: (n: number) => void }) 
 
       {/* Table */}
       <div style={{ flex: 1, overflow: "auto", scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent" }}>
+        {loading ? (
+          <div style={{ padding: "40px 24px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
+            Loading trailers…
+          </div>
+        ) : (
         <table style={{ width: "max-content", minWidth: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
           <thead>
             <tr>
@@ -812,13 +858,13 @@ function TrailersTab({ onCountChange }: { onCountChange: (n: number) => void }) 
             </tr>
           </thead>
           <tbody>
-            {paginated.map((r, i) => (
+            {rows.map((r, i) => (
               <tr key={r.id}
                 style={{ backgroundColor: i % 2 === 0 ? "var(--card)" : "var(--background)" }}
                 onMouseEnter={(e) => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = "rgba(59,130,246,0.03)"; }}
                 onMouseLeave={(e) => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = i % 2 === 0 ? "var(--card)" : "var(--background)"; }}
               >
-                <TD mono center>{(safePage - 1) * pageSize + i + 1}</TD>
+                <TD mono center>{(page - 1) * pageSize + i + 1}</TD>
                 <td style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", verticalAlign: "middle" }}>
                   <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 600, color: "#5B21B6", backgroundColor: "#EDE9FE", borderRadius: 4, padding: "2px 8px" }}>
                     {r.unit}
@@ -836,7 +882,7 @@ function TrailersTab({ onCountChange }: { onCountChange: (n: number) => void }) 
                 </td>
               </tr>
             ))}
-            {paginated.length === 0 && (
+            {rows.length === 0 && (
               <tr>
                 <td colSpan={7} style={{ padding: "32px 24px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)", borderBottom: "1px solid var(--border)" }}>
                   No trailers found.
@@ -845,9 +891,10 @@ function TrailersTab({ onCountChange }: { onCountChange: (n: number) => void }) 
             )}
           </tbody>
         </table>
+        )}
       </div>
 
-      <Pagination total={filtered.length} page={safePage} pageSize={pageSize} onPage={setPage} onPageSize={setPageSize} />
+      <Pagination total={total} page={page} pageSize={pageSize} onPage={setPage} onPageSize={(s) => { setPageSize(s); setPage(1); }} />
 
       {(modal === "create" || modal === "edit") && (
         <EquipModal title={modal === "create" ? "Add Trailer" : "Edit Trailer"} row={editing} onClose={() => setModal(null)} onSave={save} saving={saving} />
