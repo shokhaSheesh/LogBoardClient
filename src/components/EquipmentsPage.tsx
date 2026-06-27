@@ -8,6 +8,7 @@ interface TruckRow {
   id: string;
   unit: string;
   driver: string;
+  driver_id: string;
   make: string;
   model: string;
   vin: string;
@@ -17,6 +18,7 @@ interface TrailerRow {
   id: string;
   unit: string;
   driver: string;
+  driver_id: string;
   make: string;
   model: string;
   vin: string;
@@ -53,7 +55,7 @@ function Toast({ msg, type, onClose }: { msg: string; type: "success" | "error";
 interface SelectOpt { value: string; label: string }
 
 function CustomSelect({
-  value, options, onChange, width, compact = false, dropUp = false,
+  value, options, onChange, width, compact = false, dropUp = false, searchable = false,
 }: {
   value: string;
   options: SelectOpt[];
@@ -61,26 +63,29 @@ function CustomSelect({
   width?: number | string;
   compact?: boolean;
   dropUp?: boolean;
+  searchable?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      if (ref.current && !ref.current.contains(e.target as Node)) { setOpen(false); setQ(""); }
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
   const selected = options.find((o) => o.value === value);
+  const filtered = searchable && q ? options.filter((o) => o.label.toLowerCase().includes(q.toLowerCase())) : options;
   const h = compact ? 30 : 34;
 
   return (
     <div ref={ref} style={{ position: "relative", width: width ?? "100%" }}>
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => { setOpen((v) => !v); setQ(""); }}
         style={{
           display: "flex", alignItems: "center", gap: 8, width: "100%",
           height: h, paddingLeft: 10, paddingRight: 8,
@@ -110,29 +115,52 @@ function CustomSelect({
           backgroundColor: "var(--card)", border: "1px solid var(--border)",
           borderRadius: 8, boxShadow: "0 8px 24px rgba(0,0,0,0.10)", zIndex: 200, overflow: "hidden",
         }}>
-          {options.map((opt) => {
-            const isActive = opt.value === value;
-            return (
-              <button
-                key={opt.value}
-                type="button"
-                onClick={() => { onChange(opt.value); setOpen(false); }}
+          {searchable && (
+            <div style={{ padding: "8px 8px 4px" }}>
+              <input
+                autoFocus
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="Search…"
                 style={{
-                  display: "flex", alignItems: "center", gap: 8,
-                  width: "100%", padding: "7px 12px",
-                  border: "none", backgroundColor: isActive ? "rgba(59,130,246,0.06)" : "transparent",
-                  fontFamily: "var(--font-sans)", fontSize: compact ? 12 : 13,
-                  color: isActive ? "var(--primary)" : "var(--foreground)",
-                  cursor: "pointer", textAlign: "left",
+                  width: "100%", boxSizing: "border-box" as const,
+                  fontFamily: "var(--font-sans)", fontSize: 12,
+                  padding: "5px 8px", borderRadius: 5,
+                  border: "1px solid var(--border)",
+                  backgroundColor: "var(--input-background)",
+                  color: "var(--foreground)", outline: "none",
                 }}
-                onMouseEnter={(e) => { if (!isActive) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--muted)"; }}
-                onMouseLeave={(e) => { if (!isActive) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "transparent"; }}
-              >
-                <span style={{ flex: 1 }}>{opt.label}</span>
-                {isActive && <Check size={12} style={{ color: "var(--primary)", flexShrink: 0 }} />}
-              </button>
-            );
-          })}
+              />
+            </div>
+          )}
+          <div style={{ maxHeight: 200, overflowY: "auto" as const }}>
+            {filtered.map((opt) => {
+              const isActive = opt.value === value;
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => { onChange(opt.value); setOpen(false); setQ(""); }}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 8,
+                    width: "100%", padding: "7px 12px",
+                    border: "none", backgroundColor: isActive ? "rgba(59,130,246,0.06)" : "transparent",
+                    fontFamily: "var(--font-sans)", fontSize: compact ? 12 : 13,
+                    color: isActive ? "var(--primary)" : "var(--foreground)",
+                    cursor: "pointer", textAlign: "left",
+                  }}
+                  onMouseEnter={(e) => { if (!isActive) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--muted)"; }}
+                  onMouseLeave={(e) => { if (!isActive) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "transparent"; }}
+                >
+                  <span style={{ flex: 1 }}>{opt.label}</span>
+                  {isActive && <Check size={12} style={{ color: "var(--primary)", flexShrink: 0 }} />}
+                </button>
+              );
+            })}
+            {filtered.length === 0 && (
+              <div style={{ padding: "8px 12px", fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)" }}>No results</div>
+            )}
+          </div>
         </div>
       )}
     </div>
@@ -279,12 +307,13 @@ function ActionBtn({ icon, color, bg, onClick }: { icon: React.ReactNode; color:
 
 type EquipRow = TruckRow | TrailerRow;
 
-function EquipModal({ title, row, onClose, onSave, saving = false }: {
+function EquipModal({ title, row, onClose, onSave, saving = false, driverOpts = [] }: {
   title: string;
   row: Partial<EquipRow>;
   onClose: () => void;
   onSave: (r: EquipRow) => void;
   saving?: boolean;
+  driverOpts?: SelectOpt[];
 }) {
   const [form, setForm] = useState<Partial<EquipRow>>(row);
   const [touched, setTouched] = useState<Partial<Record<keyof EquipRow, boolean>>>({});
@@ -292,69 +321,90 @@ function EquipModal({ title, row, onClose, onSave, saving = false }: {
   const touch = (k: keyof EquipRow) => setTouched((t) => ({ ...t, [k]: true }));
   const isNew = !row.id;
 
-  // [key, label, mono, required, backendPending]
-  const fields: [keyof EquipRow, string, boolean, boolean, boolean][] = [
-    ["unit",   "Unit #",  false, true,  false],
-    ["driver", "Driver",  false, false, true],
-    ["make",   "Make",    false, false, false],
-    ["model",  "Model",   false, false, false],
-    ["vin",    "VIN",     true,  false, false],
+  // text-only fields: [key, label, mono, required]
+  const textFields: [keyof EquipRow, string, boolean, boolean][] = [
+    ["unit",  "Unit #", false, true],
+    ["make",  "Make",   false, false],
+    ["model", "Model",  false, false],
+    ["vin",   "VIN",    true,  false],
   ];
 
   const handleSave = () => {
-    const allTouched: Partial<Record<keyof EquipRow, boolean>> = {};
-    fields.forEach(([k, , , req]) => { if (req) allTouched[k] = true; });
-    setTouched(allTouched);
-    const hasErrors = fields.some(([k, , , req]) => req && !form[k]?.toString().trim());
-    if (hasErrors) return;
+    setTouched({ unit: true });
+    if (!form.unit?.toString().trim()) return;
     onSave(form as EquipRow);
   };
 
   return (
     <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div style={{ backgroundColor: "var(--card)", borderRadius: 12, width: 500, boxShadow: "0 20px 60px rgba(0,0,0,0.25)", overflow: "hidden" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderBottom: "1px solid var(--border)", backgroundColor: "var(--muted)" }}>
+      <div style={{ backgroundColor: "var(--card)", borderRadius: 12, width: 500, boxShadow: "0 20px 60px rgba(0,0,0,0.25)", overflow: "visible" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderBottom: "1px solid var(--border)", backgroundColor: "var(--muted)", borderRadius: "12px 12px 0 0" }}>
           <span style={{ fontFamily: "var(--font-sans)", fontSize: 14, fontWeight: 600, color: "var(--foreground)" }}>{title}</span>
           <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted-foreground)" }}><X size={16} /></button>
         </div>
         <div style={{ padding: "20px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-          {fields.map(([k, label, mono, required, pending]) => {
-            const isEmpty = required && touched[k] && !form[k]?.toString().trim();
+          {/* Unit # and Driver side by side */}
+          {(() => {
+            const unitEmpty = touched.unit && !form.unit?.toString().trim();
             return (
-              <label key={k} style={{ display: "flex", flexDirection: "column", gap: 5, gridColumn: k === "vin" ? "1 / -1" : undefined }}>
-                <span style={{ display: "flex", alignItems: "center", gap: 5, fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600, color: isEmpty ? "#EF4444" : "var(--muted-foreground)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                  {label}
-                  {required && <span style={{ color: "#EF4444" }}>*</span>}
-                  {pending && (
-                    <span style={{ fontSize: 8, fontWeight: 700, color: "#D97706", backgroundColor: "#FEF3C7", border: "1px solid #FDE68A", borderRadius: 4, padding: "1px 4px", letterSpacing: "0.04em", textTransform: "uppercase" }}>
-                      backend pending
-                    </span>
-                  )}
-                </span>
-                <input
-                  disabled={pending}
-                  value={(form[k] as string) ?? ""}
-                  onChange={(e) => set(k, e.target.value)}
-                  onBlur={() => touch(k)}
-                  style={{
-                    fontFamily: mono ? "var(--font-mono)" : "var(--font-sans)",
-                    fontSize: 13, padding: "7px 10px", borderRadius: 6,
-                    border: `1px solid ${isEmpty ? "#EF4444" : "var(--border)"}`,
-                    backgroundColor: pending ? "var(--muted)" : isEmpty ? "rgba(239,68,68,0.04)" : "var(--input-background)",
-                    color: pending ? "var(--muted-foreground)" : "var(--foreground)",
-                    outline: "none", cursor: pending ? "not-allowed" : undefined,
-                    letterSpacing: mono ? "0.04em" : undefined,
-                    boxShadow: isEmpty ? "0 0 0 3px rgba(239,68,68,0.10)" : "none",
-                    transition: "border-color 0.15s, box-shadow 0.15s",
-                    opacity: pending ? 0.55 : 1,
-                  }}
-                />
-                {isEmpty && (
-                  <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "#EF4444" }}>{label} is required</span>
-                )}
-              </label>
+              <>
+                <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                  <span style={{ display: "flex", alignItems: "center", gap: 4, fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600, color: unitEmpty ? "#EF4444" : "var(--muted-foreground)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                    Unit # <span style={{ color: "#EF4444" }}>*</span>
+                  </span>
+                  <input
+                    value={(form.unit as string) ?? ""}
+                    onChange={(e) => set("unit", e.target.value)}
+                    onBlur={() => touch("unit")}
+                    style={{
+                      fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 10px", borderRadius: 6, height: 34,
+                      border: `1px solid ${unitEmpty ? "#EF4444" : "var(--border)"}`,
+                      backgroundColor: unitEmpty ? "rgba(239,68,68,0.04)" : "var(--input-background)",
+                      color: "var(--foreground)", outline: "none", width: "100%", boxSizing: "border-box" as const,
+                      boxShadow: unitEmpty ? "0 0 0 3px rgba(239,68,68,0.10)" : "none",
+                    }}
+                  />
+                  {unitEmpty && <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "#EF4444" }}>Unit # is required</span>}
+                </label>
+
+                <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                  <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600, color: "var(--muted-foreground)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                    Driver
+                  </span>
+                  <CustomSelect
+                    value={form.driver_id ?? ""}
+                    options={[{ value: "", label: "Unassigned" }, ...driverOpts]}
+                    onChange={(v) => set("driver_id", v)}
+                    searchable
+                  />
+                </label>
+              </>
             );
-          })}
+          })()}
+
+          {/* Make / Model */}
+          {(["make", "model"] as const).map((k) => (
+            <label key={k} style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+              <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600, color: "var(--muted-foreground)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                {k === "make" ? "Make" : "Model"}
+              </span>
+              <input
+                value={(form[k] as string) ?? ""}
+                onChange={(e) => set(k, e.target.value)}
+                style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 10px", borderRadius: 6, height: 34, border: "1px solid var(--border)", backgroundColor: "var(--input-background)", color: "var(--foreground)", outline: "none", width: "100%", boxSizing: "border-box" as const }}
+              />
+            </label>
+          ))}
+
+          {/* VIN full-width */}
+          <label style={{ display: "flex", flexDirection: "column", gap: 5, gridColumn: "1 / -1" }}>
+            <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600, color: "var(--muted-foreground)", textTransform: "uppercase", letterSpacing: "0.06em" }}>VIN</span>
+            <input
+              value={(form.vin as string) ?? ""}
+              onChange={(e) => set("vin", e.target.value)}
+              style={{ fontFamily: "var(--font-mono)", fontSize: 13, padding: "7px 10px", borderRadius: 6, height: 34, border: "1px solid var(--border)", backgroundColor: "var(--input-background)", color: "var(--foreground)", outline: "none", width: "100%", boxSizing: "border-box" as const, letterSpacing: "0.04em" }}
+            />
+          </label>
         </div>
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, padding: "14px 20px", borderTop: "1px solid var(--border)" }}>
           <button onClick={onClose} style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 16px", borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "var(--muted)", color: "var(--foreground)", cursor: "pointer" }}>Cancel</button>
@@ -625,6 +675,13 @@ function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
   const [saving, setSaving]       = useState(false);
   const [fetchKey, setFetchKey]   = useState(0);
   const [toast, setToast]         = useState<{ type: "success" | "error"; msg: string } | null>(null);
+  const [driverOpts, setDriverOpts] = useState<SelectOpt[]>([]);
+
+  useEffect(() => {
+    api.get<any[]>("/drivers").then((drivers) => {
+      setDriverOpts((drivers ?? []).map((d) => ({ value: d.id, label: d.name ?? d.name1 ?? d.id })));
+    }).catch(() => {});
+  }, []);
 
   useEffect(() => {
     const t = setTimeout(() => { setDebouncedQ(search); setPage(1); }, 350);
@@ -774,7 +831,7 @@ function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
       <Pagination total={total} page={page} pageSize={pageSize} onPage={setPage} onPageSize={(s) => { setPageSize(s); setPage(1); }} totalPending />
 
       {(modal === "create" || modal === "edit") && (
-        <EquipModal title={modal === "create" ? "Add Truck" : "Edit Truck"} row={editing} onClose={() => setModal(null)} onSave={save} saving={saving} />
+        <EquipModal title={modal === "create" ? "Add Truck" : "Edit Truck"} row={editing} onClose={() => setModal(null)} onSave={save} saving={saving} driverOpts={driverOpts} />
       )}
       {deleting && <DeleteConfirm label={deleting.unit} onClose={() => setDeleting(null)} onConfirm={del} />}
       {importing && <ImportModal entityLabel="Truck" onClose={() => setImporting(false)} />}
@@ -801,6 +858,13 @@ function TrailersTab({ onCountChange }: { onCountChange: (n: number) => void }) 
   const [saving, setSaving]       = useState(false);
   const [fetchKey, setFetchKey]   = useState(0);
   const [toast, setToast]         = useState<{ type: "success" | "error"; msg: string } | null>(null);
+  const [driverOpts, setDriverOpts] = useState<SelectOpt[]>([]);
+
+  useEffect(() => {
+    api.get<any[]>("/drivers").then((drivers) => {
+      setDriverOpts((drivers ?? []).map((d) => ({ value: d.id, label: d.name ?? d.name1 ?? d.id })));
+    }).catch(() => {});
+  }, []);
 
   useEffect(() => {
     const t = setTimeout(() => { setDebouncedQ(search); setPage(1); }, 350);
@@ -950,7 +1014,7 @@ function TrailersTab({ onCountChange }: { onCountChange: (n: number) => void }) 
       <Pagination total={total} page={page} pageSize={pageSize} onPage={setPage} onPageSize={(s) => { setPageSize(s); setPage(1); }} totalPending />
 
       {(modal === "create" || modal === "edit") && (
-        <EquipModal title={modal === "create" ? "Add Trailer" : "Edit Trailer"} row={editing} onClose={() => setModal(null)} onSave={save} saving={saving} />
+        <EquipModal title={modal === "create" ? "Add Trailer" : "Edit Trailer"} row={editing} onClose={() => setModal(null)} onSave={save} saving={saving} driverOpts={driverOpts} />
       )}
       {deleting && <DeleteConfirm label={deleting.unit} onClose={() => setDeleting(null)} onConfirm={del} />}
       {importing && <ImportModal entityLabel="Trailer" onClose={() => setImporting(false)} />}
