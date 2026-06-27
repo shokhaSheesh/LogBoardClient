@@ -1572,28 +1572,33 @@ function Toolbar({
       padding: "12px 16px", borderBottom: "1px solid var(--border)",
       backgroundColor: "var(--card)", flexShrink: 0,
     }}>
-      <div style={{ position: "relative", flex: "0 0 250px" }}>
-        <Search size={13} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--muted-foreground)", pointerEvents: "none" }} />
-        <input
-          value={search}
-          onChange={(e) => onSearch(e.target.value)}
-          placeholder={placeholder}
-          style={{
-            width: "100%", height: 34, paddingLeft: 30, paddingRight: 10,
-            fontFamily: "var(--font-sans)", fontSize: 13,
-            backgroundColor: "var(--input-background)", border: "1px solid var(--border)",
-            borderRadius: 7, color: "var(--foreground)", outline: "none", boxSizing: "border-box",
-            transition: "border-color 0.15s, box-shadow 0.15s",
-          }}
-          onFocus={(e) => {
-            e.currentTarget.style.borderColor = "var(--primary)";
-            e.currentTarget.style.boxShadow = "0 0 0 3px rgba(59,130,246,0.12)";
-          }}
-          onBlur={(e) => {
-            e.currentTarget.style.borderColor = "var(--border)";
-            e.currentTarget.style.boxShadow = "none";
-          }}
-        />
+      <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+        <div style={{ position: "relative", width: 250 }}>
+          <Search size={13} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--muted-foreground)", pointerEvents: "none" }} />
+          <input
+            value={search}
+            onChange={(e) => onSearch(e.target.value)}
+            placeholder={placeholder}
+            style={{
+              width: "100%", height: 34, paddingLeft: 30, paddingRight: 10,
+              fontFamily: "var(--font-sans)", fontSize: 13,
+              backgroundColor: "var(--input-background)", border: "1px solid var(--border)",
+              borderRadius: 7, color: "var(--foreground)", outline: "none", boxSizing: "border-box" as const,
+              transition: "border-color 0.15s, box-shadow 0.15s",
+            }}
+            onFocus={(e) => {
+              e.currentTarget.style.borderColor = "var(--primary)";
+              e.currentTarget.style.boxShadow = "0 0 0 3px rgba(59,130,246,0.12)";
+            }}
+            onBlur={(e) => {
+              e.currentTarget.style.borderColor = "var(--border)";
+              e.currentTarget.style.boxShadow = "none";
+            }}
+          />
+        </div>
+        <span style={{ fontSize: 8, fontWeight: 700, color: "#D97706", backgroundColor: "#FEF3C7", border: "1px solid #FDE68A", borderRadius: 4, padding: "1px 4px", letterSpacing: "0.04em", textTransform: "uppercase" as const }}>
+          backend pending
+        </span>
       </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
@@ -1619,7 +1624,6 @@ function Toolbar({
 
 function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDriver) => void; onCountChange: (n: number) => void }) {
   const [rows, setRows]               = useState<SoloDriver[]>([]);
-  const [total, setTotal]             = useState(0);
   const [loading, setLoading]         = useState(true);
   const [error, setError]             = useState("");
   const [truckOpts, setTruckOpts]     = useState<SelectOpt[]>(EMPTY_OPTS);
@@ -1629,7 +1633,6 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
   const [deleting, setDeleting]       = useState<SoloDriver | null>(null);
   const [saving, setSaving]           = useState(false);
   const [search, setSearch]           = useState("");
-  const [debouncedQ, setDebouncedQ]   = useState("");
   const [statusFilter, setStatus]     = useState("All");
   const [page, setPage]               = useState(1);
   const [pageSize, setPageSize]       = useState(20);
@@ -1638,28 +1641,22 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
   const [fetchKey, setFetchKey]       = useState(0);
 
   useEffect(() => {
-    const t = setTimeout(() => { setDebouncedQ(search); setPage(1); }, 350);
-    return () => clearTimeout(t);
-  }, [search]);
-
-  useEffect(() => {
     setLoading(true);
     Promise.all([
-      api.getList<any>("/drivers", { q: debouncedQ || undefined, page, limit: pageSize, team: "false" }),
+      api.get<any[]>("/drivers"),
       api.get<any[]>("/trucks"),
       api.get<any[]>("/trailers"),
     ])
-      .then(([{ items: drivers, total: t }, trucks, trailers]) => {
+      .then(([drivers, trucks, trailers]) => {
         const solo = (drivers ?? []).filter((d) => !d.team).map(toSolo);
         setRows(solo);
-        setTotal(t);
-        onCountChange(t);
+        onCountChange(solo.length);
         setTruckOpts((trucks ?? []).map((tr) => ({ value: tr.unit ?? tr.id, label: tr.unit ?? tr.id })));
         setTrailerOpts((trailers ?? []).map((tr) => ({ value: tr.unit ?? tr.id, label: tr.unit ?? tr.id })));
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [debouncedQ, page, pageSize, fetchKey]);
+  }, [fetchKey]);
 
   const patchRow = async (id: string, fields: Partial<SoloDriver>) => {
     const existing = rows.find((d) => d.id === id);
@@ -1703,10 +1700,15 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
     setDeleting(null);
   };
 
-  const filtered = statusFilter === "All" ? rows : rows.filter((d) => d.status === statusFilter);
-  const paged = filtered;
+  const q = search.toLowerCase();
+  const filtered = rows.filter((d) => {
+    const ms = !q || d.name.toLowerCase().includes(q) || d.phone.includes(q) || d.truck.toLowerCase().includes(q) || d.location.toLowerCase().includes(q);
+    const mf = statusFilter === "All" || d.status === statusFilter;
+    return ms && mf;
+  });
+  const paged = filtered.slice((page - 1) * pageSize, page * pageSize);
 
-  const handleSearch  = (v: string) => { setSearch(v); };
+  const handleSearch  = (v: string) => { setSearch(v); setPage(1); };
   const handleStatus  = (v: string) => { setStatus(v); setPage(1); };
 
   if (loading) return (
@@ -1826,9 +1828,8 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
       </div>
 
       <Pagination
-        page={page} total={total} pageSize={pageSize}
+        page={page} total={filtered.length} pageSize={pageSize}
         onPage={setPage} onPageSize={(s) => { setPageSize(s); setPage(1); }}
-        totalPending
       />
 
       {(modal === "create" || modal === "edit") && (
@@ -1849,7 +1850,6 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
 
 function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver) => void; onCountChange: (n: number) => void }) {
   const [rows, setRows]               = useState<TeamDriver[]>([]);
-  const [total, setTotal]             = useState(0);
   const [loading, setLoading]         = useState(true);
   const [error, setError]             = useState("");
   const [truckOpts, setTruckOpts]     = useState<SelectOpt[]>(EMPTY_OPTS);
@@ -1859,7 +1859,6 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
   const [deleting, setDeleting]       = useState<TeamDriver | null>(null);
   const [saving, setSaving]           = useState(false);
   const [search, setSearch]           = useState("");
-  const [debouncedQ, setDebouncedQ]   = useState("");
   const [statusFilter, setStatus]     = useState("All");
   const [page, setPage]               = useState(1);
   const [pageSize, setPageSize]       = useState(20);
@@ -1868,28 +1867,22 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
   const [fetchKey, setFetchKey]       = useState(0);
 
   useEffect(() => {
-    const t = setTimeout(() => { setDebouncedQ(search); setPage(1); }, 350);
-    return () => clearTimeout(t);
-  }, [search]);
-
-  useEffect(() => {
     setLoading(true);
     Promise.all([
-      api.getList<any>("/drivers", { q: debouncedQ || undefined, page, limit: pageSize, team: "true" }),
+      api.get<any[]>("/drivers"),
       api.get<any[]>("/trucks"),
       api.get<any[]>("/trailers"),
     ])
-      .then(([{ items: drivers, total: t }, trucks, trailers]) => {
+      .then(([drivers, trucks, trailers]) => {
         const teams = (drivers ?? []).filter((d) => d.team).map(toTeam);
         setRows(teams);
-        setTotal(t);
-        onCountChange(t);
+        onCountChange(teams.length);
         setTruckOpts((trucks ?? []).map((tr) => ({ value: tr.unit ?? tr.id, label: tr.unit ?? tr.id })));
         setTrailerOpts((trailers ?? []).map((tr) => ({ value: tr.unit ?? tr.id, label: tr.unit ?? tr.id })));
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [debouncedQ, page, pageSize, fetchKey]);
+  }, [fetchKey]);
 
   const patchRow = async (id: string, fields: Partial<TeamDriver>) => {
     const existing = rows.find((d) => d.id === id);
@@ -1933,10 +1926,15 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
     setDeleting(null);
   };
 
-  const filtered = statusFilter === "All" ? rows : rows.filter((d) => d.status === statusFilter);
-  const paged = filtered;
+  const q = search.toLowerCase();
+  const filtered = rows.filter((d) => {
+    const ms = !q || d.name1.toLowerCase().includes(q) || d.name2.toLowerCase().includes(q) || d.phone1.includes(q) || d.truck.toLowerCase().includes(q);
+    const mf = statusFilter === "All" || d.status === statusFilter;
+    return ms && mf;
+  });
+  const paged = filtered.slice((page - 1) * pageSize, page * pageSize);
 
-  const handleSearch = (v: string) => { setSearch(v); };
+  const handleSearch = (v: string) => { setSearch(v); setPage(1); };
   const handleStatus = (v: string) => { setStatus(v); setPage(1); };
 
   if (loading) return (
@@ -2054,9 +2052,8 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
       </div>
 
       <Pagination
-        page={page} total={total} pageSize={pageSize}
+        page={page} total={filtered.length} pageSize={pageSize}
         onPage={setPage} onPageSize={(s) => { setPageSize(s); setPage(1); }}
-        totalPending
       />
 
       {(modal === "create" || modal === "edit") && (
