@@ -1,16 +1,29 @@
 import { useState } from "react";
 import { useNavigate } from "react-router";
 import { Zap, Eye, EyeOff } from "lucide-react";
+import { useAuth } from "../lib/auth";
 
 export function LoginPage() {
   const navigate = useNavigate();
+  const { login } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    navigate("/workspace/board");
+    setError("");
+    setSubmitting(true);
+    try {
+      await login(email, password);
+      navigate("/workspace/dashboard", { replace: true });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Login failed");
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -67,6 +80,22 @@ export function LoginPage() {
         >
           Sign in to your workspace
         </p>
+
+        {error && (
+          <div
+            style={{
+              fontSize: "0.8rem",
+              color: "#ef4444",
+              backgroundColor: "rgba(239,68,68,0.08)",
+              border: "1px solid rgba(239,68,68,0.2)",
+              borderRadius: 8,
+              padding: "8px 12px",
+              marginBottom: 8,
+            }}
+          >
+            {error}
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div className="flex flex-col gap-1.5">
@@ -126,6 +155,7 @@ export function LoginPage() {
 
           <button
             type="submit"
+            disabled={submitting}
             className="rounded-md font-medium transition-all mt-1"
             style={{
               height: 36,
@@ -133,16 +163,19 @@ export function LoginPage() {
               color: "var(--primary-foreground)",
               fontSize: "0.875rem",
               border: "none",
-              cursor: "pointer",
+              cursor: submitting ? "not-allowed" : "pointer",
+              opacity: submitting ? 0.7 : 1,
             }}
-            onMouseEnter={(e) =>
-              ((e.currentTarget as HTMLButtonElement).style.opacity = "0.9")
-            }
-            onMouseLeave={(e) =>
-              ((e.currentTarget as HTMLButtonElement).style.opacity = "1")
-            }
+            onMouseEnter={(e) => {
+              if (!submitting)
+                (e.currentTarget as HTMLButtonElement).style.opacity = "0.9";
+            }}
+            onMouseLeave={(e) => {
+              if (!submitting)
+                (e.currentTarget as HTMLButtonElement).style.opacity = "1";
+            }}
           >
-            Sign in
+            {submitting ? "Signing in…" : "Sign in"}
           </button>
         </form>
       </div>

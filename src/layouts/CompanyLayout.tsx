@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { Outlet, NavLink, useLocation } from "react-router";
+import { Outlet, NavLink, useLocation, useNavigate } from "react-router";
 import {
   LayoutDashboard,
   Trello,
@@ -18,8 +18,10 @@ import {
   Menu,
   Check,
   Plus,
+  LogOut,
 } from "lucide-react";
 import { Avatar, AvatarFallback } from "../components/ui/avatar";
+import { useAuth } from "../lib/auth";
 
 // ─── Account types ──────────────────────────────────────────────────────────
 
@@ -277,10 +279,16 @@ const USER_MENU_ITEMS: { icon: React.ElementType; label: string; path: string }[
 ];
 
 function UserMenu({ collapsed }: { collapsed: boolean }) {
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const popupRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ bottom: 0, left: 0, width: 0 });
+
+  const initials = user?.name
+    ? user.name.trim().split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? "").join("")
+    : "??";
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -302,6 +310,12 @@ function UserMenu({ collapsed }: { collapsed: boolean }) {
     setOpen((v) => !v);
   };
 
+  const handleLogout = async () => {
+    setOpen(false);
+    await logout();
+    navigate("/login", { replace: true });
+  };
+
   return (
     <div ref={ref} className="mx-2 mb-3">
       <button
@@ -318,16 +332,16 @@ function UserMenu({ collapsed }: { collapsed: boolean }) {
         onMouseLeave={(e) => { if (!open) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--sidebar-accent)"; }}
       >
         <div style={{ width: 34, height: 34, borderRadius: "50%", background: "linear-gradient(135deg, #3B82F6, #6366F1)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 600, color: "#fff", flexShrink: 0 }}>
-          SS
+          {initials}
         </div>
         {!collapsed && (
           <>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 13, fontWeight: 500, color: "#F1F5F9", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                Shokhruz S.
+                {user?.name ?? "—"}
               </div>
               <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--sidebar-foreground)", opacity: 0.65 }}>
-                Admin · Online
+                {user?.role ?? "—"} · Online
               </div>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
@@ -365,6 +379,23 @@ function UserMenu({ collapsed }: { collapsed: boolean }) {
               {label}
             </NavLink>
           ))}
+
+          <div style={{ height: 1, backgroundColor: "var(--border)", margin: "4px 0" }} />
+
+          <button
+            onClick={handleLogout}
+            style={{
+              display: "flex", alignItems: "center", gap: 10,
+              width: "100%", padding: "9px 14px", border: "none", borderRadius: 0,
+              backgroundColor: "transparent", cursor: "pointer", textAlign: "left",
+              fontFamily: "var(--font-sans)", fontSize: 13, color: "#EF4444",
+            }}
+            onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = "rgba(239,68,68,0.07)"; }}
+            onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = "transparent"; }}
+          >
+            <LogOut size={14} style={{ flexShrink: 0 }} />
+            Sign out
+          </button>
         </div>,
         document.body
       )}

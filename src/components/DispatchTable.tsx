@@ -486,6 +486,8 @@ interface ChangeEntry {
   userColor: string;
   loadId: string;
   driverName: string;
+  fieldKey: string;
+  rawOldVal: unknown;
   fieldLabel: string;
   oldVal: string;
   newVal: string;
@@ -530,15 +532,15 @@ function groupChanges(entries: ChangeEntry[]) {
 
 const _t = Date.now();
 const SEED_CHANGES: ChangeEntry[] = [
-  { id:"s1", ts:_t-110000,  user:"Sofia R.",  userColor:"#8B5CF6", loadId:"LD-00813", driverName:"Darnell Washington", fieldLabel:"Status",      oldVal:"Ready",         newVal:"En Route"     },
-  { id:"s2", ts:_t-310000,  user:"You",        userColor:"#3B82F6", loadId:"LD-00481", driverName:"Carlos Mendez",      fieldLabel:"Speed",       oldVal:"58 mph",        newVal:"62 mph"       },
-  { id:"s3", ts:_t-490000,  user:"Marcus T.",  userColor:"#10B981", loadId:"LD-00577", driverName:"Priya Sharma",       fieldLabel:"Location",    oldVal:"Austin, TX",    newVal:"Houston, TX"  },
-  { id:"s4", ts:_t-950000,  user:"You",        userColor:"#3B82F6", loadId:"LD-00610", driverName:"Linda Okafor",       fieldLabel:"Status",      oldVal:"Dispatched",    newVal:"En Route"     },
-  { id:"s5", ts:_t-1800000, user:"Sofia R.",   userColor:"#8B5CF6", loadId:"LD-00342", driverName:"Marcus Webb",        fieldLabel:"Status",      oldVal:"En Route",      newVal:"Delivered"    },
-  { id:"s6", ts:_t-3600000, user:"You",        userColor:"#3B82F6", loadId:"LD-00481", driverName:"Carlos Mendez",      fieldLabel:"Comments",    oldVal:"—",             newVal:"Fuel stop needed at Mile 220" },
-  { id:"s7", ts:_t-7200000, user:"Marcus T.",  userColor:"#10B981", loadId:"LD-00924", driverName:"Ray Kowalski",       fieldLabel:"#1 Appt.",    oldVal:"06/13 · 07:00", newVal:"06/13 · 08:00" },
-  { id:"s8", ts:_t-86400000,user:"You",        userColor:"#3B82F6", loadId:"LD-00813", driverName:"Darnell Washington", fieldLabel:"Driver Type", oldVal:"C/D",           newVal:"O/O"          },
-  { id:"s9", ts:_t-90000000,user:"Sofia R.",   userColor:"#8B5CF6", loadId:"LD-00157", driverName:"Tomás García",       fieldLabel:"Status",      oldVal:"En Route",      newVal:"Home"         },
+  { id:"s1", ts:_t-110000,  user:"Sofia R.",  userColor:"#8B5CF6", loadId:"LD-00813", driverName:"Darnell Washington", fieldKey:"status",     rawOldVal:"ready",          fieldLabel:"Status",      oldVal:"Ready",         newVal:"En Route"     },
+  { id:"s2", ts:_t-310000,  user:"You",       userColor:"#3B82F6", loadId:"LD-00481", driverName:"Carlos Mendez",      fieldKey:"speedMph",   rawOldVal:58,               fieldLabel:"Speed",       oldVal:"58 mph",        newVal:"62 mph"       },
+  { id:"s3", ts:_t-490000,  user:"Marcus T.", userColor:"#10B981", loadId:"LD-00577", driverName:"Priya Sharma",       fieldKey:"location",   rawOldVal:"Austin, TX",     fieldLabel:"Location",    oldVal:"Austin, TX",    newVal:"Houston, TX"  },
+  { id:"s4", ts:_t-950000,  user:"You",       userColor:"#3B82F6", loadId:"LD-00610", driverName:"Linda Okafor",       fieldKey:"status",     rawOldVal:"dispatched",     fieldLabel:"Status",      oldVal:"Dispatched",    newVal:"En Route"     },
+  { id:"s5", ts:_t-1800000, user:"Sofia R.",  userColor:"#8B5CF6", loadId:"LD-00342", driverName:"Marcus Webb",        fieldKey:"status",     rawOldVal:"enroute",        fieldLabel:"Status",      oldVal:"En Route",      newVal:"Delivered"    },
+  { id:"s6", ts:_t-3600000, user:"You",       userColor:"#3B82F6", loadId:"LD-00481", driverName:"Carlos Mendez",      fieldKey:"comments",   rawOldVal:"",               fieldLabel:"Comments",    oldVal:"—",             newVal:"Fuel stop needed at Mile 220" },
+  { id:"s7", ts:_t-7200000, user:"Marcus T.", userColor:"#10B981", loadId:"LD-00924", driverName:"Ray Kowalski",       fieldKey:"pickupAppt", rawOldVal:"06/13 · 07:00",  fieldLabel:"#1 Appt.",    oldVal:"06/13 · 07:00", newVal:"06/13 · 08:00" },
+  { id:"s8", ts:_t-86400000,user:"You",       userColor:"#3B82F6", loadId:"LD-00813", driverName:"Darnell Washington", fieldKey:"type",       rawOldVal:"C/D",            fieldLabel:"Driver Type", oldVal:"C/D",           newVal:"O/O"          },
+  { id:"s9", ts:_t-90000000,user:"Sofia R.",  userColor:"#8B5CF6", loadId:"LD-00157", driverName:"Tomás García",       fieldKey:"status",     rawOldVal:"enroute",        fieldLabel:"Status",      oldVal:"En Route",      newVal:"Home"         },
 ];
 
 // ── Changelog panel ───────────────────────────────────────────────────────────
@@ -563,7 +565,8 @@ function ValDisplay({ fieldLabel, val, muted }: { fieldLabel: string; val: strin
   );
 }
 
-function ChangelogPanel({ entries, onClose }: { entries: ChangeEntry[]; onClose: () => void }) {
+function ChangelogPanel({ entries, onClose, onRevert }: { entries: ChangeEntry[]; onClose: () => void; onRevert: (entry: ChangeEntry) => void }) {
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
   const groups = groupChanges(entries);
   return createPortal(
     <>
@@ -602,9 +605,10 @@ function ChangelogPanel({ entries, onClose }: { entries: ChangeEntry[]; onClose:
               </div>
 
               {group.items.map((entry) => (
-                <div key={entry.id} style={{ display: "flex", gap: 11, padding: "10px 18px", borderBottom: "1px solid var(--border)" }}
-                  onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.backgroundColor = "var(--muted)"; }}
-                  onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.backgroundColor = "transparent"; }}>
+                <div key={entry.id}
+                  style={{ display: "flex", gap: 11, padding: "10px 18px", borderBottom: "1px solid var(--border)", backgroundColor: hoveredId === entry.id ? "var(--muted)" : "transparent", transition: "background-color 0.1s" }}
+                  onMouseEnter={() => setHoveredId(entry.id)}
+                  onMouseLeave={() => setHoveredId(null)}>
                   {/* Avatar */}
                   <div style={{ width: 32, height: 32, borderRadius: "50%", backgroundColor: entry.userColor + "22", border: `1.5px solid ${entry.userColor}44`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 1 }}>
                     <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 700, color: entry.userColor }}>
@@ -616,7 +620,18 @@ function ChangelogPanel({ entries, onClose }: { entries: ChangeEntry[]; onClose:
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 2 }}>
                       <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: 600, color: "var(--foreground)" }}>{entry.user}</span>
-                      <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--muted-foreground)", flexShrink: 0, marginLeft: 6 }}>{fmtTs(entry.ts)}</span>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0, marginLeft: 6 }}>
+                        {hoveredId === entry.id && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); onRevert(entry); }}
+                            style={{ fontFamily: "var(--font-sans)", fontSize: 10, fontWeight: 600, color: "#EF4444", backgroundColor: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 5, padding: "2px 8px", cursor: "pointer", lineHeight: 1.4, whiteSpace: "nowrap" }}
+                            onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = "#FEE2E2"; }}
+                            onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = "#FEF2F2"; }}>
+                            Revert
+                          </button>
+                        )}
+                        <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--muted-foreground)" }}>{fmtTs(entry.ts)}</span>
+                      </div>
                     </div>
                     <div style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "var(--muted-foreground)", marginBottom: 5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                       <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--primary)", fontWeight: 600 }}>{entry.loadId}</span>
@@ -671,6 +686,8 @@ export function DispatchTable() {
           userColor: "#3B82F6",
           loadId,
           driverName: driver.name,
+          fieldKey: field,
+          rawOldVal: driver[field as keyof Driver],
           fieldLabel: FIELD_LABELS[field]!,
           oldVal: fmtFieldVal(field, driver[field as keyof Driver]),
           newVal: fmtFieldVal(field, newVal),
@@ -699,7 +716,16 @@ export function DispatchTable() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-      {logOpen && <ChangelogPanel entries={changelog} onClose={() => setLogOpen(false)} />}
+      {logOpen && (
+        <ChangelogPanel
+          entries={changelog}
+          onClose={() => setLogOpen(false)}
+          onRevert={(entry) => {
+            patch(entry.loadId, { [entry.fieldKey]: entry.rawOldVal });
+            setChangelog((prev) => prev.filter((e) => e.id !== entry.id));
+          }}
+        />
+      )}
 
       {/* ── Toolbar ── */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 16px", flexShrink: 0, backgroundColor: "var(--card)", borderBottom: "1px solid var(--border)", height: 52, gap: 10, borderRadius: "12px 12px 0 0" }}>

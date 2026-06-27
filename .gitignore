@@ -3,3 +3,4 @@ dist
 .pnpm-builds-approved.json
 .pnpm
 *.local
+.env
