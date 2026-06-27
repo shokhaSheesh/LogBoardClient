@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { Avatar, AvatarFallback } from "../components/ui/avatar";
 import { useAuth } from "../lib/auth";
+import { api, setCompanyId, getCompanyId } from "../lib/api";
 
 // ─── Account types ──────────────────────────────────────────────────────────
 
@@ -32,12 +33,6 @@ interface Account {
   color: string;
   plan: string;
 }
-
-const INIT_ACCOUNTS: Account[] = [
-  { id: "acc-1", name: "FleetTech Inc.",    initials: "FT", color: "#3B82F6", plan: "Pro"     },
-  { id: "acc-2", name: "RapidHaul LLC",     initials: "RH", color: "#10B981", plan: "Starter" },
-  { id: "acc-3", name: "Swift Wheels Co.",  initials: "SW", color: "#F59E0B", plan: "Pro"     },
-];
 
 function getInitials(name: string): string {
   return name.trim().split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? "").join("");
@@ -686,9 +681,36 @@ function TopHeader({ onToggleSidebar }: { onToggleSidebar: () => void }) {
 // ─── CompanyLayout ────────────────────────────────────────────────────────────
 
 export function CompanyLayout() {
+  const { user } = useAuth();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [accounts, setAccounts]         = useState<Account[]>(INIT_ACCOUNTS);
-  const [activeAccountId, setActiveAccountId] = useState(INIT_ACCOUNTS[0].id);
+  const [accounts, setAccounts]               = useState<Account[]>([]);
+  const [activeAccountId, setActiveAccountId] = useState(getCompanyId());
+
+  // Fetch real accounts for owners; dispatcher/updater have a fixed company_id from login
+  useEffect(() => {
+    if (user?.role === "owner") {
+      api.get<Account[]>("/owner/accounts")
+        .then((data) => {
+          setAccounts(data);
+          // Auto-select: prefer the one already in localStorage, else first
+          const saved = getCompanyId();
+          const match = data.find((a) => a.id === saved) ?? data[0];
+          if (match) {
+            setActiveAccountId(match.id);
+            setCompanyId(match.id);
+          }
+        })
+        .catch(() => {/* silently ignore — switcher stays empty */});
+    } else if (user?.company_id) {
+      // dispatcher / updater — already pinned, just make sure it's reflected in state
+      setActiveAccountId(user.company_id);
+    }
+  }, [user]);
+
+  const switchAccount = (id: string) => {
+    setActiveAccountId(id);
+    setCompanyId(id);
+  };
 
   const addAccount = (name: string) => {
     const initials = getInitials(name) || "??";
@@ -696,7 +718,7 @@ export function CompanyLayout() {
     const color    = colors[accounts.length % colors.length];
     const newAcc: Account = { id: `acc-${Date.now()}`, name, initials, color, plan: "Starter" };
     setAccounts((prev) => [...prev, newAcc]);
-    setActiveAccountId(newAcc.id);
+    switchAccount(newAcc.id);
   };
 
   return (
@@ -709,7 +731,7 @@ export function CompanyLayout() {
         onToggle={() => setSidebarCollapsed((v) => !v)}
         accounts={accounts}
         activeAccountId={activeAccountId}
-        onSwitch={setActiveAccountId}
+        onSwitch={switchAccount}
         onAddAccount={addAccount}
       />
 
