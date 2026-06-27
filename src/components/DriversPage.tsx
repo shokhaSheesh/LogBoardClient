@@ -247,9 +247,9 @@ function CustomSelect({
 const PAGE_SIZES = [20, 40, 60, 100];
 
 function Pagination({
-  page, total, pageSize, onPage, onPageSize,
+  page, total, pageSize, onPage, onPageSize, totalPending = false,
 }: {
-  page: number; total: number; pageSize: number;
+  page: number; total: number; pageSize: number; totalPending?: boolean;
   onPage: (p: number) => void; onPageSize: (s: number) => void;
 }) {
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
@@ -298,8 +298,12 @@ function Pagination({
     }}>
       {/* Left: count info + rows-per-page */}
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)", whiteSpace: "nowrap" }}>
-          {total === 0 ? "No results" : `Showing ${from}–${to} of ${total}`}
+        <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 5 }}>
+          {total === 0 ? "No results" : `Showing ${from}–${to}`}
+          {total > 0 && (totalPending
+            ? <span style={{ fontSize: 8, fontWeight: 700, color: "#D97706", backgroundColor: "#FEF3C7", border: "1px solid #FDE68A", borderRadius: 4, padding: "1px 4px", letterSpacing: "0.04em", textTransform: "uppercase" }}>total pending</span>
+            : <span>of {total}</span>
+          )}
         </span>
         <span style={{ color: "var(--border)", userSelect: "none" }}>·</span>
         <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)", whiteSpace: "nowrap" }}>
@@ -1592,12 +1596,17 @@ function Toolbar({
         />
       </div>
 
-      <CustomSelect
-        value={statusFilter}
-        options={STATUS_OPTS}
-        onChange={onStatus}
-        width={168}
-      />
+      <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+        <CustomSelect
+          value={statusFilter}
+          options={STATUS_OPTS}
+          onChange={onStatus}
+          width={168}
+        />
+        <span style={{ fontSize: 8, fontWeight: 700, color: "#D97706", backgroundColor: "#FEF3C7", border: "1px solid #FDE68A", borderRadius: 4, padding: "1px 4px", letterSpacing: "0.04em", textTransform: "uppercase" as const }}>
+          backend pending
+        </span>
+      </div>
 
       <div style={{ flex: 1 }} />
 
@@ -1610,6 +1619,7 @@ function Toolbar({
 
 function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDriver) => void; onCountChange: (n: number) => void }) {
   const [rows, setRows]               = useState<SoloDriver[]>([]);
+  const [total, setTotal]             = useState(0);
   const [loading, setLoading]         = useState(true);
   const [error, setError]             = useState("");
   const [truckOpts, setTruckOpts]     = useState<SelectOpt[]>(EMPTY_OPTS);
@@ -1619,29 +1629,37 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
   const [deleting, setDeleting]       = useState<SoloDriver | null>(null);
   const [saving, setSaving]           = useState(false);
   const [search, setSearch]           = useState("");
+  const [debouncedQ, setDebouncedQ]   = useState("");
   const [statusFilter, setStatus]     = useState("All");
   const [page, setPage]               = useState(1);
   const [pageSize, setPageSize]       = useState(20);
   const [importing, setImporting]     = useState(false);
   const [toast, setToast]             = useState<{ type: "success" | "error"; msg: string } | null>(null);
+  const [fetchKey, setFetchKey]       = useState(0);
+
+  useEffect(() => {
+    const t = setTimeout(() => { setDebouncedQ(search); setPage(1); }, 350);
+    return () => clearTimeout(t);
+  }, [search]);
 
   useEffect(() => {
     setLoading(true);
     Promise.all([
-      api.get<any[]>("/drivers"),
+      api.getList<any>("/drivers", { q: debouncedQ || undefined, page, limit: pageSize, team: "false" }),
       api.get<any[]>("/trucks"),
       api.get<any[]>("/trailers"),
     ])
-      .then(([drivers, trucks, trailers]) => {
+      .then(([{ items: drivers, total: t }, trucks, trailers]) => {
         const solo = (drivers ?? []).filter((d) => !d.team).map(toSolo);
         setRows(solo);
-        onCountChange(solo.length);
-        setTruckOpts((trucks ?? []).map((t) => ({ value: t.unit ?? t.id, label: t.unit ?? t.id })));
-        setTrailerOpts((trailers ?? []).map((t) => ({ value: t.unit ?? t.id, label: t.unit ?? t.id })));
+        setTotal(t);
+        onCountChange(t);
+        setTruckOpts((trucks ?? []).map((tr) => ({ value: tr.unit ?? tr.id, label: tr.unit ?? tr.id })));
+        setTrailerOpts((trailers ?? []).map((tr) => ({ value: tr.unit ?? tr.id, label: tr.unit ?? tr.id })));
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
-  }, []);
+  }, [debouncedQ, page, pageSize, fetchKey]);
 
   const patchRow = async (id: string, fields: Partial<SoloDriver>) => {
     const existing = rows.find((d) => d.id === id);
@@ -1659,16 +1677,14 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
     setSaving(true);
     try {
       if (modal === "create") {
-        const created = await api.post<any>("/drivers", fromSolo(d));
-        setRows((r) => [...r, toSolo(created)]);
-        onCountChange(rows.length + 1);
+        await api.post<any>("/drivers", fromSolo(d));
         setToast({ type: "success", msg: `${d.name} added successfully` });
       } else {
-        const updated = await api.put<any>(`/drivers/${d.id}`, fromSolo(d));
-        setRows((r) => r.map((x) => (x.id === d.id ? toSolo(updated) : x)));
+        await api.put<any>(`/drivers/${d.id}`, fromSolo(d));
         setToast({ type: "success", msg: `${d.name} updated successfully` });
       }
       setModal(null);
+      setFetchKey((k) => k + 1);
     } catch (e) {
       setToast({ type: "error", msg: e instanceof Error ? e.message : "Save failed" });
     } finally {
@@ -1679,25 +1695,19 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
     if (!deleting) return;
     try {
       await api.delete(`/drivers/${deleting.id}`);
-      setRows((r) => r.filter((x) => x.id !== deleting.id));
-      onCountChange(rows.length - 1);
       setToast({ type: "success", msg: `${deleting.name} removed` });
+      setFetchKey((k) => k + 1);
     } catch (e) {
       setToast({ type: "error", msg: e instanceof Error ? e.message : "Delete failed" });
     }
     setDeleting(null);
   };
 
-  const q = search.toLowerCase();
-  const filtered = rows.filter((d) => {
-    const ms = !q || d.name.toLowerCase().includes(q) || d.phone.includes(q) || d.truck.toLowerCase().includes(q) || d.location.toLowerCase().includes(q);
-    const mf = statusFilter === "All" || d.status === statusFilter;
-    return ms && mf;
-  });
-  const paged = filtered.slice((page - 1) * pageSize, page * pageSize);
+  const filtered = statusFilter === "All" ? rows : rows.filter((d) => d.status === statusFilter);
+  const paged = filtered;
 
-  const handleSearch  = (v: string) => { setSearch(v);  setPage(1); };
-  const handleStatus  = (v: string) => { setStatus(v);  setPage(1); };
+  const handleSearch  = (v: string) => { setSearch(v); };
+  const handleStatus  = (v: string) => { setStatus(v); setPage(1); };
 
   if (loading) return (
     <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
@@ -1816,8 +1826,9 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
       </div>
 
       <Pagination
-        page={page} total={filtered.length} pageSize={pageSize}
-        onPage={setPage} onPageSize={setPageSize}
+        page={page} total={total} pageSize={pageSize}
+        onPage={setPage} onPageSize={(s) => { setPageSize(s); setPage(1); }}
+        totalPending
       />
 
       {(modal === "create" || modal === "edit") && (
@@ -1838,6 +1849,7 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
 
 function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver) => void; onCountChange: (n: number) => void }) {
   const [rows, setRows]               = useState<TeamDriver[]>([]);
+  const [total, setTotal]             = useState(0);
   const [loading, setLoading]         = useState(true);
   const [error, setError]             = useState("");
   const [truckOpts, setTruckOpts]     = useState<SelectOpt[]>(EMPTY_OPTS);
@@ -1847,29 +1859,37 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
   const [deleting, setDeleting]       = useState<TeamDriver | null>(null);
   const [saving, setSaving]           = useState(false);
   const [search, setSearch]           = useState("");
+  const [debouncedQ, setDebouncedQ]   = useState("");
   const [statusFilter, setStatus]     = useState("All");
   const [page, setPage]               = useState(1);
   const [pageSize, setPageSize]       = useState(20);
   const [importing, setImporting]     = useState(false);
   const [toast, setToast]             = useState<{ type: "success" | "error"; msg: string } | null>(null);
+  const [fetchKey, setFetchKey]       = useState(0);
+
+  useEffect(() => {
+    const t = setTimeout(() => { setDebouncedQ(search); setPage(1); }, 350);
+    return () => clearTimeout(t);
+  }, [search]);
 
   useEffect(() => {
     setLoading(true);
     Promise.all([
-      api.get<any[]>("/drivers"),
+      api.getList<any>("/drivers", { q: debouncedQ || undefined, page, limit: pageSize, team: "true" }),
       api.get<any[]>("/trucks"),
       api.get<any[]>("/trailers"),
     ])
-      .then(([drivers, trucks, trailers]) => {
+      .then(([{ items: drivers, total: t }, trucks, trailers]) => {
         const teams = (drivers ?? []).filter((d) => d.team).map(toTeam);
         setRows(teams);
-        onCountChange(teams.length);
-        setTruckOpts((trucks ?? []).map((t) => ({ value: t.unit ?? t.id, label: t.unit ?? t.id })));
-        setTrailerOpts((trailers ?? []).map((t) => ({ value: t.unit ?? t.id, label: t.unit ?? t.id })));
+        setTotal(t);
+        onCountChange(t);
+        setTruckOpts((trucks ?? []).map((tr) => ({ value: tr.unit ?? tr.id, label: tr.unit ?? tr.id })));
+        setTrailerOpts((trailers ?? []).map((tr) => ({ value: tr.unit ?? tr.id, label: tr.unit ?? tr.id })));
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
-  }, []);
+  }, [debouncedQ, page, pageSize, fetchKey]);
 
   const patchRow = async (id: string, fields: Partial<TeamDriver>) => {
     const existing = rows.find((d) => d.id === id);
@@ -1887,16 +1907,14 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
     setSaving(true);
     try {
       if (modal === "create") {
-        const created = await api.post<any>("/drivers", fromTeam(d));
-        setRows((r) => [...r, toTeam(created)]);
-        onCountChange(rows.length + 1);
+        await api.post<any>("/drivers", fromTeam(d));
         setToast({ type: "success", msg: `${d.name1} & ${d.name2} added successfully` });
       } else {
-        const updated = await api.put<any>(`/drivers/${d.id}`, fromTeam(d));
-        setRows((r) => r.map((x) => (x.id === d.id ? toTeam(updated) : x)));
+        await api.put<any>(`/drivers/${d.id}`, fromTeam(d));
         setToast({ type: "success", msg: `Team updated successfully` });
       }
       setModal(null);
+      setFetchKey((k) => k + 1);
     } catch (e) {
       setToast({ type: "error", msg: e instanceof Error ? e.message : "Save failed" });
     } finally {
@@ -1907,25 +1925,19 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
     if (!deleting) return;
     try {
       await api.delete(`/drivers/${deleting.id}`);
-      setRows((r) => r.filter((x) => x.id !== deleting.id));
-      onCountChange(rows.length - 1);
       setToast({ type: "success", msg: `${deleting.name1} & ${deleting.name2} removed` });
+      setFetchKey((k) => k + 1);
     } catch (e) {
       setToast({ type: "error", msg: e instanceof Error ? e.message : "Delete failed" });
     }
     setDeleting(null);
   };
 
-  const q = search.toLowerCase();
-  const filtered = rows.filter((d) => {
-    const ms = !q || d.name1.toLowerCase().includes(q) || d.name2.toLowerCase().includes(q) || d.truck.toLowerCase().includes(q);
-    const mf = statusFilter === "All" || d.status === statusFilter;
-    return ms && mf;
-  });
-  const paged = filtered.slice((page - 1) * pageSize, page * pageSize);
+  const filtered = statusFilter === "All" ? rows : rows.filter((d) => d.status === statusFilter);
+  const paged = filtered;
 
-  const handleSearch = (v: string) => { setSearch(v);  setPage(1); };
-  const handleStatus = (v: string) => { setStatus(v);  setPage(1); };
+  const handleSearch = (v: string) => { setSearch(v); };
+  const handleStatus = (v: string) => { setStatus(v); setPage(1); };
 
   if (loading) return (
     <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
@@ -2042,8 +2054,9 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
       </div>
 
       <Pagination
-        page={page} total={filtered.length} pageSize={pageSize}
-        onPage={setPage} onPageSize={setPageSize}
+        page={page} total={total} pageSize={pageSize}
+        onPage={setPage} onPageSize={(s) => { setPageSize(s); setPage(1); }}
+        totalPending
       />
 
       {(modal === "create" || modal === "edit") && (
@@ -2068,11 +2081,11 @@ export function DriversPage() {
   const [tab, setTab]               = useState<TabId>("solo");
   const [detailDriver, setDetail]   = useState<SoloDriver | null>(null);
   const [detailTeam, setDetailTeam] = useState<TeamDriver | null>(null);
-  const [soloCount, setSoloCount]   = useState(0);
-  const [teamCount, setTeamCount]   = useState(0);
+  const [soloCount, setSoloCount]   = useState<number | null>(null);
+  const [teamCount, setTeamCount]   = useState<number | null>(null);
   const inDetail = detailDriver !== null || detailTeam !== null;
 
-  const tabs: { id: TabId; label: string; count: number; icon: React.ReactNode; color: string; bg: string }[] = [
+  const tabs: { id: TabId; label: string; count: number | null; icon: React.ReactNode; color: string; bg: string }[] = [
     { id: "solo", label: "Solo Drivers", count: soloCount, icon: <User size={15} />,  color: "#1D4ED8", bg: "#DBEAFE" },
     { id: "team", label: "Team Drivers", count: teamCount, icon: <Users size={15} />, color: "#5B21B6", bg: "#EDE9FE" },
   ];
@@ -2101,14 +2114,20 @@ export function DriversPage() {
               >
                 <span style={{ color: active ? t.color : "var(--muted-foreground)", opacity: active ? 1 : 0.6 }}>{t.icon}</span>
                 {t.label}
-                <span style={{
-                  fontFamily: "var(--font-mono)", fontSize: 10, fontWeight: 700,
-                  color: active ? t.color : "var(--muted-foreground)",
-                  backgroundColor: active ? t.bg : "var(--muted)",
-                  borderRadius: 10, padding: "1px 7px",
-                }}>
-                  {t.count}
-                </span>
+                {t.count !== null ? (
+                  <span style={{
+                    fontFamily: "var(--font-mono)", fontSize: 10, fontWeight: 700,
+                    color: active ? t.color : "var(--muted-foreground)",
+                    backgroundColor: active ? t.bg : "var(--muted)",
+                    borderRadius: 10, padding: "1px 7px",
+                  }}>
+                    {t.count}
+                  </span>
+                ) : (
+                  <span style={{ fontSize: 8, fontWeight: 700, color: "#D97706", backgroundColor: "#FEF3C7", border: "1px solid #FDE68A", borderRadius: 4, padding: "1px 4px", letterSpacing: "0.04em", textTransform: "uppercase" as const }}>
+                    pending
+                  </span>
+                )}
               </button>
             );
           })}
