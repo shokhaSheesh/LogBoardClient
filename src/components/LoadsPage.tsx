@@ -1,12 +1,13 @@
 import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import {
-  Package, Plus, Pencil, Trash2, X, Check, MapPin,
+  Package, Plus, Pencil, Trash2, X, Check, AlertCircle,
   Search, ChevronDown, ChevronLeft, ChevronRight,
   ClipboardList, Sparkles,
   ArrowLeft, ArrowRight, Building2, User, DollarSign, Clock, History, CalendarDays, Navigation,
 } from "lucide-react";
 import { Status, STATUS_CONFIG as SHARED_STATUS_CONFIG, ALL_STATUSES as SHARED_ALL_STATUSES } from "../lib/statuses";
+import { api } from "../lib/api";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -17,10 +18,11 @@ interface Stop {
 }
 
 interface Load {
-  id: number;
+  id: string;
   loadId: string;
   broker: string;
-  driver: string;
+  driver: string;       // display name, derived from driver_id
+  driver_id: string;
   status: Status;
   pickupAppt: string;
   dropAppt: string;
@@ -28,8 +30,22 @@ interface Load {
   destination: string;
   stops?: Stop[];
   payout: number;
-  totalMiles?: number;
+  totalMiles: number;
   dispatcher: string;
+}
+
+interface BackendLoad {
+  id: string;
+  load_id: string;
+  driver_id: string;
+  origin: string;
+  destination: string;
+  pickup_appt: string;
+  drop_appt: string;
+  status: Status;
+  payout: number;
+  miles: number;
+  broker?: string;
 }
 
 // ─── Config ───────────────────────────────────────────────────────────────────
@@ -44,142 +60,42 @@ const STATUS_FILTER_OPTS: SelectOpt[] = [
 ];
 const STATUS_MODAL_OPTS: SelectOpt[] = SHARED_ALL_STATUSES.map((s) => ({ value: s, label: SHARED_STATUS_CONFIG[s].label }));
 
-// ─── Seed data ────────────────────────────────────────────────────────────────
+// ─── Backend helpers ──────────────────────────────────────────────────────────
 
-const initLoads: Load[] = [
-  { id: 1,  loadId: "LD-00481", broker: "Echo Global",      driver: "Carlos Mendez",       status: "enroute",     pickupAppt: "06/12 · 08:00", dropAppt: "06/12 · 17:30", origin: "Dallas, TX",       destination: "Memphis, TN",       stops: [{ city: "Texarkana, TX", done: true, appt: "06/12 · 10:30" }, { city: "Little Rock, AR", done: true, appt: "06/12 · 13:00" }, { city: "Memphis, TN", done: false, appt: "06/12 · 17:30" }], payout: 1850, totalMiles: 548, dispatcher: "Jake R."   },
-  { id: 2,  loadId: "LD-00290", broker: "Coyote Logistics", driver: "Angela Torres",        status: "delivered",   pickupAppt: "06/11 · 07:00", dropAppt: "06/11 · 16:00", origin: "Chicago, IL",      destination: "Indianapolis, IN",  payout: 1200, totalMiles: 182, dispatcher: "Sofia R."  },
-  { id: 3,  loadId: "LD-00813", broker: "XPO Logistics",    driver: "Darnell Washington",   status: "dispatched",  pickupAppt: "06/12 · 11:00", dropAppt: "06/12 · 16:00", origin: "Atlanta, GA",      destination: "Nashville, TN",     payout: 950,  totalMiles: 250, dispatcher: "Marcus T." },
-  { id: 4,  loadId: "LD-00577", broker: "Total Quality",    driver: "Priya Sharma",         status: "enroute",     pickupAppt: "06/12 · 14:30", dropAppt: "06/13 · 07:00", origin: "Houston, TX",      destination: "San Antonio, TX",   payout: 750,  totalMiles: 197, dispatcher: "Jake R."   },
-  { id: 5,  loadId: "LD-00342", broker: "Mode Transport",   driver: "Marcus Webb",          status: "delivered",   pickupAppt: "06/11 · 09:00", dropAppt: "06/12 · 10:45", origin: "Phoenix, AZ",      destination: "Los Angeles, CA",   stops: [{ city: "Tucson, AZ", done: true, appt: "06/11 · 11:00" }, { city: "Los Angeles, CA", done: true, appt: "06/12 · 10:45" }], payout: 2100, totalMiles: 372, dispatcher: "Sofia R."  },
-  { id: 6,  loadId: "LD-00610", broker: "Arrive Logistics", driver: "Linda Okafor",         status: "enroute",     pickupAppt: "06/12 · 06:30", dropAppt: "06/12 · 19:00", origin: "Denver, CO",       destination: "Kansas City, MO",   stops: [{ city: "Salina, KS", done: true, appt: "06/12 · 10:00" }, { city: "Topeka, KS", done: false, appt: "06/12 · 13:30" }, { city: "Kansas City, MO", done: false, appt: "06/12 · 19:00" }], payout: 1400, totalMiles: 603, dispatcher: "Marcus T." },
-  { id: 7,  loadId: "LD-00924", broker: "GlobalTranz",      driver: "Ray Kowalski",         status: "reserved",    pickupAppt: "06/13 · 08:00", dropAppt: "06/13 · 15:30", origin: "Las Vegas, NV",    destination: "Salt Lake City, UT",payout: 880,  totalMiles: 421, dispatcher: "Jake R."   },
-  { id: 8,  loadId: "LD-00157", broker: "Transplace",       driver: "—",                    status: "reserved",    pickupAppt: "06/14 · 09:00", dropAppt: "06/14 · 18:00", origin: "Miami, FL",        destination: "Orlando, FL",       payout: 620,  totalMiles: 236, dispatcher: "Sofia R."  },
-  { id: 9,  loadId: "LD-01024", broker: "RXO",              driver: "Jean Eddy Simon",      status: "dispatched",  pickupAppt: "06/13 · 06:00", dropAppt: "06/14 · 08:00", origin: "Nashville, TN",    destination: "Charlotte, NC",     stops: [{ city: "Greensboro, NC", done: false, appt: "06/14 · 06:00" }, { city: "Charlotte, NC", done: false, appt: "06/14 · 08:00" }], payout: 1650, totalMiles: 409, dispatcher: "Marcus T." },
-  { id: 10, loadId: "LD-01105", broker: "Uber Freight",     driver: "Keavis Dyer",          status: "enroute",     pickupAppt: "06/12 · 10:00", dropAppt: "06/13 · 14:00", origin: "Columbus, OH",     destination: "Pittsburgh, PA",    stops: [{ city: "Wheeling, WV", done: false, appt: "06/13 · 10:00" }, { city: "Pittsburgh, PA", done: false, appt: "06/13 · 14:00" }], payout: 980,  totalMiles: 188, dispatcher: "Jake R."   },
-  { id: 11, loadId: "LD-01233", broker: "CH Robinson",      driver: "Shokhnurbek Komilov",  status: "delivered",   pickupAppt: "06/10 · 07:30", dropAppt: "06/11 · 12:00", origin: "Seattle, WA",      destination: "Portland, OR",      payout: 540,  totalMiles: 174, dispatcher: "Sofia R."  },
-  { id: 12, loadId: "LD-01344", broker: "Schneider",        driver: "Bakhodir Azamov",      status: "delivered",   pickupAppt: "06/11 · 08:00", dropAppt: "06/12 · 09:00", origin: "Minneapolis, MN",  destination: "Chicago, IL",       payout: 1100, totalMiles: 408, dispatcher: "Marcus T." },
-  { id: 13, loadId: "LD-01412", broker: "Landstar",         driver: "Tomás García",         status: "re_update",   pickupAppt: "06/12 · 08:00", dropAppt: "06/12 · 14:00", origin: "Detroit, MI",      destination: "Cleveland, OH",     payout: 0,    totalMiles: 170, dispatcher: "Jake R."   },
-  { id: 14, loadId: "LD-01551", broker: "Echo Global",      driver: "Carlos Mendez",        status: "re_update",   pickupAppt: "06/09 · 10:00", dropAppt: "06/09 · 16:00", origin: "St. Louis, MO",    destination: "Kansas City, MO",   payout: 150,  totalMiles: 248, dispatcher: "Sofia R."  },
-  { id: 15, loadId: "LD-01680", broker: "Coyote Logistics", driver: "—",                    status: "reserved",    pickupAppt: "06/15 · 07:00", dropAppt: "06/16 · 11:00", origin: "San Diego, CA",    destination: "Las Vegas, NV",     payout: 1750, totalMiles: 332, dispatcher: "Marcus T." },
-];
-
-// ─── Change log ───────────────────────────────────────────────────────────────
-
-type ChangeType = "created" | "status" | "assigned" | "edited";
-
-interface ChangeEntry {
-  id: number;
-  timestamp: string;
-  action: string;
-  by: string;
-  type: ChangeType;
-  status?: Status;
+function toLoad(b: BackendLoad, drivers: { id: string; name: string }[]): Load {
+  const driverName = drivers.find((d) => d.id === b.driver_id)?.name ?? "";
+  return {
+    id: b.id,
+    loadId: b.load_id ?? "",
+    driver_id: b.driver_id ?? "",
+    driver: driverName,
+    broker: b.broker ?? "",
+    status: b.status ?? "reserved",
+    pickupAppt: b.pickup_appt ?? "",
+    dropAppt: b.drop_appt ?? "",
+    origin: b.origin ?? "",
+    destination: b.destination ?? "",
+    payout: b.payout ?? 0,
+    totalMiles: b.miles ?? 0,
+    dispatcher: "",
+  };
 }
 
-const LOAD_CHANGE_LOG: Record<number, ChangeEntry[]> = {
-  1:  [
-    { id: 1, timestamp: "Jun 10, 2026 · 09:14 AM", action: "Load created",                          by: "Jake R.",            type: "created"  },
-    { id: 2, timestamp: "Jun 10, 2026 · 09:14 AM", action: "Status set to Reserved",                by: "Jake R.",            type: "status",  status: "reserved"    },
-    { id: 3, timestamp: "Jun 11, 2026 · 02:30 PM", action: "Driver assigned: Carlos Mendez",        by: "Jake R.",            type: "assigned" },
-    { id: 4, timestamp: "Jun 11, 2026 · 02:31 PM", action: "Status changed to Dispatched",          by: "Jake R.",            type: "status",  status: "dispatched"   },
-    { id: 5, timestamp: "Jun 12, 2026 · 08:05 AM", action: "Status changed to Enroute",             by: "Carlos Mendez",      type: "status",  status: "enroute" },
-  ],
-  2:  [
-    { id: 1, timestamp: "Jun 9,  2026 · 03:00 PM", action: "Load created",                          by: "Sofia R.",           type: "created"  },
-    { id: 2, timestamp: "Jun 9,  2026 · 03:00 PM", action: "Status set to Reserved",                by: "Sofia R.",           type: "status",  status: "reserved"    },
-    { id: 3, timestamp: "Jun 10, 2026 · 10:00 AM", action: "Driver assigned: Angela Torres",        by: "Sofia R.",           type: "assigned" },
-    { id: 4, timestamp: "Jun 10, 2026 · 10:01 AM", action: "Status changed to Dispatched",          by: "Sofia R.",           type: "status",  status: "dispatched"   },
-    { id: 5, timestamp: "Jun 11, 2026 · 07:02 AM", action: "Status changed to Enroute",             by: "Angela Torres",      type: "status",  status: "enroute" },
-    { id: 6, timestamp: "Jun 11, 2026 · 04:05 PM", action: "Status changed to Delivered",           by: "Angela Torres",      type: "status",  status: "delivered"  },
-  ],
-  3:  [
-    { id: 1, timestamp: "Jun 11, 2026 · 11:00 AM", action: "Load created",                          by: "Marcus T.",          type: "created"  },
-    { id: 2, timestamp: "Jun 11, 2026 · 11:00 AM", action: "Status set to Reserved",                by: "Marcus T.",          type: "status",  status: "reserved"    },
-    { id: 3, timestamp: "Jun 12, 2026 · 09:15 AM", action: "Driver assigned: Darnell Washington",   by: "Marcus T.",          type: "assigned" },
-    { id: 4, timestamp: "Jun 12, 2026 · 09:16 AM", action: "Status changed to Dispatched",          by: "Marcus T.",          type: "status",  status: "dispatched"   },
-  ],
-  4:  [
-    { id: 1, timestamp: "Jun 11, 2026 · 08:00 AM", action: "Load created",                          by: "Jake R.",            type: "created"  },
-    { id: 2, timestamp: "Jun 11, 2026 · 08:00 AM", action: "Status set to Reserved",                by: "Jake R.",            type: "status",  status: "reserved"    },
-    { id: 3, timestamp: "Jun 12, 2026 · 12:00 PM", action: "Driver assigned: Priya Sharma",         by: "Jake R.",            type: "assigned" },
-    { id: 4, timestamp: "Jun 12, 2026 · 12:01 PM", action: "Status changed to Dispatched",          by: "Jake R.",            type: "status",  status: "dispatched"   },
-    { id: 5, timestamp: "Jun 12, 2026 · 02:35 PM", action: "Status changed to Enroute",             by: "Priya Sharma",       type: "status",  status: "enroute" },
-  ],
-  5:  [
-    { id: 1, timestamp: "Jun 9,  2026 · 02:00 PM", action: "Load created",                          by: "Sofia R.",           type: "created"  },
-    { id: 2, timestamp: "Jun 9,  2026 · 02:00 PM", action: "Status set to Reserved",                by: "Sofia R.",           type: "status",  status: "reserved"    },
-    { id: 3, timestamp: "Jun 10, 2026 · 04:00 PM", action: "Driver assigned: Marcus Webb",          by: "Sofia R.",           type: "assigned" },
-    { id: 4, timestamp: "Jun 10, 2026 · 04:01 PM", action: "Status changed to Dispatched",          by: "Sofia R.",           type: "status",  status: "dispatched"   },
-    { id: 5, timestamp: "Jun 11, 2026 · 09:03 AM", action: "Status changed to Enroute",             by: "Marcus Webb",        type: "status",  status: "enroute" },
-    { id: 6, timestamp: "Jun 12, 2026 · 10:48 AM", action: "Status changed to Delivered",           by: "Marcus Webb",        type: "status",  status: "delivered"  },
-  ],
-  6:  [
-    { id: 1, timestamp: "Jun 11, 2026 · 10:00 AM", action: "Load created",                          by: "Marcus T.",          type: "created"  },
-    { id: 2, timestamp: "Jun 11, 2026 · 10:00 AM", action: "Status set to Reserved",                by: "Marcus T.",          type: "status",  status: "reserved"    },
-    { id: 3, timestamp: "Jun 12, 2026 · 05:00 AM", action: "Driver assigned: Linda Okafor",         by: "Marcus T.",          type: "assigned" },
-    { id: 4, timestamp: "Jun 12, 2026 · 05:01 AM", action: "Status changed to Dispatched",          by: "Marcus T.",          type: "status",  status: "dispatched"   },
-    { id: 5, timestamp: "Jun 12, 2026 · 06:33 AM", action: "Status changed to Enroute",             by: "Linda Okafor",       type: "status",  status: "enroute" },
-  ],
-  7:  [
-    { id: 1, timestamp: "Jun 12, 2026 · 11:00 AM", action: "Load created",                          by: "Jake R.",            type: "created"  },
-    { id: 2, timestamp: "Jun 12, 2026 · 11:00 AM", action: "Status set to Reserved",                by: "Jake R.",            type: "status",  status: "reserved"    },
-  ],
-  8:  [
-    { id: 1, timestamp: "Jun 13, 2026 · 09:00 AM", action: "Load created",                          by: "Sofia R.",           type: "created"  },
-    { id: 2, timestamp: "Jun 13, 2026 · 09:00 AM", action: "Status set to Reserved",                by: "Sofia R.",           type: "status",  status: "reserved"    },
-  ],
-  9:  [
-    { id: 1, timestamp: "Jun 11, 2026 · 04:00 PM", action: "Load created",                          by: "Marcus T.",          type: "created"  },
-    { id: 2, timestamp: "Jun 11, 2026 · 04:00 PM", action: "Status set to Reserved",                by: "Marcus T.",          type: "status",  status: "reserved"    },
-    { id: 3, timestamp: "Jun 12, 2026 · 02:00 PM", action: "Driver assigned: Jean Eddy Simon",      by: "Marcus T.",          type: "assigned" },
-    { id: 4, timestamp: "Jun 12, 2026 · 02:01 PM", action: "Status changed to Dispatched",          by: "Marcus T.",          type: "status",  status: "dispatched"   },
-  ],
-  10: [
-    { id: 1, timestamp: "Jun 11, 2026 · 09:00 AM", action: "Load created",                          by: "Jake R.",            type: "created"  },
-    { id: 2, timestamp: "Jun 11, 2026 · 09:00 AM", action: "Status set to Reserved",                by: "Jake R.",            type: "status",  status: "reserved"    },
-    { id: 3, timestamp: "Jun 12, 2026 · 08:00 AM", action: "Driver assigned: Keavis Dyer",          by: "Jake R.",            type: "assigned" },
-    { id: 4, timestamp: "Jun 12, 2026 · 08:01 AM", action: "Status changed to Dispatched",          by: "Jake R.",            type: "status",  status: "dispatched"   },
-    { id: 5, timestamp: "Jun 12, 2026 · 10:05 AM", action: "Status changed to Enroute",             by: "Keavis Dyer",        type: "status",  status: "enroute" },
-  ],
-  11: [
-    { id: 1, timestamp: "Jun 8,  2026 · 02:00 PM", action: "Load created",                          by: "Sofia R.",           type: "created"  },
-    { id: 2, timestamp: "Jun 8,  2026 · 02:00 PM", action: "Status set to Reserved",                by: "Sofia R.",           type: "status",  status: "reserved"    },
-    { id: 3, timestamp: "Jun 9,  2026 · 06:00 PM", action: "Driver assigned: Shokhnurbek Komilov",  by: "Sofia R.",           type: "assigned" },
-    { id: 4, timestamp: "Jun 9,  2026 · 06:01 PM", action: "Status changed to Dispatched",          by: "Sofia R.",           type: "status",  status: "dispatched"   },
-    { id: 5, timestamp: "Jun 10, 2026 · 07:33 AM", action: "Status changed to Enroute",             by: "Shokhnurbek Komilov",type: "status",  status: "enroute" },
-    { id: 6, timestamp: "Jun 11, 2026 · 12:04 PM", action: "Status changed to Delivered",           by: "Shokhnurbek Komilov",type: "status",  status: "delivered"  },
-  ],
-  12: [
-    { id: 1, timestamp: "Jun 9,  2026 · 11:00 AM", action: "Load created",                          by: "Marcus T.",          type: "created"  },
-    { id: 2, timestamp: "Jun 9,  2026 · 11:00 AM", action: "Status set to Reserved",                by: "Marcus T.",          type: "status",  status: "reserved"    },
-    { id: 3, timestamp: "Jun 10, 2026 · 03:00 PM", action: "Driver assigned: Bakhodir Azamov",      by: "Marcus T.",          type: "assigned" },
-    { id: 4, timestamp: "Jun 10, 2026 · 03:01 PM", action: "Status changed to Dispatched",          by: "Marcus T.",          type: "status",  status: "dispatched"   },
-    { id: 5, timestamp: "Jun 11, 2026 · 08:02 AM", action: "Status changed to Enroute",             by: "Bakhodir Azamov",    type: "status",  status: "enroute" },
-    { id: 6, timestamp: "Jun 12, 2026 · 09:03 AM", action: "Status changed to Delivered",           by: "Bakhodir Azamov",    type: "status",  status: "delivered"  },
-  ],
-  13: [
-    { id: 1, timestamp: "Jun 10, 2026 · 10:00 AM", action: "Load created",                          by: "Jake R.",            type: "created"  },
-    { id: 2, timestamp: "Jun 10, 2026 · 10:00 AM", action: "Status set to Reserved",                by: "Jake R.",            type: "status",  status: "reserved"    },
-    { id: 3, timestamp: "Jun 11, 2026 · 12:00 PM", action: "Driver assigned: Tomás García",         by: "Jake R.",            type: "assigned" },
-    { id: 4, timestamp: "Jun 11, 2026 · 12:01 PM", action: "Status changed to Dispatched",          by: "Jake R.",            type: "status",  status: "dispatched"   },
-    { id: 5, timestamp: "Jun 12, 2026 · 07:30 AM", action: "Status changed to Re-Update",           by: "Jake R.",            type: "status",  status: "re_update"  },
-    { id: 6, timestamp: "Jun 12, 2026 · 07:31 AM", action: "Note added: Broker cancelled the load", by: "Jake R.",            type: "edited"   },
-  ],
-  14: [
-    { id: 1, timestamp: "Jun 7,  2026 · 09:00 AM", action: "Load created",                          by: "Sofia R.",           type: "created"  },
-    { id: 2, timestamp: "Jun 7,  2026 · 09:00 AM", action: "Status set to Reserved",                by: "Sofia R.",           type: "status",  status: "reserved"    },
-    { id: 3, timestamp: "Jun 8,  2026 · 03:00 PM", action: "Driver assigned: Carlos Mendez",        by: "Sofia R.",           type: "assigned" },
-    { id: 4, timestamp: "Jun 8,  2026 · 03:01 PM", action: "Status changed to Dispatched",          by: "Sofia R.",           type: "status",  status: "dispatched"   },
-    { id: 5, timestamp: "Jun 9,  2026 · 08:00 AM", action: "Status changed to Enroute",             by: "Carlos Mendez",      type: "status",  status: "enroute" },
-    { id: 6, timestamp: "Jun 9,  2026 · 10:30 AM", action: "Status changed to Re-Update (TONU)",    by: "Sofia R.",           type: "status",  status: "re_update"       },
-    { id: 7, timestamp: "Jun 9,  2026 · 10:31 AM", action: "Note added: Shipper no-show at dock",   by: "Sofia R.",           type: "edited"   },
-  ],
-  15: [
-    { id: 1, timestamp: "Jun 13, 2026 · 02:00 PM", action: "Load created",                          by: "Marcus T.",          type: "created"  },
-    { id: 2, timestamp: "Jun 13, 2026 · 02:00 PM", action: "Status set to Reserved",                by: "Marcus T.",          type: "status",  status: "reserved"    },
-  ],
-};
+function toBackend(l: Partial<Load>): Partial<BackendLoad> {
+  return {
+    load_id: l.loadId,
+    driver_id: l.driver_id ?? "",
+    origin: l.origin,
+    destination: l.destination,
+    pickup_appt: l.pickupAppt,
+    drop_appt: l.dropAppt,
+    status: l.status,
+    payout: l.payout ?? 0,
+    miles: l.totalMiles ?? 0,
+    broker: l.broker,
+  };
+}
+
 
 // ─── Custom Select ─────────────────────────────────────────────────────────────
 
@@ -743,15 +659,8 @@ function CalendarPicker({ value, onChange }: { value: string; onChange: (v: stri
 
 // ─── Searchable select ────────────────────────────────────────────────────────
 
-const DRIVER_OPTIONS = [
-  "—", "Carlos Mendez", "Angela Torres", "Darnell Washington", "Priya Sharma",
-  "Marcus Webb", "Linda Okafor", "Ray Kowalski", "Tomás García",
-  "Jean Eddy Simon", "Keavis Dyer", "Shokhnurbek Komilov", "Bakhodir Azamov",
-];
-const DISPATCHER_OPTIONS = ["Jake R.", "Sofia R.", "Marcus T."];
-
 function SearchableSelect({ value, options, onChange, placeholder, icon }: {
-  value: string; options: string[]; onChange: (v: string) => void;
+  value: string; options: SelectOpt[]; onChange: (v: string) => void;
   placeholder?: string; icon?: React.ReactNode;
 }) {
   const wrapRef  = useRef<HTMLDivElement>(null);
@@ -770,7 +679,8 @@ function SearchableSelect({ value, options, onChange, placeholder, icon }: {
     if (open) { setQuery(""); setTimeout(() => inputRef.current?.focus(), 0); }
   }, [open]);
 
-  const filtered = options.filter(o => o.toLowerCase().includes(query.toLowerCase()));
+  const filtered = options.filter(o => o.label.toLowerCase().includes(query.toLowerCase()));
+  const selected = options.find(o => o.value === value);
 
   return (
     <div ref={wrapRef} style={{ position: "relative" }}>
@@ -779,13 +689,13 @@ function SearchableSelect({ value, options, onChange, placeholder, icon }: {
         padding: "0 8px 0 10px", fontFamily: "var(--font-sans)", fontSize: 13,
         border: `1px solid ${open ? "var(--primary)" : "var(--border)"}`,
         borderRadius: 6, backgroundColor: "var(--input-background)",
-        color: value && value !== "—" ? "var(--foreground)" : "var(--muted-foreground)",
+        color: selected ? "var(--foreground)" : "var(--muted-foreground)",
         cursor: "pointer", textAlign: "left", outline: "none",
         boxShadow: open ? "0 0 0 3px rgba(59,130,246,0.12)" : "none",
       }}>
         {icon && <span style={{ color: "var(--muted-foreground)", display: "flex", flexShrink: 0 }}>{icon}</span>}
         <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {value && value !== "—" ? value : <span style={{ color: "var(--muted-foreground)" }}>{placeholder ?? "Select…"}</span>}
+          {selected ? selected.label : <span style={{ color: "var(--muted-foreground)" }}>{placeholder ?? "Select…"}</span>}
         </span>
         <ChevronDown size={13} style={{ color: "var(--muted-foreground)", flexShrink: 0, transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s" }} />
       </button>
@@ -809,19 +719,19 @@ function SearchableSelect({ value, options, onChange, placeholder, icon }: {
           </div>
           <div style={{ maxHeight: 180, overflowY: "auto" }}>
             {filtered.map(opt => {
-              const active = opt === value;
+              const active = opt.value === value;
               return (
-                <button key={opt} type="button"
-                  onMouseDown={e => { e.preventDefault(); onChange(opt); setOpen(false); }}
+                <button key={opt.value} type="button"
+                  onMouseDown={e => { e.preventDefault(); onChange(opt.value); setOpen(false); }}
                   style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "7px 12px",
-                    border: "none", backgroundColor: active ? "var(--secondary)" : "transparent",
+                    border: "none", backgroundColor: active ? "var(--accent)" : "transparent",
                     fontFamily: "var(--font-sans)", fontSize: 13, cursor: "pointer", textAlign: "left",
                     color: active ? "var(--primary)" : "var(--foreground)", fontWeight: active ? 600 : 400,
                   }}
                   onMouseEnter={e => { if (!active) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--muted)"; }}
-                  onMouseLeave={e => { if (!active) (e.currentTarget as HTMLButtonElement).style.backgroundColor = active ? "var(--secondary)" : "transparent"; }}
+                  onMouseLeave={e => { if (!active) (e.currentTarget as HTMLButtonElement).style.backgroundColor = active ? "var(--accent)" : "transparent"; }}
                 >
-                  <span style={{ flex: 1 }}>{opt === "—" ? <em style={{ color: "var(--muted-foreground)" }}>Unassigned</em> : opt}</span>
+                  <span style={{ flex: 1 }}>{opt.value === "" ? <em style={{ color: "var(--muted-foreground)" }}>Unassigned</em> : opt.label}</span>
                   {active && <Check size={13} style={{ color: "var(--primary)" }} />}
                 </button>
               );
@@ -843,8 +753,9 @@ function ordinal(n: number): string {
 
 // ─── Modal ────────────────────────────────────────────────────────────────────
 
-function LoadModal({ load, onClose, onSave }: {
+function LoadModal({ load, onClose, onSave, driverOpts = [], saving = false }: {
   load: Partial<Load>; onClose: () => void; onSave: (l: Load) => void;
+  driverOpts?: SelectOpt[]; saving?: boolean;
 }) {
   const [form, setForm] = useState<Partial<Load>>(load);
   const set = <K extends keyof Load>(k: K, v: Load[K]) => setForm((f) => ({ ...f, [k]: v }));
@@ -919,7 +830,7 @@ function LoadModal({ load, onClose, onSave }: {
           {/* Load ID + Broker */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
             <label style={labelStyle}>
-              <span style={capStyle}>Load ID</span>
+              <span style={capStyle}>Load ID <span style={{ color: "#EF4444" }}>*</span></span>
               <input value={form.loadId ?? ""} onChange={(e) => set("loadId", e.target.value)} style={{ ...inputStyle, fontFamily: "var(--font-mono)" }} placeholder="LD-00000" onFocus={focusInput} onBlur={blurInput} />
             </label>
             <label style={labelStyle}>
@@ -928,31 +839,35 @@ function LoadModal({ load, onClose, onSave }: {
             </label>
           </div>
 
-          {/* Driver + Dispatcher (searchable dropdowns) */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+          {/* Driver + Status (status hidden on create) */}
+          <div style={{ display: "grid", gridTemplateColumns: isNew ? "1fr" : "1fr 1fr", gap: 14 }}>
             <label style={labelStyle}>
               <span style={capStyle}>Driver</span>
-              <SearchableSelect value={form.driver ?? ""} options={DRIVER_OPTIONS} onChange={(v) => set("driver", v)} placeholder="Select driver…" icon={<User size={13} />} />
+              <SearchableSelect
+                value={form.driver_id ?? ""}
+                options={driverOpts}
+                onChange={(v) => set("driver_id", v)}
+                placeholder="Select driver…"
+                icon={<User size={13} />}
+              />
             </label>
-            <label style={labelStyle}>
-              <span style={capStyle}>Dispatcher</span>
-              <SearchableSelect value={form.dispatcher ?? ""} options={DISPATCHER_OPTIONS} onChange={(v) => set("dispatcher", v)} placeholder="Select dispatcher…" icon={<User size={13} />} />
-            </label>
+            {!isNew && (
+              <label style={labelStyle}>
+                <span style={capStyle}>Status</span>
+                <CustomSelect value={form.status ?? "reserved"} options={STATUS_MODAL_OPTS} onChange={(v) => set("status", v as Status)} />
+              </label>
+            )}
           </div>
 
-          {/* Status + Payout + Total Miles */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14 }}>
-            <label style={labelStyle}>
-              <span style={capStyle}>Status</span>
-              <CustomSelect value={form.status ?? "reserved"} options={STATUS_MODAL_OPTS} onChange={(v) => set("status", v as Status)} />
-            </label>
+          {/* Payout + Miles */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
             <label style={labelStyle}>
               <span style={capStyle}>Payout ($)</span>
               <input type="number" value={form.payout ?? ""} onChange={(e) => set("payout", Number(e.target.value))} style={{ ...inputStyle, fontFamily: "var(--font-mono)" }} placeholder="0" onFocus={focusInput} onBlur={blurInput} />
             </label>
             <label style={labelStyle}>
-              <span style={capStyle}>Total Miles</span>
-              <input type="number" value={form.totalMiles ?? ""} onChange={(e) => set("totalMiles", e.target.value ? Number(e.target.value) : undefined)} style={{ ...inputStyle, fontFamily: "var(--font-mono)" }} placeholder="0" onFocus={focusInput} onBlur={blurInput} />
+              <span style={capStyle}>Miles</span>
+              <input type="number" value={form.totalMiles ?? ""} onChange={(e) => set("totalMiles", e.target.value ? Number(e.target.value) : 0)} style={{ ...inputStyle, fontFamily: "var(--font-mono)" }} placeholder="0" onFocus={focusInput} onBlur={blurInput} />
             </label>
           </div>
 
@@ -980,7 +895,10 @@ function LoadModal({ load, onClose, onSave }: {
 
                       {/* Location field */}
                       <div style={{ flex: 2, minWidth: 0 }}>
-                        <div style={{ ...capStyle, fontSize: 10, marginBottom: 4 }}>{ordinal(idx + 1)} Stop</div>
+                        <div style={{ ...capStyle, fontSize: 10, marginBottom: 4 }}>
+                          {ordinal(idx + 1)} Stop
+                          {(isFirst || isLast) && <span style={{ color: "#EF4444", marginLeft: 2 }}>*</span>}
+                        </div>
                         <input
                           value={stop.city}
                           onChange={(e) => updateCity(idx, e.target.value)}
@@ -1030,16 +948,19 @@ function LoadModal({ load, onClose, onSave }: {
                 <div style={{ width: 28, display: "flex", justifyContent: "center" }}>
                   <div style={{ width: 2, height: 10, backgroundColor: "var(--border)" }} />
                 </div>
-                <button onClick={addStop} style={{
-                  display: "inline-flex", alignItems: "center", gap: 6, padding: "5px 12px",
-                  border: "1px dashed var(--border)", borderRadius: 6, backgroundColor: "transparent",
-                  fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)", cursor: "pointer",
-                }}
-                  onMouseEnter={e => { const b = e.currentTarget as HTMLButtonElement; b.style.borderColor="var(--primary)"; b.style.color="var(--primary)"; }}
-                  onMouseLeave={e => { const b = e.currentTarget as HTMLButtonElement; b.style.borderColor="var(--border)"; b.style.color="var(--muted-foreground)"; }}
-                >
-                  <Plus size={12} /> Add Stop
-                </button>
+                <div style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                  <button onClick={addStop} style={{
+                    display: "inline-flex", alignItems: "center", gap: 6, padding: "5px 12px",
+                    border: "1px dashed var(--border)", borderRadius: 6, backgroundColor: "transparent",
+                    fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)", cursor: "pointer",
+                  }}
+                    onMouseEnter={e => { const b = e.currentTarget as HTMLButtonElement; b.style.borderColor="var(--primary)"; b.style.color="var(--primary)"; }}
+                    onMouseLeave={e => { const b = e.currentTarget as HTMLButtonElement; b.style.borderColor="var(--border)"; b.style.color="var(--muted-foreground)"; }}
+                  >
+                    <Plus size={12} /> Add Stop
+                  </button>
+                  <span style={{ fontSize: 8, fontWeight: 700, color: "#D97706", backgroundColor: "#FEF3C7", borderRadius: 4, padding: "2px 5px", letterSpacing: "0.04em" }}>backend pending</span>
+                </div>
               </div>
             </div>
           </div>
@@ -1048,8 +969,8 @@ function LoadModal({ load, onClose, onSave }: {
         {/* Footer */}
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, padding: "14px 20px", borderTop: "1px solid var(--border)" }}>
           <button onClick={onClose} style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 16px", borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "var(--muted)", color: "var(--foreground)", cursor: "pointer" }}>Cancel</button>
-          <button onClick={handleSave} style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 16px", borderRadius: 6, border: "none", backgroundColor: "var(--primary)", color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
-            <Check size={14} /> {isNew ? "Create Load" : "Save Changes"}
+          <button onClick={handleSave} disabled={saving} style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 16px", borderRadius: 6, border: "none", backgroundColor: "var(--primary)", color: "#fff", cursor: saving ? "default" : "pointer", display: "flex", alignItems: "center", gap: 6, opacity: saving ? 0.7 : 1 }}>
+            <Check size={14} /> {saving ? "Saving…" : isNew ? "Create Load" : "Save Changes"}
           </button>
         </div>
       </div>
@@ -1079,16 +1000,9 @@ function DeleteConfirm({ label, onClose, onConfirm }: { label: string; onClose: 
 
 // ─── Load Detail ──────────────────────────────────────────────────────────────
 
-const CHANGE_DOT: Record<ChangeType, string> = {
-  created:  "#2563EB",
-  status:   "#6B7280",
-  assigned: "#7C3AED",
-  edited:   "#9CA3AF",
-};
 
 function LoadDetail({ load, onBack }: { load: Load; onBack: () => void }) {
   const [tab, setTab] = useState<"info" | "log">("info");
-  const log = [...(LOAD_CHANGE_LOG[load.id] ?? [])].reverse();
 
   const infoRows: { icon: React.ReactNode; label: string; value: React.ReactNode }[] = [
     { icon: <Building2 size={13} />, label: "Broker",     value: load.broker },
@@ -1099,7 +1013,13 @@ function LoadDetail({ load, onBack }: { load: Load; onBack: () => void }) {
         ? <span style={{ color: "var(--muted-foreground)", fontStyle: "italic" }}>Unassigned</span>
         : load.driver,
     },
-    { icon: <User size={13} />,       label: "Dispatcher", value: load.dispatcher },
+    {
+      icon: <User size={13} />,
+      label: "Dispatcher",
+      value: <span style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "var(--muted-foreground)", fontStyle: "italic" }}>
+        —<span style={{ fontSize: 8, fontWeight: 700, color: "#D97706", backgroundColor: "#FEF3C7", borderRadius: 4, padding: "2px 5px", letterSpacing: "0.04em" }}>backend pending</span>
+      </span>,
+    },
     {
       icon: <DollarSign size={13} />,
       label: "Payout",
@@ -1127,7 +1047,7 @@ function LoadDetail({ load, onBack }: { load: Load; onBack: () => void }) {
 
   const tabs = [
     { id: "info" as const, label: "Load Info",   icon: <Package  size={14} /> },
-    { id: "log"  as const, label: "Change Log",  icon: <History  size={14} /> },
+    { id: "log"  as const, label: "Change Log",  icon: <History  size={14} />, pending: true },
   ];
 
   return (
@@ -1173,6 +1093,9 @@ function LoadDetail({ load, onBack }: { load: Load; onBack: () => void }) {
             >
               <span style={{ opacity: active ? 1 : 0.6 }}>{t.icon}</span>
               {t.label}
+              {"pending" in t && t.pending && (
+                <span style={{ fontSize: 8, fontWeight: 700, color: "#D97706", backgroundColor: "#FEF3C7", borderRadius: 4, padding: "2px 5px", letterSpacing: "0.04em" }}>pending</span>
+              )}
             </button>
           );
         })}
@@ -1321,50 +1244,9 @@ function LoadDetail({ load, onBack }: { load: Load; onBack: () => void }) {
         {/* ── Change Log tab ── */}
         {tab === "log" && (
           <div style={{ maxWidth: 640 }}>
-            {log.length === 0 ? (
-              <div style={{ padding: "48px 20px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
-                No change log entries.
-              </div>
-            ) : (
-              <div style={{ display: "flex", flexDirection: "column" }}>
-                {log.map((entry, i) => {
-                  const dotColor = entry.type === "status" && entry.status
-                    ? SHARED_STATUS_CONFIG[entry.status].bg
-                    : CHANGE_DOT[entry.type];
-                  const isLast = i === log.length - 1;
-                  return (
-                    <div key={entry.id} style={{ display: "flex", gap: 16, position: "relative" }}>
-                      {/* Timeline spine */}
-                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0, width: 16 }}>
-                        <div style={{ width: 12, height: 12, borderRadius: "50%", backgroundColor: dotColor, border: "2px solid var(--card)", boxShadow: `0 0 0 2px ${dotColor}`, marginTop: 14, flexShrink: 0 }} />
-                        {!isLast && <div style={{ width: 2, flex: 1, backgroundColor: "var(--border)", minHeight: 20, marginTop: 4 }} />}
-                      </div>
-
-                      {/* Entry content */}
-                      <div style={{ flex: 1, paddingBottom: isLast ? 0 : 20, paddingTop: 10 }}>
-                        <div style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, color: "var(--foreground)", marginBottom: 3 }}>
-                          {entry.action}
-                          {entry.type === "status" && entry.status && (
-                            <span style={{ marginLeft: 8 }}>
-                              <StatusBadge status={entry.status} />
-                            </span>
-                          )}
-                        </div>
-                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                          <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--muted-foreground)" }}>
-                            {entry.timestamp}
-                          </span>
-                          <span style={{ color: "var(--border)", userSelect: "none" }}>·</span>
-                          <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "var(--muted-foreground)" }}>
-                            by <strong style={{ color: "var(--foreground)" }}>{entry.by}</strong>
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+            <div style={{ padding: "48px 20px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
+              No change log entries.
+            </div>
           </div>
         )}
       </div>
@@ -1375,8 +1257,12 @@ function LoadDetail({ load, onBack }: { load: Load; onBack: () => void }) {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export function LoadsPage() {
-  const [loads, setLoads]           = useState<Load[]>(initLoads);
+  const [loads, setLoads]           = useState<Load[]>([]);
+  const [driverOpts, setDriverOpts] = useState<SelectOpt[]>([]);
+  const [loading, setLoading]       = useState(true);
+  const [fetchKey, setFetchKey]     = useState(0);
   const [modal, setModal]           = useState<"create" | "edit" | null>(null);
+  const [saving, setSaving]         = useState(false);
   const [editing, setEditing]       = useState<Partial<Load>>({});
   const [deleting, setDeleting]     = useState<Load | null>(null);
   const [filterStatus, setFilter]   = useState("All");
@@ -1384,22 +1270,79 @@ export function LoadsPage() {
   const [page, setPage]             = useState(1);
   const [pageSize, setPageSize]     = useState(20);
   const [detailLoad, setDetail]     = useState<Load | null>(null);
+  const [toast, setToast]           = useState<{ type: "success" | "error"; msg: string } | null>(null);
 
-  const patchLoad = (id: number, fields: Partial<Load>) =>
-    setLoads((prev) => prev.map((l) => (l.id === id ? { ...l, ...fields } : l)));
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 3500);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  useEffect(() => {
+    setLoading(true);
+    Promise.all([
+      api.get<BackendLoad[]>("/loads"),
+      api.get<any[]>("/drivers"),
+    ])
+      .then(([backendLoads, drivers]) => {
+        const drvList = (drivers ?? []).map((d: any) => ({ id: d.id as string, name: (d.name ?? d.name1 ?? d.id) as string }));
+        const opts = drvList.map((d) => ({ value: d.id, label: d.name }));
+        setDriverOpts(opts);
+        const mapped = (backendLoads ?? []).map((b) => toLoad(b, drvList));
+        setLoads(mapped);
+        setDetail((prev) => prev ? (mapped.find((l) => l.id === prev.id) ?? null) : null);
+      })
+      .catch((e) => setToast({ type: "error", msg: String(e) }))
+      .finally(() => setLoading(false));
+  }, [fetchKey]);
+
+  const patchLoad = async (id: string, fields: Partial<Load>) => {
+    const current = loads.find((l) => l.id === id);
+    if (!current) return;
+    const updated = { ...current, ...fields };
+    setLoads((prev) => prev.map((l) => (l.id === id ? updated : l)));
+    try {
+      await api.put<BackendLoad>(`/loads/${id}`, toBackend(updated));
+    } catch (e) {
+      setToast({ type: "error", msg: String(e) });
+      setFetchKey((k) => k + 1);
+    }
+  };
 
   const openCreate = () => { setEditing({}); setModal("create"); };
   const openEdit   = (l: Load) => { setEditing(l); setModal("edit"); };
-  const save = (l: Load) => {
-    if (modal === "create") {
-      const nextId = Math.max(0, ...loads.map((x) => x.id)) + 1;
-      setLoads((prev) => [...prev, { ...l, id: nextId }]);
-    } else {
-      setLoads((prev) => prev.map((x) => (x.id === l.id ? l : x)));
+
+  const save = async (l: Load) => {
+    setSaving(true);
+    try {
+      if (modal === "create") {
+        await api.post<BackendLoad>("/loads", toBackend(l));
+        setToast({ type: "success", msg: `Load ${l.loadId || ""} created` });
+      } else {
+        await api.put<BackendLoad>(`/loads/${l.id}`, toBackend(l));
+        setToast({ type: "success", msg: `Load ${l.loadId || ""} updated` });
+      }
+      setModal(null);
+      setFetchKey((k) => k + 1);
+    } catch (e) {
+      setToast({ type: "error", msg: String(e) });
+    } finally {
+      setSaving(false);
     }
-    setModal(null);
   };
-  const del = () => { if (deleting) setLoads((prev) => prev.filter((x) => x.id !== deleting.id)); setDeleting(null); };
+
+  const del = async () => {
+    if (!deleting) return;
+    const label = deleting.loadId;
+    setDeleting(null);
+    try {
+      await api.delete(`/loads/${deleting.id}`);
+      setToast({ type: "success", msg: `Load ${label} deleted` });
+      setFetchKey((k) => k + 1);
+    } catch (e) {
+      setToast({ type: "error", msg: String(e) });
+    }
+  };
 
   const q = search.toLowerCase();
   const filtered = loads.filter((l) => {
@@ -1414,6 +1357,22 @@ export function LoadsPage() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", backgroundColor: "var(--background)", overflow: "hidden" }}>
+      {toast && (
+        <div style={{
+          position: "fixed", top: 24, right: 24, zIndex: 9999,
+          backgroundColor: toast.type === "success" ? "#10B981" : "#EF4444",
+          color: "#fff", borderRadius: 8, padding: "10px 16px",
+          fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 500,
+          boxShadow: "0 4px 20px rgba(0,0,0,0.18)",
+          display: "flex", alignItems: "center", gap: 8,
+        }}>
+          {toast.type === "success" ? <Check size={15} /> : <AlertCircle size={15} />}
+          {toast.msg}
+          <button onClick={() => setToast(null)} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.75)", cursor: "pointer", display: "flex", padding: 0, marginLeft: 4 }}>
+            <X size={13} />
+          </button>
+        </div>
+      )}
       <div style={{ flex: 1, overflow: "hidden", padding: "20px 24px", display: "flex", flexDirection: "column" }}>
         <div style={{
           flex: 1, display: "flex", flexDirection: "column", overflow: "hidden",
@@ -1430,31 +1389,37 @@ export function LoadsPage() {
             backgroundColor: "var(--card)", flexShrink: 0,
           }}>
             {/* Search */}
-            <div style={{ position: "relative", flex: "0 0 260px" }}>
-              <Search size={13} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--muted-foreground)", pointerEvents: "none" }} />
-              <input
-                value={search}
-                onChange={(e) => handleSearch(e.target.value)}
-                placeholder="Search loads, brokers, drivers…"
-                style={{
-                  width: "100%", height: 34, paddingLeft: 30, paddingRight: 10,
-                  fontFamily: "var(--font-sans)", fontSize: 13,
-                  backgroundColor: "var(--input-background)", border: "1px solid var(--border)",
-                  borderRadius: 7, color: "var(--foreground)", outline: "none", boxSizing: "border-box",
-                  transition: "border-color 0.15s, box-shadow 0.15s",
-                }}
-                onFocus={(e) => { e.currentTarget.style.borderColor = "var(--primary)"; e.currentTarget.style.boxShadow = "0 0 0 3px rgba(59,130,246,0.12)"; }}
-                onBlur={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.boxShadow = "none"; }}
-              />
+            <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+              <div style={{ position: "relative", width: 260 }}>
+                <Search size={13} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--muted-foreground)", pointerEvents: "none" }} />
+                <input
+                  value={search}
+                  onChange={(e) => handleSearch(e.target.value)}
+                  placeholder="Search loads, brokers, drivers…"
+                  style={{
+                    width: "100%", height: 34, paddingLeft: 30, paddingRight: 10,
+                    fontFamily: "var(--font-sans)", fontSize: 13,
+                    backgroundColor: "var(--input-background)", border: "1px solid var(--border)",
+                    borderRadius: 7, color: "var(--foreground)", outline: "none", boxSizing: "border-box",
+                    transition: "border-color 0.15s, box-shadow 0.15s",
+                  }}
+                  onFocus={(e) => { e.currentTarget.style.borderColor = "var(--primary)"; e.currentTarget.style.boxShadow = "0 0 0 3px rgba(59,130,246,0.12)"; }}
+                  onBlur={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.boxShadow = "none"; }}
+                />
+              </div>
+              <span style={{ fontSize: 8, fontWeight: 700, color: "#D97706", backgroundColor: "#FEF3C7", borderRadius: 4, padding: "2px 5px", letterSpacing: "0.04em", whiteSpace: "nowrap" }}>backend pending</span>
             </div>
 
             {/* Status filter */}
-            <CustomSelect
-              value={filterStatus}
-              options={STATUS_FILTER_OPTS}
-              onChange={handleFilter}
-              width={172}
-            />
+            <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+              <CustomSelect
+                value={filterStatus}
+                options={STATUS_FILTER_OPTS}
+                onChange={handleFilter}
+                width={172}
+              />
+              <span style={{ fontSize: 8, fontWeight: 700, color: "#D97706", backgroundColor: "#FEF3C7", borderRadius: 4, padding: "2px 5px", letterSpacing: "0.04em", whiteSpace: "nowrap" }}>backend pending</span>
+            </div>
 
             <div style={{ flex: 1 }} />
 
@@ -1488,7 +1453,7 @@ export function LoadsPage() {
                     onMouseLeave={(e) => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = i % 2 === 0 ? "var(--card)" : "var(--background)"; }}
                   >
                     <td style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--muted-foreground)", textAlign: "center", verticalAlign: "middle" }}>
-                      {l.id}
+                      {(page - 1) * pageSize + i + 1}
                     </td>
                     <td style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", verticalAlign: "middle" }}>
                       <button
@@ -1625,7 +1590,14 @@ export function LoadsPage() {
                     </td>
                   </tr>
                 ))}
-                {paged.length === 0 && (
+                {loading && (
+                  <tr>
+                    <td colSpan={11} style={{ padding: "40px 20px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
+                      Loading…
+                    </td>
+                  </tr>
+                )}
+                {!loading && paged.length === 0 && (
                   <tr>
                     <td colSpan={11} style={{ padding: "40px 20px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
                       No loads match your filters.
@@ -1645,7 +1617,7 @@ export function LoadsPage() {
       </div>
 
       {(modal === "create" || modal === "edit") && (
-        <LoadModal load={editing} onClose={() => setModal(null)} onSave={save} />
+        <LoadModal load={editing} onClose={() => setModal(null)} onSave={save} driverOpts={driverOpts} saving={saving} />
       )}
       {deleting && (
         <DeleteConfirm label={deleting.loadId} onClose={() => setDeleting(null)} onConfirm={del} />
