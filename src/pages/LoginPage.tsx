@@ -5,24 +5,19 @@ import { useAuth } from "../lib/auth";
 
 const SLIDES = [
   {
-    url: "https://images.unsplash.com/photo-tSSqFlP0--o?w=1400&q=85&fit=crop",
-    label: "Real-time tracking",
-    caption: "Track every driver and every mile as it happens.",
-  },
-  {
-    url: "https://images.unsplash.com/photo-dlyz37qqHfM?w=1400&q=85&fit=crop",
+    url: "/images/truck-1.jpg",
     label: "Live dispatch board",
     caption: "One screen for your entire fleet — statuses, ETAs, and loads.",
   },
   {
-    url: "https://images.unsplash.com/photo-D33wtHMIIjc?w=1400&q=85&fit=crop",
-    label: "From dock to delivery",
-    caption: "Assign loads, update status, and stay ahead of every appointment.",
-  },
-  {
-    url: "https://images.unsplash.com/photo-vW7C0FdNfSY?w=1400&q=85&fit=crop",
+    url: "/images/truck-2.jpg",
     label: "Full visibility",
     caption: "Aerial-level insight into your operation — gross, RPM, payouts.",
+  },
+  {
+    url: "/images/truck-3.jpg",
+    label: "Fleet management",
+    caption: "Track every driver and every mile as it happens.",
   },
 ];
 
@@ -201,85 +196,67 @@ export function LoginPage() {
 
       {/* ── Left: form ─────────────────────────────── */}
       <div style={{
-        flex: "0 0 440px",
+        flex: 1,
         display: "flex",
         flexDirection: "column",
+        alignItems: "center",
         justifyContent: "center",
-        padding: "48px 52px",
+        padding: "48px 32px",
         backgroundColor: "var(--background)",
       }}>
-        {/* Logo */}
-        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 44 }}>
-          <div style={{
-            width: 40, height: 40, borderRadius: 12, flexShrink: 0,
-            background: "linear-gradient(135deg, #3B82F6 0%, #1D4ED8 100%)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            boxShadow: "0 4px 12px rgba(59,130,246,0.35)",
-          }}>
-            <Zap size={20} color="#fff" strokeWidth={2.5} />
-          </div>
-          <div>
-            <div style={{ fontSize: 16, fontWeight: 700, color: "var(--foreground)", letterSpacing: "-0.3px" }}>
-              DispatchOS
+        {/* Centered content container */}
+        <div style={{ width: "100%", maxWidth: 360 }}>
+
+          {/* Logo */}
+          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 44 }}>
+            <div style={{
+              width: 40, height: 40, borderRadius: 12, flexShrink: 0,
+              background: "linear-gradient(135deg, #3B82F6 0%, #1D4ED8 100%)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              boxShadow: "0 4px 12px rgba(59,130,246,0.35)",
+            }}>
+              <Zap size={20} color="#fff" strokeWidth={2.5} />
             </div>
-            <div style={{ fontSize: 11, color: "var(--muted-foreground)", marginTop: 1 }}>
-              Carrier Log Board
+            <div>
+              <div style={{ fontSize: 16, fontWeight: 700, color: "var(--foreground)", letterSpacing: "-0.3px" }}>
+                DispatchOS
+              </div>
+              <div style={{ fontSize: 11, color: "var(--muted-foreground)", marginTop: 1 }}>
+                Carrier Log Board
+              </div>
             </div>
           </div>
-        </div>
 
-        <h1 style={{ fontSize: 24, fontWeight: 700, color: "var(--foreground)", marginBottom: 6, letterSpacing: "-0.5px" }}>
-          Welcome back
-        </h1>
-        <p style={{ fontSize: 13, color: "var(--muted-foreground)", marginBottom: 28 }}>
-          Sign in to your workspace to continue
-        </p>
+          <h1 style={{ fontSize: 24, fontWeight: 700, color: "var(--foreground)", marginBottom: 6, letterSpacing: "-0.5px" }}>
+            Welcome back
+          </h1>
+          <p style={{ fontSize: 13, color: "var(--muted-foreground)", marginBottom: 28 }}>
+            Sign in to your workspace to continue
+          </p>
 
-        {error && (
-          <div style={{
-            fontSize: 13, color: "#ef4444",
-            backgroundColor: "rgba(239,68,68,0.08)",
-            border: "1px solid rgba(239,68,68,0.2)",
-            borderRadius: 8, padding: "10px 14px", marginBottom: 20,
-          }}>
-            {error}
-          </div>
-        )}
+          {error && (
+            <div style={{
+              fontSize: 13, color: "#ef4444",
+              backgroundColor: "rgba(239,68,68,0.08)",
+              border: "1px solid rgba(239,68,68,0.2)",
+              borderRadius: 8, padding: "10px 14px", marginBottom: 20,
+            }}>
+              {error}
+            </div>
+          )}
 
-        <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            <label style={{ fontSize: 13, fontWeight: 500, color: "var(--foreground)" }}>
-              Email address
-            </label>
-            <input
-              type="email"
-              placeholder="you@company.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              style={{
-                height: 40, borderRadius: 8, padding: "0 12px",
-                backgroundColor: "var(--input-background)",
-                border: "1px solid var(--border)",
-                fontSize: 13, color: "var(--foreground)", outline: "none",
-              }}
-              onFocus={(e) => (e.currentTarget.style.borderColor = "#3B82F6")}
-              onBlur={(e) => (e.currentTarget.style.borderColor = "var(--border)")}
-            />
-          </div>
-
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            <label style={{ fontSize: 13, fontWeight: 500, color: "var(--foreground)" }}>
-              Password
-            </label>
-            <div style={{ position: "relative" }}>
+          <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <label style={{ fontSize: 13, fontWeight: 500, color: "var(--foreground)" }}>
+                Email address
+              </label>
               <input
-                type={showPassword ? "text" : "password"}
-                placeholder="••••••••"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                type="email"
+                placeholder="you@company.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 style={{
-                  width: "100%", height: 40, borderRadius: 8,
-                  padding: "0 40px 0 12px", boxSizing: "border-box",
+                  height: 40, borderRadius: 8, padding: "0 12px",
                   backgroundColor: "var(--input-background)",
                   border: "1px solid var(--border)",
                   fontSize: 13, color: "var(--foreground)", outline: "none",
@@ -287,52 +264,76 @@ export function LoginPage() {
                 onFocus={(e) => (e.currentTarget.style.borderColor = "#3B82F6")}
                 onBlur={(e) => (e.currentTarget.style.borderColor = "var(--border)")}
               />
-              <button
-                type="button"
-                onClick={() => setShowPassword((v) => !v)}
-                style={{
-                  position: "absolute", right: 12, top: "50%",
-                  transform: "translateY(-50%)", background: "none",
-                  border: "none", cursor: "pointer", color: "var(--muted-foreground)",
-                  padding: 0, display: "flex",
-                }}
-              >
-                {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
-              </button>
             </div>
-          </div>
 
-          <button
-            type="submit"
-            disabled={submitting}
-            style={{
-              height: 40, borderRadius: 8, border: "none",
-              background: "linear-gradient(135deg, #3B82F6 0%, #1D4ED8 100%)",
-              color: "#fff", fontSize: 14, fontWeight: 600,
-              cursor: submitting ? "not-allowed" : "pointer",
-              opacity: submitting ? 0.7 : 1,
-              marginTop: 4,
-              boxShadow: submitting ? "none" : "0 4px 12px rgba(59,130,246,0.3)",
-              transition: "opacity 0.15s",
-            }}
-            onMouseEnter={(e) => {
-              if (!submitting) (e.currentTarget as HTMLButtonElement).style.opacity = "0.9";
-            }}
-            onMouseLeave={(e) => {
-              if (!submitting) (e.currentTarget as HTMLButtonElement).style.opacity = "1";
-            }}
-          >
-            {submitting ? "Signing in…" : "Sign in"}
-          </button>
-        </form>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <label style={{ fontSize: 13, fontWeight: 500, color: "var(--foreground)" }}>
+                Password
+              </label>
+              <div style={{ position: "relative" }}>
+                <input
+                  type={showPassword ? "text" : "password"}
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  style={{
+                    width: "100%", height: 40, borderRadius: 8,
+                    padding: "0 40px 0 12px", boxSizing: "border-box",
+                    backgroundColor: "var(--input-background)",
+                    border: "1px solid var(--border)",
+                    fontSize: 13, color: "var(--foreground)", outline: "none",
+                  }}
+                  onFocus={(e) => (e.currentTarget.style.borderColor = "#3B82F6")}
+                  onBlur={(e) => (e.currentTarget.style.borderColor = "var(--border)")}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((v) => !v)}
+                  style={{
+                    position: "absolute", right: 12, top: "50%",
+                    transform: "translateY(-50%)", background: "none",
+                    border: "none", cursor: "pointer", color: "var(--muted-foreground)",
+                    padding: 0, display: "flex",
+                  }}
+                >
+                  {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+                </button>
+              </div>
+            </div>
 
-        <p style={{ fontSize: 12, color: "var(--muted-foreground)", marginTop: "auto", paddingTop: 48 }}>
-          © 2026 DispatchOS · All rights reserved
-        </p>
+            <button
+              type="submit"
+              disabled={submitting}
+              style={{
+                height: 40, borderRadius: 8, border: "none",
+                background: "linear-gradient(135deg, #3B82F6 0%, #1D4ED8 100%)",
+                color: "#fff", fontSize: 14, fontWeight: 600,
+                cursor: submitting ? "not-allowed" : "pointer",
+                opacity: submitting ? 0.7 : 1,
+                marginTop: 4,
+                boxShadow: submitting ? "none" : "0 4px 12px rgba(59,130,246,0.3)",
+                transition: "opacity 0.15s",
+              }}
+              onMouseEnter={(e) => {
+                if (!submitting) (e.currentTarget as HTMLButtonElement).style.opacity = "0.9";
+              }}
+              onMouseLeave={(e) => {
+                if (!submitting) (e.currentTarget as HTMLButtonElement).style.opacity = "1";
+              }}
+            >
+              {submitting ? "Signing in…" : "Sign in"}
+            </button>
+          </form>
+
+          <p style={{ fontSize: 12, color: "var(--muted-foreground)", marginTop: 48 }}>
+            © 2026 DispatchOS · All rights reserved
+          </p>
+
+        </div>
       </div>
 
       {/* ── Right: slideshow ────────────────────────── */}
-      <div style={{ flex: 1, position: "relative", overflow: "hidden" }}>
+      <div style={{ flex: "0 0 45%", position: "relative", overflow: "hidden" }}>
         <ImageSlideshow />
       </div>
 
