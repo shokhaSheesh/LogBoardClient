@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect } from "react";
 import { Truck, Container, Plus, Pencil, Trash2, X, Check, Search, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, FileSpreadsheet, Upload, FileText } from "lucide-react";
+import { api } from "../lib/api";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface TruckRow {
-  id: number;
+  id: string;
   unit: string;
   driver: string;
   make: string;
@@ -13,45 +14,13 @@ interface TruckRow {
 }
 
 interface TrailerRow {
-  id: number;
+  id: string;
   unit: string;
   driver: string;
   make: string;
   model: string;
   vin: string;
 }
-
-// ─── Seed data ────────────────────────────────────────────────────────────────
-
-const initTrucks: TruckRow[] = [
-  { id: 1,  unit: "TRK-4481", driver: "Carlos Mendez",        make: "Kenworth",     model: "T680",      vin: "1XKWD49X5EJ401223" },
-  { id: 2,  unit: "TRK-2290", driver: "Angela Torres",        make: "Peterbilt",    model: "579",       vin: "1XPBD49X3KD621045" },
-  { id: 3,  unit: "TRK-8813", driver: "Darnell Washington",   make: "Freightliner", model: "Cascadia",  vin: "3AKJGLDR4LSLR7721" },
-  { id: 4,  unit: "TRK-5577", driver: "Priya Sharma",         make: "Volvo",        model: "VNL 860",   vin: "4V4NC9EH4KN222014" },
-  { id: 5,  unit: "TRK-3342", driver: "Marcus Webb",          make: "International",model: "LT",        vin: "3HSCUAPR8CN621870" },
-  { id: 6,  unit: "TRK-6610", driver: "Linda Okafor",         make: "Kenworth",     model: "W900",      vin: "1XKWDB9X9MJ501334" },
-  { id: 7,  unit: "TRK-9924", driver: "Ray Kowalski",         make: "Peterbilt",    model: "389",       vin: "1XPFDU9X0ND731256" },
-  { id: 8,  unit: "TRK-1157", driver: "Tomás García",         make: "Mack",         model: "Anthem",    vin: "1M1AN07Y3KM031788" },
-  { id: 9,  unit: "TRK-7701", driver: "Jean Eddy Simon",      make: "Freightliner", model: "Cascadia",  vin: "3AKJHHDR2LSLR8844" },
-  { id: 10, unit: "TRK-4412", driver: "Keavis Dyer",          make: "Kenworth",     model: "T680",      vin: "1XKWD49X3NJ512009" },
-  { id: 11, unit: "TRK-6650", driver: "Shokhnurbek Komilov",  make: "Volvo",        model: "VNL 760",   vin: "4V4NC9TH2KN204412" },
-  { id: 12, unit: "TRK-1130", driver: "Bakhodir Azamov",      make: "Peterbilt",    model: "579",       vin: "1XPBD49X8LD614330" },
-];
-
-const initTrailers: TrailerRow[] = [
-  { id: 1,  unit: "TRL-2210", driver: "Carlos Mendez",        make: "Wabash",       model: "DuraPlate 53'", vin: "1JJV532W1KL990012" },
-  { id: 2,  unit: "TRL-0881", driver: "Angela Torres",        make: "Great Dane",   model: "Champion",      vin: "1GRAP0623KA703341" },
-  { id: 3,  unit: "TRL-4430", driver: "Darnell Washington",   make: "Utility",      model: "3000R 53'",     vin: "1UYVS25386U812203" },
-  { id: 4,  unit: "TRL-1190", driver: "Priya Sharma",         make: "Stoughton",    model: "EFB 53'",       vin: "1DW1A5326HB677004" },
-  { id: 5,  unit: "TRL-6620", driver: "Marcus Webb",          make: "Wabash",       model: "National 53'",  vin: "1JJV532W3LL910045" },
-  { id: 6,  unit: "TRL-3300", driver: "Linda Okafor",         make: "Great Dane",   model: "Everest",       vin: "1GRAP0627LA803502" },
-  { id: 7,  unit: "TRL-7710", driver: "Ray Kowalski",         make: "Utility",      model: "3000R 48'",     vin: "1UYVS25312U908814" },
-  { id: 8,  unit: "TRL-5540", driver: "Tomás García",         make: "Vanguard",     model: "VAN 53'",       vin: "5V8VA5328LM211009" },
-  { id: 9,  unit: "TRL-8810", driver: "Jean Eddy Simon",      make: "Wabash",       model: "DuraPlate 53'", vin: "1JJV532W9KL990447" },
-  { id: 10, unit: "TRL-2230", driver: "Keavis Dyer",          make: "Stoughton",    model: "EFB 48'",       vin: "1DW1A5324JB677891" },
-  { id: 11, unit: "TRL-9910", driver: "Shokhnurbek Komilov",  make: "Great Dane",   model: "Champion",      vin: "1GRAP0621MA803019" },
-  { id: 12, unit: "TRL-4450", driver: "Bakhodir Azamov",      make: "Utility",      model: "3000R 53'",     vin: "1UYVS25344U812667" },
-];
 
 // ─── CustomSelect ─────────────────────────────────────────────────────────────
 
@@ -277,11 +246,12 @@ function ActionBtn({ icon, color, bg, onClick }: { icon: React.ReactNode; color:
 
 type EquipRow = TruckRow | TrailerRow;
 
-function EquipModal({ title, row, onClose, onSave }: {
+function EquipModal({ title, row, onClose, onSave, saving = false }: {
   title: string;
   row: Partial<EquipRow>;
   onClose: () => void;
   onSave: (r: EquipRow) => void;
+  saving?: boolean;
 }) {
   const [form, setForm] = useState<Partial<EquipRow>>(row);
   const set = (k: keyof EquipRow, v: string) => setForm((f) => ({ ...f, [k]: v }));
@@ -321,8 +291,8 @@ function EquipModal({ title, row, onClose, onSave }: {
         </div>
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, padding: "14px 20px", borderTop: "1px solid var(--border)" }}>
           <button onClick={onClose} style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 16px", borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "var(--muted)", color: "var(--foreground)", cursor: "pointer" }}>Cancel</button>
-          <button onClick={() => onSave(form as EquipRow)} style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 16px", borderRadius: 6, border: "none", backgroundColor: "var(--primary)", color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
-            <Check size={14} /> {isNew ? "Create" : "Save Changes"}
+          <button onClick={() => onSave(form as EquipRow)} disabled={saving} style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 16px", borderRadius: 6, border: "none", backgroundColor: "var(--primary)", color: "#fff", cursor: saving ? "not-allowed" : "pointer", opacity: saving ? 0.7 : 1, display: "flex", alignItems: "center", gap: 6 }}>
+            <Check size={14} /> {saving ? "Saving…" : isNew ? "Create" : "Save Changes"}
           </button>
         </div>
       </div>
@@ -572,39 +542,81 @@ function AddMenu({ entityLabel, onManual, onImport }: {
 
 // ─── Trucks tab ───────────────────────────────────────────────────────────────
 
-function TrucksTab() {
-  const [rows, setRows]         = useState<TruckRow[]>(initTrucks);
-  const [modal, setModal]       = useState<"create" | "edit" | null>(null);
-  const [editing, setEditing]   = useState<Partial<TruckRow>>({});
-  const [deleting, setDeleting] = useState<TruckRow | null>(null);
+function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
+  const [rows, setRows]           = useState<TruckRow[]>([]);
+  const [loading, setLoading]     = useState(true);
+  const [error, setError]         = useState("");
+  const [modal, setModal]         = useState<"create" | "edit" | null>(null);
+  const [editing, setEditing]     = useState<Partial<TruckRow>>({});
+  const [deleting, setDeleting]   = useState<TruckRow | null>(null);
   const [importing, setImporting] = useState(false);
-  const [search, setSearch]     = useState("");
-  const [page, setPage]         = useState(1);
-  const [pageSize, setPageSize] = useState(20);
+  const [search, setSearch]       = useState("");
+  const [page, setPage]           = useState(1);
+  const [pageSize, setPageSize]   = useState(20);
+  const [saving, setSaving]       = useState(false);
+
+  useEffect(() => {
+    setLoading(true);
+    api.get<TruckRow[]>("/trucks")
+      .then((data) => { setRows(data); onCountChange(data.length); })
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
+  }, []);
 
   const openCreate = () => { setEditing({}); setModal("create"); };
   const openEdit   = (r: TruckRow) => { setEditing(r); setModal("edit"); };
-  const save = (r: EquipRow) => {
+
+  const save = async (r: EquipRow) => {
     const d = r as TruckRow;
-    if (modal === "create") {
-      const nextId = Math.max(0, ...rows.map((x) => x.id)) + 1;
-      setRows((prev) => [...prev, { ...d, id: nextId }]);
-    } else {
-      setRows((prev) => prev.map((x) => (x.id === d.id ? d : x)));
+    setSaving(true);
+    try {
+      if (modal === "create") {
+        const created = await api.post<TruckRow>("/trucks", d);
+        setRows((prev) => { const next = [...prev, created]; onCountChange(next.length); return next; });
+      } else {
+        const updated = await api.put<TruckRow>(`/trucks/${d.id}`, d);
+        setRows((prev) => prev.map((x) => (x.id === d.id ? updated : x)));
+      }
+      setModal(null);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Save failed");
+    } finally {
+      setSaving(false);
     }
-    setModal(null);
   };
-  const del = () => { if (deleting) setRows((prev) => prev.filter((x) => x.id !== deleting.id)); setDeleting(null); };
+
+  const del = async () => {
+    if (!deleting) return;
+    try {
+      await api.delete(`/trucks/${deleting.id}`);
+      setRows((prev) => { const next = prev.filter((x) => x.id !== deleting.id); onCountChange(next.length); return next; });
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Delete failed");
+    }
+    setDeleting(null);
+  };
 
   const q = search.toLowerCase();
   const filtered = rows.filter((r) =>
-    !q || r.unit.toLowerCase().includes(q) || r.driver.toLowerCase().includes(q) ||
-    r.make.toLowerCase().includes(q) || r.model.toLowerCase().includes(q) || r.vin.toLowerCase().includes(q)
+    !q || r.unit?.toLowerCase().includes(q) || r.driver?.toLowerCase().includes(q) ||
+    r.make?.toLowerCase().includes(q) || r.model?.toLowerCase().includes(q) || r.vin?.toLowerCase().includes(q)
   );
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const safePage = Math.min(page, totalPages);
   const paginated = filtered.slice((safePage - 1) * pageSize, safePage * pageSize);
+
+  if (loading) return (
+    <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--muted-foreground)", fontSize: 13 }}>
+      Loading trucks…
+    </div>
+  );
+
+  if (error) return (
+    <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "#EF4444", fontSize: 13 }}>
+      {error}
+    </div>
+  );
 
   return (
     <>
@@ -647,7 +659,7 @@ function TrucksTab() {
                 onMouseEnter={(e) => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = "rgba(59,130,246,0.03)"; }}
                 onMouseLeave={(e) => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = i % 2 === 0 ? "var(--card)" : "var(--background)"; }}
               >
-                <TD mono center>{r.id}</TD>
+                <TD mono center>{(safePage - 1) * pageSize + i + 1}</TD>
                 <td style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", verticalAlign: "middle" }}>
                   <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 600, color: "var(--primary)", backgroundColor: "var(--secondary)", borderRadius: 4, padding: "2px 8px" }}>
                     {r.unit}
@@ -668,7 +680,7 @@ function TrucksTab() {
             {paginated.length === 0 && (
               <tr>
                 <td colSpan={7} style={{ padding: "32px 24px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)", borderBottom: "1px solid var(--border)" }}>
-                  No trucks match your filters.
+                  No trucks found.
                 </td>
               </tr>
             )}
@@ -676,17 +688,10 @@ function TrucksTab() {
         </table>
       </div>
 
-      {/* Pagination */}
-      <Pagination
-        total={filtered.length}
-        page={safePage}
-        pageSize={pageSize}
-        onPage={setPage}
-        onPageSize={setPageSize}
-      />
+      <Pagination total={filtered.length} page={safePage} pageSize={pageSize} onPage={setPage} onPageSize={setPageSize} />
 
       {(modal === "create" || modal === "edit") && (
-        <EquipModal title={modal === "create" ? "Add Truck" : "Edit Truck"} row={editing} onClose={() => setModal(null)} onSave={save} />
+        <EquipModal title={modal === "create" ? "Add Truck" : "Edit Truck"} row={editing} onClose={() => setModal(null)} onSave={save} saving={saving} />
       )}
       {deleting && <DeleteConfirm label={deleting.unit} onClose={() => setDeleting(null)} onConfirm={del} />}
       {importing && <ImportModal entityLabel="Truck" onClose={() => setImporting(false)} />}
@@ -696,39 +701,81 @@ function TrucksTab() {
 
 // ─── Trailers tab ─────────────────────────────────────────────────────────────
 
-function TrailersTab() {
-  const [rows, setRows]         = useState<TrailerRow[]>(initTrailers);
-  const [modal, setModal]       = useState<"create" | "edit" | null>(null);
-  const [editing, setEditing]   = useState<Partial<TrailerRow>>({});
-  const [deleting, setDeleting] = useState<TrailerRow | null>(null);
+function TrailersTab({ onCountChange }: { onCountChange: (n: number) => void }) {
+  const [rows, setRows]           = useState<TrailerRow[]>([]);
+  const [loading, setLoading]     = useState(true);
+  const [error, setError]         = useState("");
+  const [modal, setModal]         = useState<"create" | "edit" | null>(null);
+  const [editing, setEditing]     = useState<Partial<TrailerRow>>({});
+  const [deleting, setDeleting]   = useState<TrailerRow | null>(null);
   const [importing, setImporting] = useState(false);
-  const [search, setSearch]     = useState("");
-  const [page, setPage]         = useState(1);
-  const [pageSize, setPageSize] = useState(20);
+  const [search, setSearch]       = useState("");
+  const [page, setPage]           = useState(1);
+  const [pageSize, setPageSize]   = useState(20);
+  const [saving, setSaving]       = useState(false);
+
+  useEffect(() => {
+    setLoading(true);
+    api.get<TrailerRow[]>("/trailers")
+      .then((data) => { setRows(data); onCountChange(data.length); })
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
+  }, []);
 
   const openCreate = () => { setEditing({}); setModal("create"); };
   const openEdit   = (r: TrailerRow) => { setEditing(r); setModal("edit"); };
-  const save = (r: EquipRow) => {
+
+  const save = async (r: EquipRow) => {
     const d = r as TrailerRow;
-    if (modal === "create") {
-      const nextId = Math.max(0, ...rows.map((x) => x.id)) + 1;
-      setRows((prev) => [...prev, { ...d, id: nextId }]);
-    } else {
-      setRows((prev) => prev.map((x) => (x.id === d.id ? d : x)));
+    setSaving(true);
+    try {
+      if (modal === "create") {
+        const created = await api.post<TrailerRow>("/trailers", d);
+        setRows((prev) => { const next = [...prev, created]; onCountChange(next.length); return next; });
+      } else {
+        const updated = await api.put<TrailerRow>(`/trailers/${d.id}`, d);
+        setRows((prev) => prev.map((x) => (x.id === d.id ? updated : x)));
+      }
+      setModal(null);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Save failed");
+    } finally {
+      setSaving(false);
     }
-    setModal(null);
   };
-  const del = () => { if (deleting) setRows((prev) => prev.filter((x) => x.id !== deleting.id)); setDeleting(null); };
+
+  const del = async () => {
+    if (!deleting) return;
+    try {
+      await api.delete(`/trailers/${deleting.id}`);
+      setRows((prev) => { const next = prev.filter((x) => x.id !== deleting.id); onCountChange(next.length); return next; });
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Delete failed");
+    }
+    setDeleting(null);
+  };
 
   const q = search.toLowerCase();
   const filtered = rows.filter((r) =>
-    !q || r.unit.toLowerCase().includes(q) || r.driver.toLowerCase().includes(q) ||
-    r.make.toLowerCase().includes(q) || r.model.toLowerCase().includes(q) || r.vin.toLowerCase().includes(q)
+    !q || r.unit?.toLowerCase().includes(q) || r.driver?.toLowerCase().includes(q) ||
+    r.make?.toLowerCase().includes(q) || r.model?.toLowerCase().includes(q) || r.vin?.toLowerCase().includes(q)
   );
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const safePage = Math.min(page, totalPages);
   const paginated = filtered.slice((safePage - 1) * pageSize, safePage * pageSize);
+
+  if (loading) return (
+    <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--muted-foreground)", fontSize: 13 }}>
+      Loading trailers…
+    </div>
+  );
+
+  if (error) return (
+    <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "#EF4444", fontSize: 13 }}>
+      {error}
+    </div>
+  );
 
   return (
     <>
@@ -771,7 +818,7 @@ function TrailersTab() {
                 onMouseEnter={(e) => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = "rgba(59,130,246,0.03)"; }}
                 onMouseLeave={(e) => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = i % 2 === 0 ? "var(--card)" : "var(--background)"; }}
               >
-                <TD mono center>{r.id}</TD>
+                <TD mono center>{(safePage - 1) * pageSize + i + 1}</TD>
                 <td style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", verticalAlign: "middle" }}>
                   <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 600, color: "#5B21B6", backgroundColor: "#EDE9FE", borderRadius: 4, padding: "2px 8px" }}>
                     {r.unit}
@@ -792,7 +839,7 @@ function TrailersTab() {
             {paginated.length === 0 && (
               <tr>
                 <td colSpan={7} style={{ padding: "32px 24px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)", borderBottom: "1px solid var(--border)" }}>
-                  No trailers match your filters.
+                  No trailers found.
                 </td>
               </tr>
             )}
@@ -800,17 +847,10 @@ function TrailersTab() {
         </table>
       </div>
 
-      {/* Pagination */}
-      <Pagination
-        total={filtered.length}
-        page={safePage}
-        pageSize={pageSize}
-        onPage={setPage}
-        onPageSize={setPageSize}
-      />
+      <Pagination total={filtered.length} page={safePage} pageSize={pageSize} onPage={setPage} onPageSize={setPageSize} />
 
       {(modal === "create" || modal === "edit") && (
-        <EquipModal title={modal === "create" ? "Add Trailer" : "Edit Trailer"} row={editing} onClose={() => setModal(null)} onSave={save} />
+        <EquipModal title={modal === "create" ? "Add Trailer" : "Edit Trailer"} row={editing} onClose={() => setModal(null)} onSave={save} saving={saving} />
       )}
       {deleting && <DeleteConfirm label={deleting.unit} onClose={() => setDeleting(null)} onConfirm={del} />}
       {importing && <ImportModal entityLabel="Trailer" onClose={() => setImporting(false)} />}
@@ -824,10 +864,12 @@ type TabId = "trucks" | "trailers";
 
 export function EquipmentsPage() {
   const [tab, setTab] = useState<TabId>("trucks");
+  const [truckCount,   setTruckCount]   = useState(0);
+  const [trailerCount, setTrailerCount] = useState(0);
 
   const tabs: { id: TabId; label: string; count: number; icon: React.ReactNode; color: string; bg: string }[] = [
-    { id: "trucks",   label: "Trucks",   count: initTrucks.length,   icon: <Truck     size={15} />, color: "#1D4ED8", bg: "#DBEAFE" },
-    { id: "trailers", label: "Trailers", count: initTrailers.length, icon: <Container size={15} />, color: "#5B21B6", bg: "#EDE9FE" },
+    { id: "trucks",   label: "Trucks",   count: truckCount,   icon: <Truck     size={15} />, color: "#1D4ED8", bg: "#DBEAFE" },
+    { id: "trailers", label: "Trailers", count: trailerCount, icon: <Container size={15} />, color: "#5B21B6", bg: "#EDE9FE" },
   ];
 
   return (
@@ -871,8 +913,8 @@ export function EquipmentsPage() {
       {/* Content with padding + card */}
       <div style={{ flex: 1, overflow: "hidden", padding: "20px 24px", display: "flex", flexDirection: "column" }}>
         <div style={{ flex: 1, display: "flex", flexDirection: "column", backgroundColor: "var(--card)", borderRadius: 12, overflow: "hidden", border: "1px solid var(--border)" }}>
-          {tab === "trucks"   && <TrucksTab />}
-          {tab === "trailers" && <TrailersTab />}
+          {tab === "trucks"   && <TrucksTab   onCountChange={setTruckCount} />}
+          {tab === "trailers" && <TrailersTab onCountChange={setTrailerCount} />}
         </div>
       </div>
     </div>
