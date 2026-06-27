@@ -196,7 +196,7 @@ export function LoginPage() {
 
       {/* ── Left: form ─────────────────────────────── */}
       <div style={{
-        flex: 1,
+        flex: "0 0 50%",
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
@@ -333,7 +333,7 @@ export function LoginPage() {
       </div>
 
       {/* ── Right: slideshow ────────────────────────── */}
-      <div style={{ flex: "0 0 45%", position: "relative", overflow: "hidden" }}>
+      <div style={{ flex: "0 0 50%", position: "relative", overflow: "hidden" }}>
         <ImageSlideshow />
       </div>
 
