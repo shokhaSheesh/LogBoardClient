@@ -1,13 +1,173 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router";
-import { Zap, Eye, EyeOff, TrendingUp, MapPin, Truck } from "lucide-react";
+import { Zap, Eye, EyeOff } from "lucide-react";
 import { useAuth } from "../lib/auth";
 
-const STATS = [
-  { label: "Active Drivers", value: "1,240+" },
-  { label: "Loads Dispatched", value: "48,000+" },
-  { label: "Miles Tracked", value: "12M+" },
+const SLIDES = [
+  {
+    url: "https://images.unsplash.com/photo-tSSqFlP0--o?w=1400&q=85&fit=crop",
+    label: "Real-time tracking",
+    caption: "Track every driver and every mile as it happens.",
+  },
+  {
+    url: "https://images.unsplash.com/photo-dlyz37qqHfM?w=1400&q=85&fit=crop",
+    label: "Live dispatch board",
+    caption: "One screen for your entire fleet — statuses, ETAs, and loads.",
+  },
+  {
+    url: "https://images.unsplash.com/photo-D33wtHMIIjc?w=1400&q=85&fit=crop",
+    label: "From dock to delivery",
+    caption: "Assign loads, update status, and stay ahead of every appointment.",
+  },
+  {
+    url: "https://images.unsplash.com/photo-vW7C0FdNfSY?w=1400&q=85&fit=crop",
+    label: "Full visibility",
+    caption: "Aerial-level insight into your operation — gross, RPM, payouts.",
+  },
 ];
+
+const INTERVAL = 5000;
+
+function ImageSlideshow() {
+  const [current, setCurrent] = useState(0);
+  const [progress, setProgress] = useState(0);
+  const [fading, setFading] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const startRef = useRef<number>(Date.now());
+
+  const goTo = (idx: number) => {
+    setFading(true);
+    setTimeout(() => {
+      setCurrent(idx);
+      setProgress(0);
+      startRef.current = Date.now();
+      setFading(false);
+    }, 350);
+  };
+
+  useEffect(() => {
+    const tick = () => {
+      const elapsed = Date.now() - startRef.current;
+      const pct = Math.min((elapsed / INTERVAL) * 100, 100);
+      setProgress(pct);
+      if (elapsed >= INTERVAL) {
+        goTo((current + 1) % SLIDES.length);
+      }
+    };
+    timerRef.current = setInterval(tick, 50);
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, [current]);
+
+  const slide = SLIDES[current];
+
+  return (
+    <div style={{ position: "relative", width: "100%", height: "100%", overflow: "hidden" }}>
+      {/* Image */}
+      <img
+        key={current}
+        src={slide.url}
+        alt={slide.label}
+        style={{
+          position: "absolute", inset: 0, width: "100%", height: "100%",
+          objectFit: "cover", objectPosition: "center",
+          opacity: fading ? 0 : 1,
+          transition: "opacity 0.35s ease",
+        }}
+      />
+
+      {/* Dark overlay */}
+      <div style={{
+        position: "absolute", inset: 0,
+        background: "linear-gradient(to top, rgba(0,0,0,0.82) 0%, rgba(0,0,0,0.25) 50%, rgba(0,0,0,0.45) 100%)",
+      }} />
+
+      {/* Story progress bars */}
+      <div style={{
+        position: "absolute", top: 20, left: 20, right: 20,
+        display: "flex", gap: 6, zIndex: 10,
+      }}>
+        {SLIDES.map((_, i) => (
+          <div
+            key={i}
+            onClick={() => goTo(i)}
+            style={{
+              flex: 1, height: 3, borderRadius: 2,
+              backgroundColor: "rgba(255,255,255,0.3)",
+              cursor: "pointer", overflow: "hidden",
+            }}
+          >
+            <div style={{
+              height: "100%", borderRadius: 2,
+              backgroundColor: "#fff",
+              width: i < current ? "100%" : i === current ? `${progress}%` : "0%",
+              transition: i === current ? "none" : "width 0.3s ease",
+            }} />
+          </div>
+        ))}
+      </div>
+
+      {/* Logo in top-left */}
+      <div style={{
+        position: "absolute", top: 44, left: 24, zIndex: 10,
+        display: "flex", alignItems: "center", gap: 10,
+      }}>
+        <div style={{
+          width: 34, height: 34, borderRadius: 10,
+          background: "linear-gradient(135deg, #3B82F6 0%, #1D4ED8 100%)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          boxShadow: "0 2px 8px rgba(0,0,0,0.4)",
+        }}>
+          <Zap size={17} color="#fff" strokeWidth={2.5} />
+        </div>
+        <span style={{ fontSize: 15, fontWeight: 700, color: "#fff", letterSpacing: "-0.2px" }}>
+          DispatchOS
+        </span>
+      </div>
+
+      {/* Dot indicators */}
+      <div style={{
+        position: "absolute", bottom: 120, left: 0, right: 0,
+        display: "flex", justifyContent: "center", gap: 8, zIndex: 10,
+      }}>
+        {SLIDES.map((_, i) => (
+          <div
+            key={i}
+            onClick={() => goTo(i)}
+            style={{
+              width: i === current ? 20 : 7,
+              height: 7, borderRadius: 4,
+              backgroundColor: i === current ? "#fff" : "rgba(255,255,255,0.4)",
+              cursor: "pointer",
+              transition: "width 0.3s ease, background-color 0.3s ease",
+            }}
+          />
+        ))}
+      </div>
+
+      {/* Bottom text */}
+      <div style={{
+        position: "absolute", bottom: 0, left: 0, right: 0,
+        padding: "0 28px 32px",
+        opacity: fading ? 0 : 1,
+        transition: "opacity 0.35s ease",
+        zIndex: 10,
+      }}>
+        <div style={{
+          display: "inline-block",
+          backgroundColor: "rgba(59,130,246,0.85)",
+          borderRadius: 6, padding: "3px 10px", marginBottom: 10,
+        }}>
+          <span style={{ fontSize: 11, fontWeight: 600, color: "#fff", letterSpacing: "0.05em", textTransform: "uppercase" }}>
+            {slide.label}
+          </span>
+        </div>
+        <p style={{ fontSize: 20, fontWeight: 700, color: "#fff", lineHeight: 1.3, margin: 0, letterSpacing: "-0.3px" }}>
+          {slide.caption}
+        </p>
+      </div>
+    </div>
+  );
+}
 
 export function LoginPage() {
   const navigate = useNavigate();
@@ -39,33 +199,27 @@ export function LoginPage() {
   return (
     <div style={{ display: "flex", minHeight: "100vh", fontFamily: "var(--font-sans)" }}>
 
-      {/* ── Left: form ─────────────────────────────────── */}
-      <div
-        style={{
-          flex: "0 0 480px",
-          display: "flex",
-          flexDirection: "column",
-          justifyContent: "center",
-          padding: "48px 56px",
-          backgroundColor: "var(--background)",
-          position: "relative",
-          zIndex: 1,
-        }}
-      >
+      {/* ── Left: form ─────────────────────────────── */}
+      <div style={{
+        flex: "0 0 440px",
+        display: "flex",
+        flexDirection: "column",
+        justifyContent: "center",
+        padding: "48px 52px",
+        backgroundColor: "var(--background)",
+      }}>
         {/* Logo */}
-        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 48 }}>
-          <div
-            style={{
-              width: 42, height: 42, borderRadius: 12, flexShrink: 0,
-              background: "linear-gradient(135deg, #3B82F6 0%, #1D4ED8 100%)",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              boxShadow: "0 4px 12px rgba(59,130,246,0.35)",
-            }}
-          >
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 44 }}>
+          <div style={{
+            width: 40, height: 40, borderRadius: 12, flexShrink: 0,
+            background: "linear-gradient(135deg, #3B82F6 0%, #1D4ED8 100%)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            boxShadow: "0 4px 12px rgba(59,130,246,0.35)",
+          }}>
             <Zap size={20} color="#fff" strokeWidth={2.5} />
           </div>
           <div>
-            <div style={{ fontSize: 17, fontWeight: 700, color: "var(--foreground)", letterSpacing: "-0.3px" }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: "var(--foreground)", letterSpacing: "-0.3px" }}>
               DispatchOS
             </div>
             <div style={{ fontSize: 11, color: "var(--muted-foreground)", marginTop: 1 }}>
@@ -74,29 +228,24 @@ export function LoginPage() {
           </div>
         </div>
 
-        {/* Heading */}
-        <h1 style={{ fontSize: 26, fontWeight: 700, color: "var(--foreground)", marginBottom: 6, letterSpacing: "-0.5px" }}>
+        <h1 style={{ fontSize: 24, fontWeight: 700, color: "var(--foreground)", marginBottom: 6, letterSpacing: "-0.5px" }}>
           Welcome back
         </h1>
-        <p style={{ fontSize: 13, color: "var(--muted-foreground)", marginBottom: 32 }}>
+        <p style={{ fontSize: 13, color: "var(--muted-foreground)", marginBottom: 28 }}>
           Sign in to your workspace to continue
         </p>
 
-        {/* Error */}
         {error && (
-          <div
-            style={{
-              fontSize: 13, color: "#ef4444",
-              backgroundColor: "rgba(239,68,68,0.08)",
-              border: "1px solid rgba(239,68,68,0.2)",
-              borderRadius: 8, padding: "10px 14px", marginBottom: 20,
-            }}
-          >
+          <div style={{
+            fontSize: 13, color: "#ef4444",
+            backgroundColor: "rgba(239,68,68,0.08)",
+            border: "1px solid rgba(239,68,68,0.2)",
+            borderRadius: 8, padding: "10px 14px", marginBottom: 20,
+          }}>
             {error}
           </div>
         )}
 
-        {/* Form */}
         <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 18 }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <label style={{ fontSize: 13, fontWeight: 500, color: "var(--foreground)" }}>
@@ -164,7 +313,7 @@ export function LoginPage() {
               opacity: submitting ? 0.7 : 1,
               marginTop: 4,
               boxShadow: submitting ? "none" : "0 4px 12px rgba(59,130,246,0.3)",
-              transition: "opacity 0.15s, box-shadow 0.15s",
+              transition: "opacity 0.15s",
             }}
             onMouseEnter={(e) => {
               if (!submitting) (e.currentTarget as HTMLButtonElement).style.opacity = "0.9";
@@ -177,127 +326,16 @@ export function LoginPage() {
           </button>
         </form>
 
-        {/* Footer */}
-        <p style={{ fontSize: 12, color: "var(--muted-foreground)", marginTop: 40 }}>
+        <p style={{ fontSize: 12, color: "var(--muted-foreground)", marginTop: "auto", paddingTop: 48 }}>
           © 2026 DispatchOS · All rights reserved
         </p>
       </div>
 
-      {/* ── Right: visual panel ─────────────────────────── */}
-      <div
-        style={{
-          flex: 1,
-          position: "relative",
-          overflow: "hidden",
-          background: "linear-gradient(140deg, #0F172A 0%, #1E3A5F 45%, #0F172A 100%)",
-          display: "flex",
-          flexDirection: "column",
-          justifyContent: "space-between",
-          padding: "52px 56px",
-        }}
-      >
-        {/* Grid background */}
-        <svg
-          style={{ position: "absolute", inset: 0, width: "100%", height: "100%", opacity: 0.06 }}
-          xmlns="http://www.w3.org/2000/svg"
-        >
-          <defs>
-            <pattern id="grid" width="48" height="48" patternUnits="userSpaceOnUse">
-              <path d="M 48 0 L 0 0 0 48" fill="none" stroke="#60A5FA" strokeWidth="0.8" />
-            </pattern>
-          </defs>
-          <rect width="100%" height="100%" fill="url(#grid)" />
-        </svg>
-
-        {/* Glow blobs */}
-        <div style={{
-          position: "absolute", top: -80, right: -80, width: 400, height: 400, borderRadius: "50%",
-          background: "radial-gradient(circle, rgba(59,130,246,0.18) 0%, transparent 70%)",
-          pointerEvents: "none",
-        }} />
-        <div style={{
-          position: "absolute", bottom: -60, left: 40, width: 320, height: 320, borderRadius: "50%",
-          background: "radial-gradient(circle, rgba(99,102,241,0.14) 0%, transparent 70%)",
-          pointerEvents: "none",
-        }} />
-
-        {/* Top badge */}
-        <div style={{ position: "relative", zIndex: 1 }}>
-          <div style={{
-            display: "inline-flex", alignItems: "center", gap: 8,
-            backgroundColor: "rgba(59,130,246,0.15)",
-            border: "1px solid rgba(59,130,246,0.3)",
-            borderRadius: 20, padding: "6px 14px",
-          }}>
-            <div style={{ width: 6, height: 6, borderRadius: "50%", backgroundColor: "#10B981" }} />
-            <span style={{ fontSize: 12, fontWeight: 500, color: "#93C5FD" }}>
-              Live dispatch platform
-            </span>
-          </div>
-        </div>
-
-        {/* Center content */}
-        <div style={{ position: "relative", zIndex: 1 }}>
-          {/* Heading */}
-          <h2 style={{
-            fontSize: 36, fontWeight: 800, color: "#F1F5F9",
-            lineHeight: 1.15, letterSpacing: "-0.8px", marginBottom: 16,
-          }}>
-            Move freight.<br />
-            <span style={{ color: "#60A5FA" }}>Move faster.</span>
-          </h2>
-          <p style={{ fontSize: 15, color: "#94A3B8", lineHeight: 1.6, maxWidth: 380, marginBottom: 48 }}>
-            One screen to track every driver, every load, and every mile — in real time.
-          </p>
-
-          {/* Feature pills */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            {[
-              { icon: Truck,      text: "Live driver & load board with instant status sync" },
-              { icon: MapPin,     text: "Route tracking, ETAs, and location updates" },
-              { icon: TrendingUp, text: "Gross, RPM, and dispatcher payout analytics" },
-            ].map(({ icon: Icon, text }) => (
-              <div key={text} style={{ display: "flex", alignItems: "center", gap: 14 }}>
-                <div style={{
-                  width: 36, height: 36, borderRadius: 10, flexShrink: 0,
-                  backgroundColor: "rgba(59,130,246,0.15)",
-                  border: "1px solid rgba(59,130,246,0.25)",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                }}>
-                  <Icon size={16} color="#60A5FA" />
-                </div>
-                <span style={{ fontSize: 13, color: "#CBD5E1" }}>{text}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Stats row */}
-        <div style={{
-          position: "relative", zIndex: 1,
-          display: "flex", gap: 0,
-          backgroundColor: "rgba(255,255,255,0.04)",
-          border: "1px solid rgba(255,255,255,0.08)",
-          borderRadius: 14, overflow: "hidden",
-        }}>
-          {STATS.map((s, i) => (
-            <div
-              key={s.label}
-              style={{
-                flex: 1, padding: "18px 20px",
-                borderRight: i < STATS.length - 1 ? "1px solid rgba(255,255,255,0.08)" : "none",
-              }}
-            >
-              <div style={{ fontSize: 22, fontWeight: 700, color: "#F1F5F9", letterSpacing: "-0.5px" }}>
-                {s.value}
-              </div>
-              <div style={{ fontSize: 11, color: "#64748B", marginTop: 2 }}>
-                {s.label}
-              </div>
-            </div>
-          ))}
-        </div>
+      {/* ── Right: slideshow ────────────────────────── */}
+      <div style={{ flex: 1, position: "relative", overflow: "hidden" }}>
+        <ImageSlideshow />
       </div>
+
     </div>
   );
 }
