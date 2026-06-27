@@ -31,7 +31,7 @@ function Toast({ msg, type, onClose }: { msg: string; type: "success" | "error";
   }, []);
   return (
     <div style={{
-      position: "fixed", bottom: 24, right: 24, zIndex: 9999,
+      position: "fixed", top: 24, right: 24, zIndex: 9999,
       backgroundColor: type === "success" ? "#10B981" : "#EF4444",
       color: "#fff", borderRadius: 8, padding: "10px 16px",
       display: "flex", alignItems: "center", gap: 8,
