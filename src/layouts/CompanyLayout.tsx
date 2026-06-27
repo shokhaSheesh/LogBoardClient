@@ -57,7 +57,19 @@ function AccountSwitcher({
   const dropRef   = useRef<HTMLDivElement>(null);
   const inputRef  = useRef<HTMLInputElement>(null);
 
-  const active = accounts.find((a) => a.id === activeId) ?? accounts[0];
+  const active = accounts.find((a) => a.id === activeId) ?? accounts[0] ?? null;
+
+  if (!active) return (
+    <div style={{
+      display: "flex", alignItems: "center", gap: 10,
+      padding: collapsed ? "14px 0" : "12px 16px",
+      justifyContent: collapsed ? "center" : "flex-start",
+      borderBottom: "1px solid var(--sidebar-border)",
+    }}>
+      <div style={{ width: 34, height: 34, borderRadius: 10, backgroundColor: "rgba(255,255,255,0.07)", flexShrink: 0 }} />
+      {!collapsed && <div style={{ height: 12, width: 100, borderRadius: 4, backgroundColor: "rgba(255,255,255,0.07)" }} />}
+    </div>
+  );
 
   const toggle = () => {
     const r = anchorRef.current?.getBoundingClientRect();
