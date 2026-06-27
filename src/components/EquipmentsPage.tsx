@@ -66,26 +66,28 @@ function CustomSelect({
   searchable?: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const [q, setQ] = useState("");
+  const [query, setQuery] = useState("");
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) { setOpen(false); setQ(""); }
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
   const selected = options.find((o) => o.value === value);
-  const filtered = searchable && q ? options.filter((o) => o.label.toLowerCase().includes(q.toLowerCase())) : options;
+  const filtered = searchable && query
+    ? options.filter((o) => o.label.toLowerCase().includes(query.toLowerCase()))
+    : options;
   const h = compact ? 30 : 34;
 
   return (
     <div ref={ref} style={{ position: "relative", width: width ?? "100%" }}>
       <button
         type="button"
-        onClick={() => { setOpen((v) => !v); setQ(""); }}
+        onClick={() => { setOpen((v) => !v); setQuery(""); }}
         style={{
           display: "flex", alignItems: "center", gap: 8, width: "100%",
           height: h, paddingLeft: 10, paddingRight: 8,
@@ -98,8 +100,8 @@ function CustomSelect({
           outline: "none",
         }}
       >
-        <span style={{ flex: 1, textAlign: "left", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {selected?.label ?? "Select…"}
+        <span style={{ flex: 1, textAlign: "left", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: selected ? "var(--foreground)" : "transparent" }}>
+          {selected?.label ?? "​"}
         </span>
         <ChevronDown
           size={13}
@@ -117,43 +119,46 @@ function CustomSelect({
         }}>
           {searchable && (
             <div style={{ padding: "8px 8px 4px" }}>
-              <input
-                autoFocus
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                placeholder="Search…"
-                style={{
-                  width: "100%", boxSizing: "border-box" as const,
-                  fontFamily: "var(--font-sans)", fontSize: 12,
-                  padding: "5px 8px", borderRadius: 5,
-                  border: "1px solid var(--border)",
-                  backgroundColor: "var(--input-background)",
-                  color: "var(--foreground)", outline: "none",
-                }}
-              />
+              <div style={{ position: "relative" }}>
+                <Search size={12} style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", color: "var(--muted-foreground)", pointerEvents: "none" }} />
+                <input
+                  autoFocus
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Search…"
+                  style={{
+                    width: "100%", height: 30, paddingLeft: 26, paddingRight: 8,
+                    fontFamily: "var(--font-sans)", fontSize: 12,
+                    border: "1px solid var(--border)", borderRadius: 6,
+                    backgroundColor: "var(--input-background)", color: "var(--foreground)",
+                    outline: "none", boxSizing: "border-box" as const,
+                  }}
+                />
+              </div>
             </div>
           )}
-          <div style={{ maxHeight: 200, overflowY: "auto" as const }}>
+          <div style={{ maxHeight: 180, overflowY: "auto" as const, scrollbarWidth: "thin" as const, scrollbarColor: "var(--border) transparent" }}>
             {filtered.map((opt) => {
               const isActive = opt.value === value;
               return (
                 <button
                   key={opt.value}
                   type="button"
-                  onClick={() => { onChange(opt.value); setOpen(false); setQ(""); }}
+                  onClick={() => { onChange(opt.value); setOpen(false); }}
                   style={{
                     display: "flex", alignItems: "center", gap: 8,
                     width: "100%", padding: "7px 12px",
-                    border: "none", backgroundColor: isActive ? "rgba(59,130,246,0.06)" : "transparent",
-                    fontFamily: "var(--font-sans)", fontSize: compact ? 12 : 13,
+                    fontFamily: "var(--font-sans)", fontSize: 13,
+                    fontWeight: isActive ? 600 : 400,
                     color: isActive ? "var(--primary)" : "var(--foreground)",
-                    cursor: "pointer", textAlign: "left",
+                    backgroundColor: isActive ? "var(--accent)" : "transparent",
+                    border: "none", cursor: "pointer", textAlign: "left", outline: "none",
                   }}
                   onMouseEnter={(e) => { if (!isActive) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--muted)"; }}
-                  onMouseLeave={(e) => { if (!isActive) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "transparent"; }}
+                  onMouseLeave={(e) => { if (!isActive) (e.currentTarget as HTMLButtonElement).style.backgroundColor = isActive ? "var(--accent)" : "transparent"; }}
                 >
                   <span style={{ flex: 1 }}>{opt.label}</span>
-                  {isActive && <Check size={12} style={{ color: "var(--primary)", flexShrink: 0 }} />}
+                  {isActive && <Check size={13} style={{ color: "var(--primary)", flexShrink: 0 }} />}
                 </button>
               );
             })}
@@ -373,7 +378,7 @@ function EquipModal({ title, row, onClose, onSave, saving = false, driverOpts = 
                   </span>
                   <CustomSelect
                     value={form.driver_id ?? ""}
-                    options={[{ value: "", label: "Unassigned" }, ...driverOpts]}
+                    options={driverOpts}
                     onChange={(v) => set("driver_id", v)}
                     searchable
                   />
