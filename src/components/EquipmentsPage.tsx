@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Truck, Container, Plus, Pencil, Trash2, X, Check, Search, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, FileSpreadsheet, Upload, FileText } from "lucide-react";
+import { Truck, Container, Plus, Pencil, Trash2, X, Check, Search, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, FileSpreadsheet, Upload, FileText, AlertCircle } from "lucide-react";
 import { api } from "../lib/api";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -20,6 +20,32 @@ interface TrailerRow {
   make: string;
   model: string;
   vin: string;
+}
+
+// ─── Toast ────────────────────────────────────────────────────────────────────
+
+function Toast({ msg, type, onClose }: { msg: string; type: "success" | "error"; onClose: () => void }) {
+  useEffect(() => {
+    const t = setTimeout(onClose, 3500);
+    return () => clearTimeout(t);
+  }, []);
+  return (
+    <div style={{
+      position: "fixed", bottom: 24, right: 24, zIndex: 9999,
+      backgroundColor: type === "success" ? "#10B981" : "#EF4444",
+      color: "#fff", borderRadius: 8, padding: "10px 16px",
+      display: "flex", alignItems: "center", gap: 8,
+      boxShadow: "0 4px 20px rgba(0,0,0,0.18)",
+      fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 500,
+      animation: "slideUp 0.2s ease",
+    }}>
+      {type === "success" ? <Check size={15} /> : <AlertCircle size={15} />}
+      {msg}
+      <button onClick={onClose} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.75)", cursor: "pointer", display: "flex", padding: 0, marginLeft: 4 }}>
+        <X size={13} />
+      </button>
+    </div>
+  );
 }
 
 // ─── CustomSelect ─────────────────────────────────────────────────────────────
@@ -254,16 +280,28 @@ function EquipModal({ title, row, onClose, onSave, saving = false }: {
   saving?: boolean;
 }) {
   const [form, setForm] = useState<Partial<EquipRow>>(row);
+  const [touched, setTouched] = useState<Partial<Record<keyof EquipRow, boolean>>>({});
   const set = (k: keyof EquipRow, v: string) => setForm((f) => ({ ...f, [k]: v }));
+  const touch = (k: keyof EquipRow) => setTouched((t) => ({ ...t, [k]: true }));
   const isNew = !row.id;
 
-  const fields: [keyof EquipRow, string, boolean][] = [
-    ["unit",   "Unit #",  true],
-    ["driver", "Driver",  false],
-    ["make",   "Make",    false],
-    ["model",  "Model",   false],
-    ["vin",    "VIN",     true],
+  // [key, label, mono, required]
+  const fields: [keyof EquipRow, string, boolean, boolean][] = [
+    ["unit",   "Unit #",  false, true],
+    ["make",   "Make",    false, false],
+    ["model",  "Model",   false, false],
+    ["vin",    "VIN",     true,  false],
   ];
+
+  const handleSave = () => {
+    // Touch all required fields to show errors
+    const allTouched: Partial<Record<keyof EquipRow, boolean>> = {};
+    fields.forEach(([k, , , req]) => { if (req) allTouched[k] = true; });
+    setTouched(allTouched);
+    const hasErrors = fields.some(([k, , , req]) => req && !form[k]?.toString().trim());
+    if (hasErrors) return;
+    onSave(form as EquipRow);
+  };
 
   return (
     <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -273,25 +311,38 @@ function EquipModal({ title, row, onClose, onSave, saving = false }: {
           <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted-foreground)" }}><X size={16} /></button>
         </div>
         <div style={{ padding: "20px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-          {fields.map(([k, label, mono]) => (
-            <label key={k} style={{ display: "flex", flexDirection: "column", gap: 5, gridColumn: k === "vin" ? "1 / -1" : undefined }}>
-              <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600, color: "var(--muted-foreground)", textTransform: "uppercase", letterSpacing: "0.06em" }}>{label}</span>
-              <input
-                value={(form[k] as string) ?? ""}
-                onChange={(e) => set(k, e.target.value)}
-                style={{
-                  fontFamily: mono ? "var(--font-mono)" : "var(--font-sans)",
-                  fontSize: 13, padding: "7px 10px", borderRadius: 6,
-                  border: "1px solid var(--border)", backgroundColor: "var(--input-background)",
-                  color: "var(--foreground)", outline: "none", letterSpacing: mono ? "0.04em" : undefined,
-                }}
-              />
-            </label>
-          ))}
+          {fields.map(([k, label, mono, required]) => {
+            const isEmpty = required && touched[k] && !form[k]?.toString().trim();
+            return (
+              <label key={k} style={{ display: "flex", flexDirection: "column", gap: 5, gridColumn: k === "vin" ? "1 / -1" : undefined }}>
+                <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600, color: isEmpty ? "#EF4444" : "var(--muted-foreground)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                  {label}{required && <span style={{ color: "#EF4444", marginLeft: 2 }}>*</span>}
+                </span>
+                <input
+                  value={(form[k] as string) ?? ""}
+                  onChange={(e) => set(k, e.target.value)}
+                  onBlur={() => touch(k)}
+                  style={{
+                    fontFamily: mono ? "var(--font-mono)" : "var(--font-sans)",
+                    fontSize: 13, padding: "7px 10px", borderRadius: 6,
+                    border: `1px solid ${isEmpty ? "#EF4444" : "var(--border)"}`,
+                    backgroundColor: isEmpty ? "rgba(239,68,68,0.04)" : "var(--input-background)",
+                    color: "var(--foreground)", outline: "none",
+                    letterSpacing: mono ? "0.04em" : undefined,
+                    boxShadow: isEmpty ? "0 0 0 3px rgba(239,68,68,0.10)" : "none",
+                    transition: "border-color 0.15s, box-shadow 0.15s",
+                  }}
+                />
+                {isEmpty && (
+                  <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "#EF4444" }}>{label} is required</span>
+                )}
+              </label>
+            );
+          })}
         </div>
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, padding: "14px 20px", borderTop: "1px solid var(--border)" }}>
           <button onClick={onClose} style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 16px", borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "var(--muted)", color: "var(--foreground)", cursor: "pointer" }}>Cancel</button>
-          <button onClick={() => onSave(form as EquipRow)} disabled={saving} style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 16px", borderRadius: 6, border: "none", backgroundColor: "var(--primary)", color: "#fff", cursor: saving ? "not-allowed" : "pointer", opacity: saving ? 0.7 : 1, display: "flex", alignItems: "center", gap: 6 }}>
+          <button onClick={handleSave} disabled={saving} style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 16px", borderRadius: 6, border: "none", backgroundColor: "var(--primary)", color: "#fff", cursor: saving ? "not-allowed" : "pointer", opacity: saving ? 0.7 : 1, display: "flex", alignItems: "center", gap: 6 }}>
             <Check size={14} /> {saving ? "Saving…" : isNew ? "Create" : "Save Changes"}
           </button>
         </div>
@@ -556,6 +607,8 @@ function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
   const [page, setPage]           = useState(1);
   const [pageSize, setPageSize]   = useState(20);
   const [saving, setSaving]       = useState(false);
+  const [fetchKey, setFetchKey]   = useState(0);
+  const [toast, setToast]         = useState<{ type: "success" | "error"; msg: string } | null>(null);
 
   useEffect(() => {
     const t = setTimeout(() => { setDebouncedQ(search); setPage(1); }, 350);
@@ -576,7 +629,7 @@ function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [debouncedQ, page, pageSize]);
+  }, [debouncedQ, page, pageSize, fetchKey]);
 
   const openCreate = () => { setEditing({}); setModal("create"); };
   const openEdit   = (r: TruckRow) => { setEditing(r); setModal("edit"); };
@@ -586,17 +639,18 @@ function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
     setSaving(true);
     try {
       if (modal === "create") {
-        const created = await api.post<TruckRow>("/trucks", d);
+        await api.post<TruckRow>("/trucks", d);
         setModal(null);
-        // Refetch to get correct total
-        setPage(1); setDebouncedQ(""); setSearch("");
+        setFetchKey((k) => k + 1);
+        setToast({ type: "success", msg: "Truck created successfully" });
       } else {
         await api.put<TruckRow>(`/trucks/${d.id}`, d);
         setRows((prev) => prev.map((x) => (x.id === d.id ? { ...x, ...d } : x)));
         setModal(null);
+        setToast({ type: "success", msg: "Truck updated successfully" });
       }
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Save failed");
+      setToast({ type: "error", msg: e instanceof Error ? e.message : "Save failed" });
     } finally {
       setSaving(false);
     }
@@ -606,10 +660,10 @@ function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
     if (!deleting) return;
     try {
       await api.delete(`/trucks/${deleting.id}`);
-      setRows((prev) => prev.filter((x) => x.id !== deleting.id));
-      setTotal((t) => { const n = t - 1; onCountChange(n); return n; });
+      setFetchKey((k) => k + 1);
+      setToast({ type: "success", msg: `Truck ${deleting.unit} removed` });
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Delete failed");
+      setToast({ type: "error", msg: e instanceof Error ? e.message : "Delete failed" });
     }
     setDeleting(null);
   };
@@ -703,6 +757,7 @@ function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
       )}
       {deleting && <DeleteConfirm label={deleting.unit} onClose={() => setDeleting(null)} onConfirm={del} />}
       {importing && <ImportModal entityLabel="Truck" onClose={() => setImporting(false)} />}
+      {toast && <Toast type={toast.type} msg={toast.msg} onClose={() => setToast(null)} />}
     </>
   );
 }
@@ -723,6 +778,8 @@ function TrailersTab({ onCountChange }: { onCountChange: (n: number) => void }) 
   const [page, setPage]           = useState(1);
   const [pageSize, setPageSize]   = useState(20);
   const [saving, setSaving]       = useState(false);
+  const [fetchKey, setFetchKey]   = useState(0);
+  const [toast, setToast]         = useState<{ type: "success" | "error"; msg: string } | null>(null);
 
   useEffect(() => {
     const t = setTimeout(() => { setDebouncedQ(search); setPage(1); }, 350);
@@ -743,7 +800,7 @@ function TrailersTab({ onCountChange }: { onCountChange: (n: number) => void }) 
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [debouncedQ, page, pageSize]);
+  }, [debouncedQ, page, pageSize, fetchKey]);
 
   const openCreate = () => { setEditing({}); setModal("create"); };
   const openEdit   = (r: TrailerRow) => { setEditing(r); setModal("edit"); };
@@ -755,14 +812,16 @@ function TrailersTab({ onCountChange }: { onCountChange: (n: number) => void }) 
       if (modal === "create") {
         await api.post<TrailerRow>("/trailers", d);
         setModal(null);
-        setPage(1); setDebouncedQ(""); setSearch("");
+        setFetchKey((k) => k + 1);
+        setToast({ type: "success", msg: "Trailer created successfully" });
       } else {
         await api.put<TrailerRow>(`/trailers/${d.id}`, d);
         setRows((prev) => prev.map((x) => (x.id === d.id ? { ...x, ...d } : x)));
         setModal(null);
+        setToast({ type: "success", msg: "Trailer updated successfully" });
       }
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Save failed");
+      setToast({ type: "error", msg: e instanceof Error ? e.message : "Save failed" });
     } finally {
       setSaving(false);
     }
@@ -772,10 +831,10 @@ function TrailersTab({ onCountChange }: { onCountChange: (n: number) => void }) 
     if (!deleting) return;
     try {
       await api.delete(`/trailers/${deleting.id}`);
-      setRows((prev) => prev.filter((x) => x.id !== deleting.id));
-      setTotal((t) => { const n = t - 1; onCountChange(n); return n; });
+      setFetchKey((k) => k + 1);
+      setToast({ type: "success", msg: `Trailer ${deleting.unit} removed` });
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Delete failed");
+      setToast({ type: "error", msg: e instanceof Error ? e.message : "Delete failed" });
     }
     setDeleting(null);
   };
@@ -869,6 +928,7 @@ function TrailersTab({ onCountChange }: { onCountChange: (n: number) => void }) 
       )}
       {deleting && <DeleteConfirm label={deleting.unit} onClose={() => setDeleting(null)} onConfirm={del} />}
       {importing && <ImportModal entityLabel="Trailer" onClose={() => setImporting(false)} />}
+      {toast && <Toast type={toast.type} msg={toast.msg} onClose={() => setToast(null)} />}
     </>
   );
 }
@@ -879,16 +939,10 @@ type TabId = "trucks" | "trailers";
 
 export function EquipmentsPage() {
   const [tab, setTab] = useState<TabId>("trucks");
-  const [truckCount,   setTruckCount]   = useState(0);
-  const [trailerCount, setTrailerCount] = useState(0);
+  const [truckCount,   setTruckCount]   = useState<number | null>(null);
+  const [trailerCount, setTrailerCount] = useState<number | null>(null);
 
-  // Fetch both counts immediately so tab badges are populated on first render
-  useEffect(() => {
-    api.getList("/trucks",   { limit: 1 }).then(({ total }) => setTruckCount(total)).catch(() => {});
-    api.getList("/trailers", { limit: 1 }).then(({ total }) => setTrailerCount(total)).catch(() => {});
-  }, []);
-
-  const tabs: { id: TabId; label: string; count: number; icon: React.ReactNode; color: string; bg: string }[] = [
+  const tabs: { id: TabId; label: string; count: number | null; icon: React.ReactNode; color: string; bg: string }[] = [
     { id: "trucks",   label: "Trucks",   count: truckCount,   icon: <Truck     size={15} />, color: "#1D4ED8", bg: "#DBEAFE" },
     { id: "trailers", label: "Trailers", count: trailerCount, icon: <Container size={15} />, color: "#5B21B6", bg: "#EDE9FE" },
   ];
@@ -918,14 +972,26 @@ export function EquipmentsPage() {
             >
               <span style={{ opacity: active ? 1 : 0.55 }}>{t.icon}</span>
               {t.label}
-              <span style={{
-                fontFamily: "var(--font-mono)", fontSize: 10, fontWeight: 700,
-                color: active ? t.color : "var(--muted-foreground)",
-                backgroundColor: active ? t.bg : "var(--muted)",
-                borderRadius: 10, padding: "1px 7px",
-              }}>
-                {t.count}
-              </span>
+              {t.count !== null ? (
+                <span style={{
+                  fontFamily: "var(--font-mono)", fontSize: 10, fontWeight: 700,
+                  color: active ? t.color : "var(--muted-foreground)",
+                  backgroundColor: active ? t.bg : "var(--muted)",
+                  borderRadius: 10, padding: "1px 7px",
+                }}>
+                  {t.count}
+                </span>
+              ) : (
+                <span style={{
+                  fontFamily: "var(--font-sans)", fontSize: 9, fontWeight: 600,
+                  color: "#D97706", backgroundColor: "#FEF3C7",
+                  border: "1px solid #FDE68A",
+                  borderRadius: 10, padding: "1px 6px", letterSpacing: "0.04em",
+                  textTransform: "uppercase",
+                }}>
+                  pending
+                </span>
+              )}
             </button>
           );
         })}
