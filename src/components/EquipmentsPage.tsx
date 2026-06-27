@@ -295,10 +295,10 @@ function EquipModal({ title, row, onClose, onSave, saving = false }: {
   // [key, label, mono, required, backendPending]
   const fields: [keyof EquipRow, string, boolean, boolean, boolean][] = [
     ["unit",   "Unit #",  false, true,  false],
+    ["driver", "Driver",  false, false, true],
     ["make",   "Make",    false, false, false],
     ["model",  "Model",   false, false, false],
     ["vin",    "VIN",     true,  false, false],
-    ["driver", "Driver",  false, false, true],
   ];
 
   const handleSave = () => {
