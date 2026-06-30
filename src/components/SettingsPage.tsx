@@ -1084,10 +1084,9 @@ function TeamsTab({ users }: { users: User[] }) {
 
 // ─── ROLES & PERMISSIONS TAB ─────────────────────────────────────────────────
 
-function RoleModal({ role, catalog, onClose, onSave }: {
-  role: Partial<Role>; catalog: string[]; onClose: () => void; onSave: (r: Role) => void;
+function RoleModal({ role, entries: catalogEntries, onClose, onSave }: {
+  role: Partial<Role>; entries: { page: string; actions: string[] }[]; onClose: () => void; onSave: (r: Role) => void;
 }) {
-  const catalogEntries = parseCatalog(catalog);
   const allActions = [...new Set(catalogEntries.flatMap((e) => e.actions))].sort(
     (a, b) => (ACTION_ORDER.indexOf(a) + 1 || 99) - (ACTION_ORDER.indexOf(b) + 1 || 99)
   );
@@ -1228,7 +1227,7 @@ function RolesTab({ onRolesChange }: { onRolesChange: (roles: Role[]) => void })
     const companyId = getCompanyId();
     api.get<any>(`/owner/companies/${companyId}/catalog`)
       .then((raw) => setCatalog(normalizeCatalog(raw)))
-      .catch(() => {});
+      .catch(() => setCatalog([]));
   }, []);
 
   useEffect(() => {
@@ -1273,6 +1272,14 @@ function RolesTab({ onRolesChange }: { onRolesChange: (roles: Role[]) => void })
     }
   };
 
+  // If catalog fetch failed/empty, derive pages from loaded roles + assume full CRUD
+  const effectiveEntries: { page: string; actions: string[] }[] = parseCatalog(catalog).length > 0
+    ? parseCatalog(catalog)
+    : [...new Set(roles.flatMap((r) => Object.keys(r.permissions)))].map((page) => ({
+        page,
+        actions: ACTION_ORDER,
+      }));
+
   return (
     <>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 20px", borderBottom: "1px solid var(--border)", backgroundColor: "var(--card)", flexShrink: 0 }}>
@@ -1289,13 +1296,13 @@ function RolesTab({ onRolesChange }: { onRolesChange: (roles: Role[]) => void })
           <thead>
             <tr>
               <TH width={150}>Role Name</TH>
-              {parseCatalog(catalog).map(({ page }) => <TH key={page} width={140} align="center" style={{ textTransform: "capitalize" }}>{page}</TH>)}
+              {effectiveEntries.map(({ page }) => <TH key={page} width={140} align="center" style={{ textTransform: "capitalize" }}>{page}</TH>)}
               <TH width={90} align="center">Actions</TH>
             </tr>
           </thead>
           <tbody>
             {loading && (
-              <tr><td colSpan={parseCatalog(catalog).length + 2} style={{ padding: "32px 24px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>Loading…</td></tr>
+              <tr><td colSpan={effectiveEntries.length + 2} style={{ padding: "32px 24px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>Loading…</td></tr>
             )}
             {!loading && roles.map((r, i) => {
               const isEven = i % 2 === 0;
@@ -1304,7 +1311,6 @@ function RolesTab({ onRolesChange }: { onRolesChange: (roles: Role[]) => void })
                 Dispatcher: { color: "#5B21B6", bg: "#EDE9FE" },
               };
               const rc = ROLE_COLOR[r.name] ?? { color: "#374151", bg: "#F3F4F6" };
-              const catalogEntries = parseCatalog(catalog);
               return (
                 <tr key={r.id} style={{ backgroundColor: isEven ? "var(--card)" : "var(--background)" }}
                   onMouseEnter={(e) => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = "rgba(59,130,246,0.03)"; }}
@@ -1313,7 +1319,7 @@ function RolesTab({ onRolesChange }: { onRolesChange: (roles: Role[]) => void })
                   <td style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", verticalAlign: "middle" }}>
                     <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: 700, color: rc.color, backgroundColor: rc.bg, borderRadius: 4, padding: "3px 10px" }}>{r.name}</span>
                   </td>
-                  {catalogEntries.map(({ page, actions }) => {
+                  {effectiveEntries.map(({ page, actions }) => {
                     const perms = r.permissions[page] ?? {};
                     return (
                       <td key={page} style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", verticalAlign: "middle" }}>
@@ -1351,7 +1357,7 @@ function RolesTab({ onRolesChange }: { onRolesChange: (roles: Role[]) => void })
       </div>
 
       {(modal === "create" || modal === "edit") && (
-        <RoleModal role={editing} catalog={catalog} onClose={() => setModal(null)} onSave={(r) => { void save(r); }} />
+        <RoleModal role={editing} entries={effectiveEntries} onClose={() => setModal(null)} onSave={(r) => { void save(r); }} />
       )}
       {deleting && <DeleteConfirm label={deleting.name} onClose={() => setDeleting(null)} onConfirm={() => confirmDelete(deleting)} />}
       {saving && <div style={{ position: "fixed", inset: 0, zIndex: 200 }} />}
