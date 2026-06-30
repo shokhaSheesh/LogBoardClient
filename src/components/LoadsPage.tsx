@@ -7,7 +7,7 @@ import {
   ArrowLeft, ArrowRight, Building2, User, DollarSign, Clock, History, CalendarDays, Navigation,
 } from "lucide-react";
 import { Status, STATUS_CONFIG as SHARED_STATUS_CONFIG, ALL_STATUSES as SHARED_ALL_STATUSES } from "../lib/statuses";
-import { api } from "../lib/api";
+import { api, getCompanyId } from "../lib/api";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -32,6 +32,7 @@ interface Load {
   payout: number;
   totalMiles: number;
   dispatcher: string;
+  dispatcher_id: string;
 }
 
 interface BackendLoad {
@@ -47,6 +48,8 @@ interface BackendLoad {
   miles: number;
   broker?: string;
   stops?: Stop[];
+  dispatcher_id?: string;
+  dispatcher?: string;
 }
 
 // ─── Config ───────────────────────────────────────────────────────────────────
@@ -79,7 +82,8 @@ function toLoad(b: BackendLoad, drivers: { id: string; name: string }[]): Load {
     payout: b.payout ?? 0,
     totalMiles: b.miles ?? 0,
     stops: b.stops,
-    dispatcher: "",
+    dispatcher: b.dispatcher ?? "",
+    dispatcher_id: b.dispatcher_id ?? "",
   };
 }
 
@@ -96,6 +100,7 @@ function toBackend(l: Partial<Load>): Partial<BackendLoad> {
     miles: l.totalMiles ?? 0,
     broker: l.broker,
     stops: l.stops,
+    dispatcher_id: l.dispatcher_id || undefined,
   };
 }
 
@@ -761,9 +766,9 @@ function ordinal(n: number): string {
 
 // ─── Modal ────────────────────────────────────────────────────────────────────
 
-function LoadModal({ load, onClose, onSave, driverOpts = [], saving = false }: {
+function LoadModal({ load, onClose, onSave, driverOpts = [], dispatcherOpts = [], saving = false }: {
   load: Partial<Load>; onClose: () => void; onSave: (l: Load) => void;
-  driverOpts?: SelectOpt[]; saving?: boolean;
+  driverOpts?: SelectOpt[]; dispatcherOpts?: SelectOpt[]; saving?: boolean;
 }) {
   const [form, setForm] = useState<Partial<Load>>(load);
   const set = <K extends keyof Load>(k: K, v: Load[K]) => setForm((f) => ({ ...f, [k]: v }));
@@ -847,8 +852,8 @@ function LoadModal({ load, onClose, onSave, driverOpts = [], saving = false }: {
             </label>
           </div>
 
-          {/* Driver + Status (status hidden on create) */}
-          <div style={{ display: "grid", gridTemplateColumns: isNew ? "1fr" : "1fr 1fr", gap: 14 }}>
+          {/* Driver + Dispatcher */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
             <label style={labelStyle}>
               <span style={capStyle}>Driver</span>
               <SearchableSelect
@@ -859,13 +864,25 @@ function LoadModal({ load, onClose, onSave, driverOpts = [], saving = false }: {
                 icon={<User size={13} />}
               />
             </label>
-            {!isNew && (
-              <label style={labelStyle}>
-                <span style={capStyle}>Status</span>
-                <CustomSelect value={form.status ?? "reserved"} options={STATUS_MODAL_OPTS} onChange={(v) => set("status", v as Status)} />
-              </label>
-            )}
+            <label style={labelStyle}>
+              <span style={capStyle}>Dispatcher</span>
+              <SearchableSelect
+                value={form.dispatcher_id ?? ""}
+                options={dispatcherOpts}
+                onChange={(v) => set("dispatcher_id", v)}
+                placeholder="Select dispatcher…"
+                icon={<User size={13} />}
+              />
+            </label>
           </div>
+
+          {/* Status (hidden on create) */}
+          {!isNew && (
+            <label style={labelStyle}>
+              <span style={capStyle}>Status</span>
+              <CustomSelect value={form.status ?? "reserved"} options={STATUS_MODAL_OPTS} onChange={(v) => set("status", v as Status)} />
+            </label>
+          )}
 
           {/* Payout + Miles */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
@@ -1023,9 +1040,7 @@ function LoadDetail({ load, onBack }: { load: Load; onBack: () => void }) {
     {
       icon: <User size={13} />,
       label: "Dispatcher",
-      value: <span style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "var(--muted-foreground)", fontStyle: "italic" }}>
-        —<span style={{ fontSize: 8, fontWeight: 700, color: "#D97706", backgroundColor: "#FEF3C7", borderRadius: 4, padding: "2px 5px", letterSpacing: "0.04em" }}>backend pending</span>
-      </span>,
+      value: load.dispatcher || <span style={{ color: "var(--muted-foreground)" }}>—</span>,
     },
     {
       icon: <DollarSign size={13} />,
@@ -1268,6 +1283,7 @@ export function LoadsPage() {
   const [total, setTotal]           = useState(0);
   const [driverList, setDriverList] = useState<{ id: string; name: string }[] | null>(null);
   const [driverOpts, setDriverOpts] = useState<SelectOpt[]>([]);
+  const [dispatcherOpts, setDispatcherOpts] = useState<SelectOpt[]>([]);
   const [loading, setLoading]       = useState(true);
   const [fetchKey, setFetchKey]     = useState(0);
   const [modal, setModal]           = useState<"create" | "edit" | null>(null);
@@ -1296,13 +1312,16 @@ export function LoadsPage() {
   useEffect(() => { setPage(1); }, [filterStatus]);
 
   useEffect(() => {
-    api.get<any[]>("/drivers")
-      .then((drivers) => {
-        const list = (drivers ?? []).map((d: any) => ({ id: d.id as string, name: (d.name ?? d.name1 ?? d.id) as string }));
-        setDriverList(list);
-        setDriverOpts(list.map((d) => ({ value: d.id, label: d.name })));
-      })
-      .catch(() => {});
+    const companyId = getCompanyId();
+    Promise.all([
+      api.get<any[]>("/drivers"),
+      api.get<any[]>(`/owner/companies/${companyId}/users`).catch(() => []),
+    ]).then(([drivers, users]) => {
+      const list = (drivers ?? []).map((d: any) => ({ id: d.id as string, name: (d.name ?? d.name1 ?? d.id) as string }));
+      setDriverList(list);
+      setDriverOpts(list.map((d) => ({ value: d.id, label: d.name })));
+      setDispatcherOpts((users ?? []).map((u: any) => ({ value: u.id, label: u.full_name ?? u.login ?? u.id })));
+    }).catch(() => { setDriverList([]); });
   }, []);
 
   useEffect(() => {
@@ -1631,7 +1650,7 @@ export function LoadsPage() {
       </div>
 
       {(modal === "create" || modal === "edit") && (
-        <LoadModal load={editing} onClose={() => setModal(null)} onSave={save} driverOpts={driverOpts} saving={saving} />
+        <LoadModal load={editing} onClose={() => setModal(null)} onSave={save} driverOpts={driverOpts} dispatcherOpts={dispatcherOpts} saving={saving} />
       )}
       {deleting && (
         <DeleteConfirm label={deleting.loadId} onClose={() => setDeleting(null)} onConfirm={del} />
