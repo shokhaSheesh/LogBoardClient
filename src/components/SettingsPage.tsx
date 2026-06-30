@@ -60,7 +60,7 @@ interface BackendUser {
 interface BackendRole {
   id: string;
   name: string;
-  permissions?: Record<string, Record<string, boolean>>;
+  permissions?: string[] | Record<string, Record<string, boolean>>;
 }
 
 function emptyPerms(): Permissions {
@@ -102,11 +102,24 @@ function fromUser(u: Partial<User>, isNew: boolean): Record<string, unknown> {
 
 function toRole(b: BackendRole): Role {
   const perms = emptyPerms();
-  if (b.permissions) {
-    for (const [page, actions] of Object.entries(b.permissions)) {
+  if (Array.isArray(b.permissions)) {
+    // Backend format: ["board.read", "loads.create", ...]
+    for (const perm of b.permissions) {
+      const dot = perm.lastIndexOf(".");
+      if (dot === -1) continue;
+      const page = perm.slice(0, dot);
+      const action = perm.slice(dot + 1);
+      const pageName = PAGES.find((p) => p.toLowerCase() === page.toLowerCase());
+      if (pageName) {
+        const key = action === "view" ? "read" : action === "edit" ? "update" : action as CRUDKey;
+        if (key in perms[pageName]) perms[pageName][key as CRUDKey] = true;
+      }
+    }
+  } else if (b.permissions && typeof b.permissions === "object") {
+    for (const [page, actions] of Object.entries(b.permissions as Record<string, Record<string, boolean>>)) {
       const k = page as PageName;
       if (k in perms) {
-        perms[k].read   = !!(actions.read   || actions.view);
+        perms[k].read   = !!(actions.read || actions.view);
         perms[k].create = !!actions.create;
         perms[k].update = !!(actions.update || actions.edit);
         perms[k].delete = !!actions.delete;
@@ -117,7 +130,15 @@ function toRole(b: BackendRole): Role {
 }
 
 function fromRole(r: Partial<Role>): Record<string, unknown> {
-  return { name: r.name, permissions: r.permissions };
+  const permissions: string[] = [];
+  if (r.permissions) {
+    for (const [page, actions] of Object.entries(r.permissions)) {
+      for (const [action, enabled] of Object.entries(actions)) {
+        if (enabled) permissions.push(`${page.toLowerCase()}.${action}`);
+      }
+    }
+  }
+  return { name: r.name, permissions };
 }
 
 // ─── Seed data (Teams only — Users and Roles are API-backed) ─────────────────
