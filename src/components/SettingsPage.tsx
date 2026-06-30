@@ -422,9 +422,9 @@ function DeleteConfirm({ label, onClose, onConfirm }: { label: string; onClose: 
 
 // ─── USERS TAB ────────────────────────────────────────────────────────────────
 
-function UserModal({ user, roles, teams, onClose, onSave }: {
+function UserModal({ user, roles, teams, saving, onClose, onSave }: {
   user: Partial<User>; roles: Role[]; teams: Team[];
-  onClose: () => void; onSave: (u: User) => void;
+  saving?: boolean; onClose: () => void; onSave: (u: User) => void;
 }) {
   const [form, setForm] = useState<Partial<User>>(user);
   const [showPass, setShowPass] = useState(false);
@@ -550,8 +550,9 @@ function UserModal({ user, roles, teams, onClose, onSave }: {
         {/* Footer */}
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, padding: "14px 20px", borderTop: "1px solid var(--border)", borderRadius: "0 0 12px 12px", flexShrink: 0 }}>
           <button onClick={onClose} style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 16px", borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "var(--muted)", color: "var(--foreground)", cursor: "pointer" }}>Cancel</button>
-          <button onClick={handleSave} style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 16px", borderRadius: 6, border: "none", backgroundColor: "var(--primary)", color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
-            <Check size={14} /> {isNew ? "Create User" : "Save Changes"}
+          <button onClick={handleSave} disabled={saving} style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 16px", borderRadius: 6, border: "none", backgroundColor: "var(--primary)", color: "#fff", cursor: saving ? "not-allowed" : "pointer", opacity: saving ? 0.75 : 1, display: "flex", alignItems: "center", gap: 6 }}>
+            {saving ? <span style={{ width: 14, height: 14, borderRadius: "50%", border: "2px solid rgba(255,255,255,0.35)", borderTopColor: "#fff", animation: "spin 0.7s linear infinite", display: "inline-block" }} /> : <Check size={14} />}
+            {saving ? (isNew ? "Creating…" : "Saving…") : (isNew ? "Create User" : "Save Changes")}
           </button>
         </div>
       </div>
@@ -742,7 +743,7 @@ function UsersTab({ roles, teams }: { roles: Role[]; teams: Team[] }) {
       />
 
       {(modal === "create" || modal === "edit") && (
-        <UserModal user={editing} roles={roles} teams={teams} onClose={() => setModal(null)} onSave={(u) => { void save(u); }} />
+        <UserModal user={editing} roles={roles} teams={teams} saving={saving} onClose={() => setModal(null)} onSave={(u) => { void save(u); }} />
       )}
       {deleting && <DeleteConfirm label={deleting.name} onClose={() => setDeleting(null)} onConfirm={() => confirmDelete(deleting)} />}
       {saving && <div style={{ position: "fixed", inset: 0, zIndex: 200 }} />}
@@ -1084,8 +1085,8 @@ function TeamsTab({ users }: { users: User[] }) {
 
 // ─── ROLES & PERMISSIONS TAB ─────────────────────────────────────────────────
 
-function RoleModal({ role, entries: catalogEntries, onClose, onSave }: {
-  role: Partial<Role>; entries: { page: string; actions: string[] }[]; onClose: () => void; onSave: (r: Role) => void;
+function RoleModal({ role, entries: catalogEntries, saving, onClose, onSave }: {
+  role: Partial<Role>; entries: { page: string; actions: string[] }[]; saving?: boolean; onClose: () => void; onSave: (r: Role) => void;
 }) {
   const allActions = [...new Set(catalogEntries.flatMap((e) => e.actions))].sort(
     (a, b) => (ACTION_ORDER.indexOf(a) + 1 || 99) - (ACTION_ORDER.indexOf(b) + 1 || 99)
@@ -1195,8 +1196,9 @@ function RoleModal({ role, entries: catalogEntries, onClose, onSave }: {
         </div>
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, padding: "14px 20px", borderTop: "1px solid var(--border)", flexShrink: 0 }}>
           <button onClick={onClose} style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 16px", borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "var(--muted)", color: "var(--foreground)", cursor: "pointer" }}>Cancel</button>
-          <button onClick={() => onSave(form as Role)} style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 16px", borderRadius: 6, border: "none", backgroundColor: "var(--primary)", color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
-            <Check size={14} /> {isNew ? "Create Role" : "Save Changes"}
+          <button onClick={() => onSave(form as Role)} disabled={saving} style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 16px", borderRadius: 6, border: "none", backgroundColor: "var(--primary)", color: "#fff", cursor: saving ? "not-allowed" : "pointer", opacity: saving ? 0.75 : 1, display: "flex", alignItems: "center", gap: 6 }}>
+            {saving ? <span style={{ width: 14, height: 14, borderRadius: "50%", border: "2px solid rgba(255,255,255,0.35)", borderTopColor: "#fff", animation: "spin 0.7s linear infinite", display: "inline-block" }} /> : <Check size={14} />}
+            {saving ? (isNew ? "Creating…" : "Saving…") : (isNew ? "Create Role" : "Save Changes")}
           </button>
         </div>
       </div>
@@ -1357,7 +1359,7 @@ function RolesTab({ onRolesChange }: { onRolesChange: (roles: Role[]) => void })
       </div>
 
       {(modal === "create" || modal === "edit") && (
-        <RoleModal role={editing} entries={effectiveEntries} onClose={() => setModal(null)} onSave={(r) => { void save(r); }} />
+        <RoleModal role={editing} entries={effectiveEntries} saving={saving} onClose={() => setModal(null)} onSave={(r) => { void save(r); }} />
       )}
       {deleting && <DeleteConfirm label={deleting.name} onClose={() => setDeleting(null)} onConfirm={() => confirmDelete(deleting)} />}
       {saving && <div style={{ position: "fixed", inset: 0, zIndex: 200 }} />}
