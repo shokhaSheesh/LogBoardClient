@@ -378,7 +378,7 @@ function EquipModal({ title, row, onClose, onSave, saving = false, driverOpts = 
                   </span>
                   <CustomSelect
                     value={form.driver_id ?? ""}
-                    options={driverOpts}
+                    options={[{ value: "", label: "— None —" }, ...driverOpts]}
                     onChange={(v) => set("driver_id", v)}
                     searchable
                   />
@@ -698,7 +698,7 @@ function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
     api.getList<TruckRow>("/trucks", {
       q: debouncedQ || undefined,
       page,
-      limit: pageSize,
+      page_size: pageSize,
     })
       .then(({ items, total: t }) => {
         setRows(items);
@@ -714,15 +714,16 @@ function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
 
   const save = async (r: EquipRow) => {
     const d = r as TruckRow;
+    const payload = { ...d, driver_id: d.driver_id || null };
     setSaving(true);
     try {
       if (modal === "create") {
-        await api.post<TruckRow>("/trucks", d);
+        await api.post<TruckRow>("/trucks", payload);
         setModal(null);
         setFetchKey((k) => k + 1);
         setToast({ type: "success", msg: "Truck created successfully" });
       } else {
-        await api.put<TruckRow>(`/trucks/${d.id}`, d);
+        await api.put<TruckRow>(`/trucks/${d.id}`, payload);
         setModal(null);
         setFetchKey((k) => k + 1);
         setToast({ type: "success", msg: "Truck updated successfully" });
@@ -770,9 +771,6 @@ function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
               }}
             />
           </div>
-          <span style={{ fontSize: 9, fontWeight: 700, color: "#D97706", backgroundColor: "#FEF3C7", border: "1px solid #FDE68A", borderRadius: 4, padding: "2px 6px", letterSpacing: "0.04em", textTransform: "uppercase", whiteSpace: "nowrap" }}>
-            backend pending
-          </span>
         </div>
         <AddMenu entityLabel="Truck" onManual={openCreate} onImport={() => setImporting(true)} />
       </div>
@@ -833,7 +831,7 @@ function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
         )}
       </div>
 
-      <Pagination total={total} page={page} pageSize={pageSize} onPage={setPage} onPageSize={(s) => { setPageSize(s); setPage(1); }} totalPending />
+      <Pagination total={total} page={page} pageSize={pageSize} onPage={setPage} onPageSize={(s) => { setPageSize(s); setPage(1); }} />
 
       {(modal === "create" || modal === "edit") && (
         <EquipModal title={modal === "create" ? "Add Truck" : "Edit Truck"} row={editing} onClose={() => setModal(null)} onSave={save} saving={saving} driverOpts={driverOpts} />
@@ -881,7 +879,7 @@ function TrailersTab({ onCountChange }: { onCountChange: (n: number) => void }) 
     api.getList<TrailerRow>("/trailers", {
       q: debouncedQ || undefined,
       page,
-      limit: pageSize,
+      page_size: pageSize,
     })
       .then(({ items, total: t }) => {
         setRows(items);
@@ -897,15 +895,16 @@ function TrailersTab({ onCountChange }: { onCountChange: (n: number) => void }) 
 
   const save = async (r: EquipRow) => {
     const d = r as TrailerRow;
+    const payload = { ...d, driver_id: d.driver_id || null };
     setSaving(true);
     try {
       if (modal === "create") {
-        await api.post<TrailerRow>("/trailers", d);
+        await api.post<TrailerRow>("/trailers", payload);
         setModal(null);
         setFetchKey((k) => k + 1);
         setToast({ type: "success", msg: "Trailer created successfully" });
       } else {
-        await api.put<TrailerRow>(`/trailers/${d.id}`, d);
+        await api.put<TrailerRow>(`/trailers/${d.id}`, payload);
         setModal(null);
         setFetchKey((k) => k + 1);
         setToast({ type: "success", msg: "Trailer updated successfully" });
@@ -953,9 +952,6 @@ function TrailersTab({ onCountChange }: { onCountChange: (n: number) => void }) 
               }}
             />
           </div>
-          <span style={{ fontSize: 9, fontWeight: 700, color: "#D97706", backgroundColor: "#FEF3C7", border: "1px solid #FDE68A", borderRadius: 4, padding: "2px 6px", letterSpacing: "0.04em", textTransform: "uppercase", whiteSpace: "nowrap" }}>
-            backend pending
-          </span>
         </div>
         <AddMenu entityLabel="Trailer" onManual={openCreate} onImport={() => setImporting(true)} />
       </div>
@@ -1016,7 +1012,7 @@ function TrailersTab({ onCountChange }: { onCountChange: (n: number) => void }) 
         )}
       </div>
 
-      <Pagination total={total} page={page} pageSize={pageSize} onPage={setPage} onPageSize={(s) => { setPageSize(s); setPage(1); }} totalPending />
+      <Pagination total={total} page={page} pageSize={pageSize} onPage={setPage} onPageSize={(s) => { setPageSize(s); setPage(1); }} />
 
       {(modal === "create" || modal === "edit") && (
         <EquipModal title={modal === "create" ? "Add Trailer" : "Edit Trailer"} row={editing} onClose={() => setModal(null)} onSave={save} saving={saving} driverOpts={driverOpts} />
@@ -1067,7 +1063,7 @@ export function EquipmentsPage() {
             >
               <span style={{ opacity: active ? 1 : 0.55 }}>{t.icon}</span>
               {t.label}
-              {t.count !== null ? (
+              {t.count !== null && (
                 <span style={{
                   fontFamily: "var(--font-mono)", fontSize: 10, fontWeight: 700,
                   color: active ? t.color : "var(--muted-foreground)",
@@ -1075,16 +1071,6 @@ export function EquipmentsPage() {
                   borderRadius: 10, padding: "1px 7px",
                 }}>
                   {t.count}
-                </span>
-              ) : (
-                <span style={{
-                  fontFamily: "var(--font-sans)", fontSize: 9, fontWeight: 600,
-                  color: "#D97706", backgroundColor: "#FEF3C7",
-                  border: "1px solid #FDE68A",
-                  borderRadius: 10, padding: "1px 6px", letterSpacing: "0.04em",
-                  textTransform: "uppercase",
-                }}>
-                  pending
                 </span>
               )}
             </button>
@@ -1095,8 +1081,12 @@ export function EquipmentsPage() {
       {/* Content with padding + card */}
       <div style={{ flex: 1, overflow: "hidden", padding: "20px 24px", display: "flex", flexDirection: "column" }}>
         <div style={{ flex: 1, display: "flex", flexDirection: "column", backgroundColor: "var(--card)", borderRadius: 12, overflow: "hidden", border: "1px solid var(--border)" }}>
-          {tab === "trucks"   && <TrucksTab   onCountChange={setTruckCount} />}
-          {tab === "trailers" && <TrailersTab onCountChange={setTrailerCount} />}
+          <div style={{ display: tab === "trucks" ? "contents" : "none" }}>
+            <TrucksTab onCountChange={setTruckCount} />
+          </div>
+          <div style={{ display: tab === "trailers" ? "contents" : "none" }}>
+            <TrailersTab onCountChange={setTrailerCount} />
+          </div>
         </div>
       </div>
     </div>
