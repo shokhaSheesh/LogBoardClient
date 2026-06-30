@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { Status, STATUS_CONFIG as SHARED_STATUS_CONFIG, ALL_STATUSES as SHARED_ALL_STATUSES } from "../lib/statuses";
 import { api, getCompanyId } from "../lib/api";
+import { CityAutocomplete } from "./CityAutocomplete";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -924,11 +925,12 @@ function LoadModal({ load, onClose, onSave, driverOpts = [], dispatcherOpts = []
                           {ordinal(idx + 1)} Stop
                           {(isFirst || isLast) && <span style={{ color: "#EF4444", marginLeft: 2 }}>*</span>}
                         </div>
-                        <input
+                        <CityAutocomplete
                           value={stop.city}
-                          onChange={(e) => updateCity(idx, e.target.value)}
-                          style={inputStyle} placeholder="City, ST"
-                          onFocus={focusInput} onBlur={blurInput}
+                          onChange={(v) => updateCity(idx, v)}
+                          style={inputStyle}
+                          onFocus={focusInput}
+                          onBlur={blurInput}
                         />
                       </div>
 
