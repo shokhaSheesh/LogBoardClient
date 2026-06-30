@@ -62,6 +62,7 @@ interface BackendRole {
 function parseCatalog(perms: string[]): { page: string; actions: string[] }[] {
   const map = new Map<string, string[]>();
   for (const p of perms) {
+    if (typeof p !== "string") continue;
     const dot = p.lastIndexOf(".");
     if (dot === -1) continue;
     const page = p.slice(0, dot);
@@ -70,6 +71,30 @@ function parseCatalog(perms: string[]): { page: string; actions: string[] }[] {
     map.get(page)!.push(action);
   }
   return [...map.entries()].map(([page, actions]) => ({ page, actions }));
+}
+
+function normalizeCatalog(raw: unknown): string[] {
+  if (!raw) return [];
+  if (Array.isArray(raw)) {
+    // string[] — ideal case
+    const strings = raw.filter((x) => typeof x === "string") as string[];
+    if (strings.length > 0) return strings;
+    // array of objects like { name: "board.read" } or { resource, action }
+    return raw.flatMap((x: any) => {
+      if (typeof x !== "object" || x === null) return [];
+      if (typeof x.name === "string") return [x.name];
+      if (typeof x.resource === "string" && typeof x.action === "string")
+        return [`${x.resource}.${x.action}`];
+      return [];
+    });
+  }
+  if (typeof raw === "object") {
+    // { "board": ["read","create"], "gross": ["read"] }
+    return Object.entries(raw as Record<string, unknown>).flatMap(([page, actions]) =>
+      Array.isArray(actions) ? (actions as string[]).map((a: string) => `${page}.${a}`) : []
+    );
+  }
+  return [];
 }
 
 function toUser(b: BackendUser): User {
@@ -1200,10 +1225,7 @@ function RolesTab({ onRolesChange }: { onRolesChange: (roles: Role[]) => void })
   useEffect(() => {
     const companyId = getCompanyId();
     api.get<any>(`/owner/companies/${companyId}/catalog`)
-      .then((raw) => {
-        const perms: string[] = Array.isArray(raw) ? raw : (raw?.permissions ?? raw?.data ?? []);
-        setCatalog(perms);
-      })
+      .then((raw) => setCatalog(normalizeCatalog(raw)))
       .catch(() => {});
   }, []);
 
