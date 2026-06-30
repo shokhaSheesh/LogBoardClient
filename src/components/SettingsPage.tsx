@@ -428,8 +428,15 @@ function UserModal({ user, roles, teams, saving, onClose, onSave }: {
 }) {
   const [form, setForm] = useState<Partial<User>>(user);
   const [showPass, setShowPass] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
   const set = <K extends keyof User>(k: K, v: User[K]) => setForm((f) => ({ ...f, [k]: v }));
   const isNew = !user.id;
+
+  const req = (label: string) => (
+    <span style={capStyle}>{label} <span style={{ color: "#EF4444" }}>*</span></span>
+  );
+  const errBorder = (val: string | undefined) =>
+    submitted && !val?.trim() ? "1px solid #EF4444" : undefined;
 
   const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
   const dayOpts = DAYS.map((d) => ({ value: d, label: d }));
@@ -448,7 +455,12 @@ function UserModal({ user, roles, teams, saving, onClose, onSave }: {
   const teamOpts  = [{ value: "", label: "No Team" }, ...teams.map((t) => ({ value: t.id, label: t.name }))];
   const statusOpts = [{ value: "Active", label: "Active" }, { value: "Inactive", label: "Inactive" }];
 
-  const handleSave = () => onSave({ ...form, workDays: `${dayFrom}–${dayTo}` } as User);
+  const handleSave = () => {
+    setSubmitted(true);
+    const missing = !form.name?.trim() || !form.login?.trim() || !form.roleId || (isNew && !form.password?.trim());
+    if (missing) return;
+    onSave({ ...form, workDays: `${dayFrom}–${dayTo}` } as User);
+  };
 
   return (
     <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -463,8 +475,8 @@ function UserModal({ user, roles, teams, saving, onClose, onSave }: {
         <div style={{ padding: 20, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, overflowY: "auto" }}>
           {/* Name */}
           <label style={fieldStyle}>
-            <span style={capStyle}>Full Name</span>
-            <input value={form.name ?? ""} onChange={(e) => set("name", e.target.value)} style={inputStyle} />
+            {req("Full Name")}
+            <input value={form.name ?? ""} onChange={(e) => set("name", e.target.value)} style={{ ...inputStyle, border: errBorder(form.name) ?? inputStyle.border }} />
           </label>
           {/* Phone */}
           <label style={fieldStyle}>
@@ -494,7 +506,7 @@ function UserModal({ user, roles, teams, saving, onClose, onSave }: {
 
           {/* Role */}
           <div style={fieldStyle}>
-            <span style={capStyle}>Role</span>
+            {req("Role")}
             <CustomSelect
               value={form.roleId ?? roles[0]?.id ?? ""}
               options={roleOpts}
@@ -513,20 +525,20 @@ function UserModal({ user, roles, teams, saving, onClose, onSave }: {
             />
           </div>
 
-          {/* Login */}
+          {/* Email */}
           <label style={fieldStyle}>
-            <span style={capStyle}>Email</span>
-            <input value={form.login ?? ""} onChange={(e) => set("login", e.target.value)} style={{ ...inputStyle, fontFamily: "var(--font-mono)" }} autoComplete="off" type="email" />
+            {req("Email")}
+            <input value={form.login ?? ""} onChange={(e) => set("login", e.target.value)} style={{ ...inputStyle, fontFamily: "var(--font-mono)", border: errBorder(form.login) ?? inputStyle.border }} autoComplete="off" type="email" />
           </label>
           {/* Password */}
           <label style={fieldStyle}>
-            <span style={capStyle}>Password</span>
+            {isNew ? req("Password") : <span style={capStyle}>Password</span>}
             <div style={{ position: "relative" }}>
               <input
                 type={showPass ? "text" : "password"}
                 value={form.password ?? ""}
                 onChange={(e) => set("password", e.target.value)}
-                style={{ ...inputStyle, paddingRight: 36, fontFamily: "var(--font-mono)" }}
+                style={{ ...inputStyle, paddingRight: 36, fontFamily: "var(--font-mono)", border: (isNew ? errBorder(form.password) : undefined) ?? inputStyle.border }}
                 autoComplete="new-password"
               />
               <button type="button" onClick={() => setShowPass((v) => !v)} style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: "var(--muted-foreground)", display: "flex" }}>
