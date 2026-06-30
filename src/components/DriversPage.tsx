@@ -633,13 +633,13 @@ function SoloModal({ driver, onClose, onSave, truckOpts, trailerOpts, saving }: 
           </label>
 
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-            <FieldLabel pending>Truck Unit</FieldLabel>
-            <CustomSelect value={form.truck ?? ""} options={truckOpts} onChange={(v) => set("truck", v)} searchable disabled />
+            <FieldLabel>Truck Unit</FieldLabel>
+            <CustomSelect value={form.truck ?? ""} options={truckOpts} onChange={(v) => set("truck", v)} searchable />
           </label>
 
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-            <FieldLabel pending>Trailer Unit</FieldLabel>
-            <CustomSelect value={form.trailer ?? ""} options={trailerOpts} onChange={(v) => set("trailer", v)} searchable disabled />
+            <FieldLabel>Trailer Unit</FieldLabel>
+            <CustomSelect value={form.trailer ?? ""} options={trailerOpts} onChange={(v) => set("trailer", v)} searchable />
           </label>
 
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
@@ -743,13 +743,13 @@ function TeamModal({ driver, onClose, onSave, truckOpts, trailerOpts, saving }: 
           </label>
 
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-            <FieldLabel pending>Truck Unit</FieldLabel>
-            <CustomSelect value={form.truck ?? ""} options={truckOpts} onChange={(v) => set("truck", v)} searchable disabled />
+            <FieldLabel>Truck Unit</FieldLabel>
+            <CustomSelect value={form.truck ?? ""} options={truckOpts} onChange={(v) => set("truck", v)} searchable />
           </label>
 
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-            <FieldLabel pending>Trailer Unit</FieldLabel>
-            <CustomSelect value={form.trailer ?? ""} options={trailerOpts} onChange={(v) => set("trailer", v)} searchable disabled />
+            <FieldLabel>Trailer Unit</FieldLabel>
+            <CustomSelect value={form.trailer ?? ""} options={trailerOpts} onChange={(v) => set("trailer", v)} searchable />
           </label>
 
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
@@ -1572,46 +1572,36 @@ function Toolbar({
       padding: "12px 16px", borderBottom: "1px solid var(--border)",
       backgroundColor: "var(--card)", flexShrink: 0,
     }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-        <div style={{ position: "relative", width: 250 }}>
-          <Search size={13} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--muted-foreground)", pointerEvents: "none" }} />
-          <input
-            value={search}
-            onChange={(e) => onSearch(e.target.value)}
-            placeholder={placeholder}
-            style={{
-              width: "100%", height: 34, paddingLeft: 30, paddingRight: 10,
-              fontFamily: "var(--font-sans)", fontSize: 13,
-              backgroundColor: "var(--input-background)", border: "1px solid var(--border)",
-              borderRadius: 7, color: "var(--foreground)", outline: "none", boxSizing: "border-box" as const,
-              transition: "border-color 0.15s, box-shadow 0.15s",
-            }}
-            onFocus={(e) => {
-              e.currentTarget.style.borderColor = "var(--primary)";
-              e.currentTarget.style.boxShadow = "0 0 0 3px rgba(59,130,246,0.12)";
-            }}
-            onBlur={(e) => {
-              e.currentTarget.style.borderColor = "var(--border)";
-              e.currentTarget.style.boxShadow = "none";
-            }}
-          />
-        </div>
-        <span style={{ fontSize: 8, fontWeight: 700, color: "#D97706", backgroundColor: "#FEF3C7", border: "1px solid #FDE68A", borderRadius: 4, padding: "1px 4px", letterSpacing: "0.04em", textTransform: "uppercase" as const }}>
-          backend pending
-        </span>
+      <div style={{ position: "relative", width: 250 }}>
+        <Search size={13} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--muted-foreground)", pointerEvents: "none" }} />
+        <input
+          value={search}
+          onChange={(e) => onSearch(e.target.value)}
+          placeholder={placeholder}
+          style={{
+            width: "100%", height: 34, paddingLeft: 30, paddingRight: 10,
+            fontFamily: "var(--font-sans)", fontSize: 13,
+            backgroundColor: "var(--input-background)", border: "1px solid var(--border)",
+            borderRadius: 7, color: "var(--foreground)", outline: "none", boxSizing: "border-box" as const,
+            transition: "border-color 0.15s, box-shadow 0.15s",
+          }}
+          onFocus={(e) => {
+            e.currentTarget.style.borderColor = "var(--primary)";
+            e.currentTarget.style.boxShadow = "0 0 0 3px rgba(59,130,246,0.12)";
+          }}
+          onBlur={(e) => {
+            e.currentTarget.style.borderColor = "var(--border)";
+            e.currentTarget.style.boxShadow = "none";
+          }}
+        />
       </div>
 
-      <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-        <CustomSelect
-          value={statusFilter}
-          options={STATUS_OPTS}
-          onChange={onStatus}
-          width={168}
-        />
-        <span style={{ fontSize: 8, fontWeight: 700, color: "#D97706", backgroundColor: "#FEF3C7", border: "1px solid #FDE68A", borderRadius: 4, padding: "1px 4px", letterSpacing: "0.04em", textTransform: "uppercase" as const }}>
-          backend pending
-        </span>
-      </div>
+      <CustomSelect
+        value={statusFilter}
+        options={STATUS_OPTS}
+        onChange={onStatus}
+        width={168}
+      />
 
       <div style={{ flex: 1 }} />
 
@@ -1632,31 +1622,44 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
   const [editing, setEditing]         = useState<Partial<SoloDriver>>({});
   const [deleting, setDeleting]       = useState<SoloDriver | null>(null);
   const [saving, setSaving]           = useState(false);
-  const [search, setSearch]           = useState("");
-  const [statusFilter, setStatus]     = useState("All");
-  const [page, setPage]               = useState(1);
-  const [pageSize, setPageSize]       = useState(20);
-  const [importing, setImporting]     = useState(false);
-  const [toast, setToast]             = useState<{ type: "success" | "error"; msg: string } | null>(null);
-  const [fetchKey, setFetchKey]       = useState(0);
+  const [search, setSearch]                   = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [statusFilter, setStatus]             = useState("All");
+  const [page, setPage]                       = useState(1);
+  const [pageSize, setPageSize]               = useState(20);
+  const [importing, setImporting]             = useState(false);
+  const [toast, setToast]                     = useState<{ type: "success" | "error"; msg: string } | null>(null);
+  const [fetchKey, setFetchKey]               = useState(0);
+
+  useEffect(() => {
+    const t = setTimeout(() => { setDebouncedSearch(search); setPage(1); }, 250);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  useEffect(() => { setPage(1); }, [statusFilter]);
+
+  useEffect(() => {
+    Promise.all([api.get<any[]>("/trucks"), api.get<any[]>("/trailers")])
+      .then(([trucks, trailers]) => {
+        setTruckOpts((trucks ?? []).map((tr) => ({ value: tr.unit ?? tr.id, label: tr.unit ?? tr.id })));
+        setTrailerOpts((trailers ?? []).map((tr) => ({ value: tr.unit ?? tr.id, label: tr.unit ?? tr.id })));
+      }).catch(() => {});
+  }, []);
 
   useEffect(() => {
     setLoading(true);
-    Promise.all([
-      api.get<any[]>("/drivers"),
-      api.get<any[]>("/trucks"),
-      api.get<any[]>("/trailers"),
-    ])
-      .then(([drivers, trucks, trailers]) => {
-        const solo = (drivers ?? []).filter((d) => !d.team).map(toSolo);
+    api.getList<any>("/drivers", {
+      q: debouncedSearch || undefined,
+      status: statusFilter !== "All" ? statusFilter : undefined,
+    })
+      .then(({ items }) => {
+        const solo = (items ?? []).filter((d) => !d.team).map(toSolo);
         setRows(solo);
         onCountChange(solo.length);
-        setTruckOpts((trucks ?? []).map((tr) => ({ value: tr.unit ?? tr.id, label: tr.unit ?? tr.id })));
-        setTrailerOpts((trailers ?? []).map((tr) => ({ value: tr.unit ?? tr.id, label: tr.unit ?? tr.id })));
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [fetchKey]);
+  }, [fetchKey, debouncedSearch, statusFilter]);
 
   const patchRow = async (id: string, fields: Partial<SoloDriver>) => {
     const existing = rows.find((d) => d.id === id);
@@ -1700,16 +1703,10 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
     setDeleting(null);
   };
 
-  const q = search.toLowerCase();
-  const filtered = rows.filter((d) => {
-    const ms = !q || d.name.toLowerCase().includes(q) || d.phone.includes(q) || d.truck.toLowerCase().includes(q) || d.location.toLowerCase().includes(q);
-    const mf = statusFilter === "All" || d.status === statusFilter;
-    return ms && mf;
-  });
-  const paged = filtered.slice((page - 1) * pageSize, page * pageSize);
+  const paged = rows.slice((page - 1) * pageSize, page * pageSize);
 
-  const handleSearch  = (v: string) => { setSearch(v); setPage(1); };
-  const handleStatus  = (v: string) => { setStatus(v); setPage(1); };
+  const handleSearch = (v: string) => setSearch(v);
+  const handleStatus = (v: string) => setStatus(v);
 
   if (loading) return (
     <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
@@ -1828,7 +1825,7 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
       </div>
 
       <Pagination
-        page={page} total={filtered.length} pageSize={pageSize}
+        page={page} total={rows.length} pageSize={pageSize}
         onPage={setPage} onPageSize={(s) => { setPageSize(s); setPage(1); }}
       />
 
@@ -1858,31 +1855,44 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
   const [editing, setEditing]         = useState<Partial<TeamDriver>>({});
   const [deleting, setDeleting]       = useState<TeamDriver | null>(null);
   const [saving, setSaving]           = useState(false);
-  const [search, setSearch]           = useState("");
-  const [statusFilter, setStatus]     = useState("All");
-  const [page, setPage]               = useState(1);
-  const [pageSize, setPageSize]       = useState(20);
-  const [importing, setImporting]     = useState(false);
-  const [toast, setToast]             = useState<{ type: "success" | "error"; msg: string } | null>(null);
-  const [fetchKey, setFetchKey]       = useState(0);
+  const [search, setSearch]                   = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [statusFilter, setStatus]             = useState("All");
+  const [page, setPage]                       = useState(1);
+  const [pageSize, setPageSize]               = useState(20);
+  const [importing, setImporting]             = useState(false);
+  const [toast, setToast]                     = useState<{ type: "success" | "error"; msg: string } | null>(null);
+  const [fetchKey, setFetchKey]               = useState(0);
+
+  useEffect(() => {
+    const t = setTimeout(() => { setDebouncedSearch(search); setPage(1); }, 250);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  useEffect(() => { setPage(1); }, [statusFilter]);
+
+  useEffect(() => {
+    Promise.all([api.get<any[]>("/trucks"), api.get<any[]>("/trailers")])
+      .then(([trucks, trailers]) => {
+        setTruckOpts((trucks ?? []).map((tr) => ({ value: tr.unit ?? tr.id, label: tr.unit ?? tr.id })));
+        setTrailerOpts((trailers ?? []).map((tr) => ({ value: tr.unit ?? tr.id, label: tr.unit ?? tr.id })));
+      }).catch(() => {});
+  }, []);
 
   useEffect(() => {
     setLoading(true);
-    Promise.all([
-      api.get<any[]>("/drivers"),
-      api.get<any[]>("/trucks"),
-      api.get<any[]>("/trailers"),
-    ])
-      .then(([drivers, trucks, trailers]) => {
-        const teams = (drivers ?? []).filter((d) => d.team).map(toTeam);
+    api.getList<any>("/drivers", {
+      q: debouncedSearch || undefined,
+      status: statusFilter !== "All" ? statusFilter : undefined,
+    })
+      .then(({ items }) => {
+        const teams = (items ?? []).filter((d) => d.team).map(toTeam);
         setRows(teams);
         onCountChange(teams.length);
-        setTruckOpts((trucks ?? []).map((tr) => ({ value: tr.unit ?? tr.id, label: tr.unit ?? tr.id })));
-        setTrailerOpts((trailers ?? []).map((tr) => ({ value: tr.unit ?? tr.id, label: tr.unit ?? tr.id })));
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [fetchKey]);
+  }, [fetchKey, debouncedSearch, statusFilter]);
 
   const patchRow = async (id: string, fields: Partial<TeamDriver>) => {
     const existing = rows.find((d) => d.id === id);
@@ -1926,16 +1936,10 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
     setDeleting(null);
   };
 
-  const q = search.toLowerCase();
-  const filtered = rows.filter((d) => {
-    const ms = !q || d.name1.toLowerCase().includes(q) || d.name2.toLowerCase().includes(q) || d.phone1.includes(q) || d.truck.toLowerCase().includes(q);
-    const mf = statusFilter === "All" || d.status === statusFilter;
-    return ms && mf;
-  });
-  const paged = filtered.slice((page - 1) * pageSize, page * pageSize);
+  const paged = rows.slice((page - 1) * pageSize, page * pageSize);
 
-  const handleSearch = (v: string) => { setSearch(v); setPage(1); };
-  const handleStatus = (v: string) => { setStatus(v); setPage(1); };
+  const handleSearch = (v: string) => setSearch(v);
+  const handleStatus = (v: string) => setStatus(v);
 
   if (loading) return (
     <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
@@ -2052,7 +2056,7 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
       </div>
 
       <Pagination
-        page={page} total={filtered.length} pageSize={pageSize}
+        page={page} total={rows.length} pageSize={pageSize}
         onPage={setPage} onPageSize={(s) => { setPageSize(s); setPage(1); }}
       />
 
@@ -2111,7 +2115,7 @@ export function DriversPage() {
               >
                 <span style={{ color: active ? t.color : "var(--muted-foreground)", opacity: active ? 1 : 0.6 }}>{t.icon}</span>
                 {t.label}
-                {t.count !== null ? (
+                {t.count !== null && (
                   <span style={{
                     fontFamily: "var(--font-mono)", fontSize: 10, fontWeight: 700,
                     color: active ? t.color : "var(--muted-foreground)",
@@ -2119,10 +2123,6 @@ export function DriversPage() {
                     borderRadius: 10, padding: "1px 7px",
                   }}>
                     {t.count}
-                  </span>
-                ) : (
-                  <span style={{ fontSize: 8, fontWeight: 700, color: "#D97706", backgroundColor: "#FEF3C7", border: "1px solid #FDE68A", borderRadius: 4, padding: "1px 4px", letterSpacing: "0.04em", textTransform: "uppercase" as const }}>
-                    pending
                   </span>
                 )}
               </button>
@@ -2145,8 +2145,12 @@ export function DriversPage() {
             <TeamDetail team={detailTeam} onBack={() => setDetailTeam(null)} />
           ) : (
             <>
-              {tab === "solo" && <SoloTab onSelectDriver={setDetail} onCountChange={setSoloCount} />}
-              {tab === "team" && <TeamTab onSelectTeam={setDetailTeam} onCountChange={setTeamCount} />}
+              <div style={{ display: tab === "solo" ? "contents" : "none" }}>
+                <SoloTab onSelectDriver={setDetail} onCountChange={setSoloCount} />
+              </div>
+              <div style={{ display: tab === "team" ? "contents" : "none" }}>
+                <TeamTab onSelectTeam={setDetailTeam} onCountChange={setTeamCount} />
+              </div>
             </>
           )}
         </div>

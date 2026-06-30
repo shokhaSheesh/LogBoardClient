@@ -95,7 +95,7 @@ async function requestList<T>(
 
   const data = json.data ?? json;
   const items = Array.isArray(data) ? data : [];
-  const total = json.total ?? items.length;
+  const total = json.meta?.total ?? json.total ?? items.length;
   return { items, total };
 }
 

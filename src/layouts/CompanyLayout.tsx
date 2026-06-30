@@ -617,43 +617,7 @@ function TopHeader({ onToggleSidebar }: { onToggleSidebar: () => void }) {
         </div>
       </div>
 
-      {/* Global search (cmd+k) */}
-      <div className="flex-1 flex justify-center">
-        <div
-          className="flex items-center gap-2 rounded-lg px-3 transition-all"
-          style={{
-            width: 320,
-            height: 36,
-            backgroundColor: "var(--input-background)",
-            border: "1px solid var(--border)",
-            cursor: "text",
-          }}
-        >
-          <Search size={14} style={{ color: "var(--muted-foreground)", flexShrink: 0 }} />
-          <span
-            style={{
-              fontSize: 13,
-              color: "var(--muted-foreground)",
-              flex: 1,
-              userSelect: "none",
-            }}
-          >
-            Search drivers, loads, units…
-          </span>
-          <kbd
-            className="rounded px-1.5 py-0.5 flex items-center gap-0.5"
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 10,
-              color: "var(--muted-foreground)",
-              backgroundColor: "var(--muted)",
-              border: "1px solid var(--border)",
-            }}
-          >
-            ⌘K
-          </kbd>
-        </div>
-      </div>
+      <div className="flex-1" />
 
       {/* Right: active users + bell */}
       <div className="flex items-center gap-4">
