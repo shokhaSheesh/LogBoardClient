@@ -27,6 +27,7 @@ interface Team {
 interface User {
   id: string;
   name: string;
+  roleName: string;
   phone: string;
   workDays: string;
   workFrom: string;
@@ -107,6 +108,7 @@ function toUser(b: BackendUser): User {
     workFrom: b.work_from ?? "08:00",
     workTo:   b.work_to   ?? "17:00",
     roleId:   b.role_id   ?? "",
+    roleName: b.role      ?? "",
     teamId:   null,
     login:    b.email ?? b.login ?? "",
     password: "",
@@ -508,7 +510,7 @@ function UserModal({ user, roles, teams, saving, onClose, onSave }: {
           <div style={fieldStyle}>
             {req("Role")}
             <CustomSelect
-              value={form.roleId ?? roles[0]?.id ?? ""}
+              value={form.roleId || roles.find((r) => r.name.toLowerCase() === (form.roleName ?? "").toLowerCase())?.id || roles[0]?.id || ""}
               options={roleOpts}
               onChange={(v) => set("roleId", v)}
               portal
@@ -690,7 +692,7 @@ function UsersTab({ roles, teams }: { roles: Role[]; teams: Team[] }) {
               <tr><td colSpan={10} style={{ padding: "32px 24px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>Loading…</td></tr>
             )}
             {!loading && paginated.map((u, i) => {
-              const role = roles.find((r) => r.id === u.roleId);
+              const role = roles.find((r) => r.id === u.roleId) ?? roles.find((r) => r.name.toLowerCase() === u.roleName.toLowerCase());
               const team = teams.find((t) => t.id === u.teamId);
               const isEven = i % 2 === 0;
               return (
@@ -705,11 +707,11 @@ function UsersTab({ roles, teams }: { roles: Role[]; teams: Team[] }) {
                   <td style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", verticalAlign: "middle" }}>
                     <span style={{
                       fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600,
-                      color: role?.name === "Admin" ? "#1D4ED8" : role?.name === "Dispatcher" ? "#5B21B6" : "#374151",
-                      backgroundColor: role?.name === "Admin" ? "#DBEAFE" : role?.name === "Dispatcher" ? "#EDE9FE" : "#F3F4F6",
+                      color: role?.name?.toLowerCase() === "admin" ? "#1D4ED8" : role?.name?.toLowerCase() === "dispatcher" ? "#5B21B6" : "#374151",
+                      backgroundColor: role?.name?.toLowerCase() === "admin" ? "#DBEAFE" : role?.name?.toLowerCase() === "dispatcher" ? "#EDE9FE" : "#F3F4F6",
                       borderRadius: 4, padding: "2px 8px",
                     }}>
-                      {role?.name ?? "—"}
+                      {role?.name ?? (u.roleName || "—")}
                     </span>
                   </td>
                   <TD><span style={{ color: "var(--muted-foreground)" }}>{team?.name ?? "—"}</span></TD>
