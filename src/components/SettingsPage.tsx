@@ -3,6 +3,7 @@ import {
   Users, UsersRound, ShieldCheck, Plus, Pencil, Trash2, X, Check,
   Eye, EyeOff, ToggleLeft, ToggleRight, Search, ChevronDown, ChevronLeft, ChevronRight,
 } from "lucide-react";
+import { api, getCompanyId } from "../lib/api";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -15,72 +16,116 @@ const CRUD_KEYS: CRUDKey[] = ["create", "read", "update", "delete"];
 type Permissions = Record<PageName, Record<CRUDKey, boolean>>;
 
 interface Role {
-  id: number;
+  id: string;
   name: string;
   permissions: Permissions;
 }
 
 interface Team {
-  id: number;
+  id: string;
   name: string;
-  userIds: number[];
+  userIds: string[];
   driverNames: string[];
 }
 
 interface User {
-  id: number;
+  id: string;
   name: string;
   phone: string;
   workDays: string;
   workFrom: string;
   workTo: string;
-  roleId: number;
-  teamId: number | null;
+  roleId: string;
+  teamId: string | null;
   login: string;
   password: string;
   status: UserStatus;
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// ─── Backend types + mappers ──────────────────────────────────────────────────
 
-function fullPerms(): Permissions {
+interface BackendUser {
+  id: string;
+  full_name?: string;
+  login?: string;
+  phone?: string;
+  role_id?: string;
+  role?: string;
+  status?: string;
+  work_days?: string;
+  work_from?: string;
+  work_to?: string;
+}
+
+interface BackendRole {
+  id: string;
+  name: string;
+  permissions?: Record<string, Record<string, boolean>>;
+}
+
+function emptyPerms(): Permissions {
   return Object.fromEntries(
-    PAGES.map((p) => [p, { create: true, read: true, update: true, delete: true }])
+    PAGES.map((p) => [p, { create: false, read: false, update: false, delete: false }])
   ) as Permissions;
 }
-function readOnly(): Permissions {
-  return Object.fromEntries(
-    PAGES.map((p) => [p, { create: false, read: true, update: false, delete: false }])
-  ) as Permissions;
-}
-function dispatcherPerms(): Permissions {
-  const p = readOnly();
-  (["Board","Loads","Drivers"] as PageName[]).forEach((page) => {
-    p[page].create = true; p[page].update = true;
-  });
-  return p;
+
+function toUser(b: BackendUser): User {
+  return {
+    id:       b.id,
+    name:     b.full_name ?? "",
+    phone:    b.phone     ?? "",
+    workDays: b.work_days ?? "Mon–Fri",
+    workFrom: b.work_from ?? "08:00",
+    workTo:   b.work_to   ?? "17:00",
+    roleId:   b.role_id   ?? "",
+    teamId:   null,
+    login:    b.login     ?? "",
+    password: "",
+    status:   (b.status === "active" || b.status === "Active") ? "Active" : "Inactive",
+  };
 }
 
-// ─── Seed data ────────────────────────────────────────────────────────────────
+function fromUser(u: Partial<User>, isNew: boolean): Record<string, unknown> {
+  const body: Record<string, unknown> = {
+    full_name: u.name,
+    phone:     u.phone,
+    login:     u.login,
+    role_id:   u.roleId,
+    status:    (u.status ?? "Active").toLowerCase(),
+    work_days: u.workDays,
+    work_from: u.workFrom,
+    work_to:   u.workTo,
+  };
+  if (isNew && u.password) body.password = u.password;
+  return body;
+}
 
-const initRoles: Role[] = [
-  { id: 1, name: "Admin",      permissions: fullPerms() },
-  { id: 2, name: "Dispatcher", permissions: dispatcherPerms() },
-  { id: 3, name: "Viewer",     permissions: readOnly() },
-];
+function toRole(b: BackendRole): Role {
+  const perms = emptyPerms();
+  if (b.permissions) {
+    for (const [page, actions] of Object.entries(b.permissions)) {
+      const k = page as PageName;
+      if (k in perms) {
+        perms[k].read   = !!(actions.read   || actions.view);
+        perms[k].create = !!actions.create;
+        perms[k].update = !!(actions.update || actions.edit);
+        perms[k].delete = !!actions.delete;
+      }
+    }
+  }
+  return { id: b.id, name: b.name, permissions: perms };
+}
+
+function fromRole(r: Partial<Role>): Record<string, unknown> {
+  return { name: r.name, permissions: r.permissions };
+}
+
+// ─── Seed data (Teams only — Users and Roles are API-backed) ─────────────────
 
 const initTeams: Team[] = [
-  { id: 1, name: "Alpha Team",   userIds: [1, 2],    driverNames: ["Carlos Mendez", "Angela Torres", "Darnell Washington"] },
-  { id: 2, name: "Bravo Team",   userIds: [3],       driverNames: ["Priya Sharma", "Marcus Webb"] },
-  { id: 3, name: "Charlie Team", userIds: [4, 5],    driverNames: ["Linda Okafor", "Ray Kowalski", "Tomás García"] },
-];
-
-const initUsers: User[] = [
-  { id: 1, name: "Jake Reynolds",    phone: "(214) 555-0010", workDays: "Mon–Fri", workFrom: "08:00", workTo: "17:00", roleId: 1, teamId: 1, login: "jake.r",    password: "Secure@123", status: "Active"   },
-  { id: 2, name: "Sofia Reyes",      phone: "(312) 555-0022", workDays: "Mon–Sat", workFrom: "07:00", workTo: "16:00", roleId: 2, teamId: 1, login: "sofia.r",   password: "Disp#456",   status: "Active"   },
-  { id: 3, name: "Marcus Thompson",  phone: "(404) 555-0033", workDays: "Mon–Fri", workFrom: "09:00", workTo: "18:00", roleId: 2, teamId: 2, login: "marcus.t",  password: "Mark$789",   status: "Active"   },
-  { id: 4, name: "Olivia Chen",      phone: "(713) 555-0044", workDays: "Tue–Sat", workFrom: "10:00", workTo: "19:00", roleId: 2, teamId: 3, login: "olivia.c",  password: "Oliv!012",   status: "Active"   },
-  { id: 5, name: "Diego Ramos",      phone: "(602) 555-0055", workDays: "Mon–Fri", workFrom: "08:00", workTo: "17:00", roleId: 3, teamId: 3, login: "diego.r",   password: "View%345",   status: "Inactive" },
+  { id: "1", name: "Alpha Team",   userIds: ["1", "2"],       driverNames: ["Carlos Mendez", "Angela Torres", "Darnell Washington"] },
+  { id: "2", name: "Bravo Team",   userIds: ["3"],            driverNames: ["Priya Sharma", "Marcus Webb"] },
+  { id: "3", name: "Charlie Team", userIds: ["4", "5"],       driverNames: ["Linda Okafor", "Ray Kowalski", "Tomás García"] },
 ];
 
 // ─── Shared UI primitives ─────────────────────────────────────────────────────
@@ -352,8 +397,8 @@ function UserModal({ user, roles, teams, onClose, onSave }: {
     return { value: `${hh}:${mm}`, label: `${hh}:${mm}` };
   });
 
-  const roleOpts  = roles.map((r) => ({ value: String(r.id), label: r.name }));
-  const teamOpts  = [{ value: "0", label: "No Team" }, ...teams.map((t) => ({ value: String(t.id), label: t.name }))];
+  const roleOpts  = roles.map((r) => ({ value: r.id, label: r.name }));
+  const teamOpts  = [{ value: "", label: "No Team" }, ...teams.map((t) => ({ value: t.id, label: t.name }))];
   const statusOpts = [{ value: "Active", label: "Active" }, { value: "Inactive", label: "Inactive" }];
 
   const handleSave = () => onSave({ ...form, workDays: `${dayFrom}–${dayTo}` } as User);
@@ -404,9 +449,9 @@ function UserModal({ user, roles, teams, onClose, onSave }: {
           <div style={fieldStyle}>
             <span style={capStyle}>Role</span>
             <CustomSelect
-              value={String(form.roleId ?? roles[0]?.id ?? "")}
+              value={form.roleId ?? roles[0]?.id ?? ""}
               options={roleOpts}
-              onChange={(v) => set("roleId", Number(v))}
+              onChange={(v) => set("roleId", v)}
               portal
             />
           </div>
@@ -414,9 +459,9 @@ function UserModal({ user, roles, teams, onClose, onSave }: {
           <div style={fieldStyle}>
             <span style={capStyle}>Team</span>
             <CustomSelect
-              value={String(form.teamId ?? 0)}
+              value={form.teamId ?? ""}
               options={teamOpts}
-              onChange={(v) => set("teamId", v === "0" ? null : Number(v))}
+              onChange={(v) => set("teamId", v === "" ? null : v)}
               portal
             />
           </div>
@@ -468,33 +513,64 @@ function UserModal({ user, roles, teams, onClose, onSave }: {
 }
 
 function UsersTab({ roles, teams }: { roles: Role[]; teams: Team[] }) {
-  const [users, setUsers]     = useState<User[]>(initUsers);
-  const [modal, setModal]     = useState<"create" | "edit" | null>(null);
-  const [editing, setEditing] = useState<Partial<User>>({});
+  const [users, setUsers]       = useState<User[]>([]);
+  const [loading, setLoading]   = useState(true);
+  const [fetchKey, setFetchKey] = useState(0);
+  const [saving, setSaving]     = useState(false);
+  const [modal, setModal]       = useState<"create" | "edit" | null>(null);
+  const [editing, setEditing]   = useState<Partial<User>>({});
   const [deleting, setDeleting] = useState<User | null>(null);
-  const [search, setSearch]   = useState("");
+  const [search, setSearch]     = useState("");
   const [filterRole, setFilterRole] = useState("All");
-  const [page, setPage]       = useState(1);
+  const [page, setPage]         = useState(1);
   const [pageSize, setPageSize] = useState(20);
 
-  const save = (u: User) => {
-    if (modal === "create") {
-      const nextId = Math.max(0, ...users.map((x) => x.id)) + 1;
-      setUsers((p) => [...p, { ...u, id: nextId }]);
-    } else {
-      setUsers((p) => p.map((x) => (x.id === u.id ? u : x)));
+  useEffect(() => {
+    const companyId = getCompanyId();
+    setLoading(true);
+    api.get<any[]>(`/owner/companies/${companyId}/users`)
+      .then((data) => setUsers((data ?? []).map(toUser)))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [fetchKey]);
+
+  const save = async (u: User) => {
+    const companyId = getCompanyId();
+    const isNew = modal === "create";
+    setSaving(true);
+    try {
+      if (isNew) {
+        await api.post(`/owner/companies/${companyId}/users`, fromUser(u, true));
+      } else {
+        await api.put(`/owner/companies/${companyId}/users/${u.id}`, fromUser(u, false));
+      }
+      setFetchKey((k) => k + 1);
+      setModal(null);
+    } catch {
+      // keep modal open on error
+    } finally {
+      setSaving(false);
     }
-    setModal(null);
+  };
+
+  const confirmDelete = async (u: User) => {
+    const companyId = getCompanyId();
+    try {
+      await api.delete(`/owner/companies/${companyId}/users/${u.id}`);
+      setFetchKey((k) => k + 1);
+    } catch { /* noop */ } finally {
+      setDeleting(null);
+    }
   };
 
   const roleOpts = [
     { value: "All", label: "All Roles" },
-    ...roles.map((r) => ({ value: String(r.id), label: r.name })),
+    ...roles.map((r) => ({ value: r.id, label: r.name })),
   ];
 
   const q = search.toLowerCase();
   const filtered = users.filter((u) => {
-    const matchRole = filterRole === "All" || u.roleId === Number(filterRole);
+    const matchRole = filterRole === "All" || u.roleId === filterRole;
     const matchQ = !q || u.name.toLowerCase().includes(q) || u.login.toLowerCase().includes(q) || u.phone.includes(q);
     return matchRole && matchQ;
   });
@@ -551,7 +627,10 @@ function UsersTab({ roles, teams }: { roles: Role[]; teams: Team[] }) {
             </tr>
           </thead>
           <tbody>
-            {paginated.map((u, i) => {
+            {loading && (
+              <tr><td colSpan={10} style={{ padding: "32px 24px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>Loading…</td></tr>
+            )}
+            {!loading && paginated.map((u, i) => {
               const role = roles.find((r) => r.id === u.roleId);
               const team = teams.find((t) => t.id === u.teamId);
               const isEven = i % 2 === 0;
@@ -598,10 +677,10 @@ function UsersTab({ roles, teams }: { roles: Role[]; teams: Team[] }) {
                 </tr>
               );
             })}
-            {paginated.length === 0 && (
+            {!loading && paginated.length === 0 && (
               <tr>
                 <td colSpan={10} style={{ padding: "32px 24px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)", borderBottom: "1px solid var(--border)" }}>
-                  No users match your filters.
+                  No users found.
                 </td>
               </tr>
             )}
@@ -616,9 +695,10 @@ function UsersTab({ roles, teams }: { roles: Role[]; teams: Team[] }) {
       />
 
       {(modal === "create" || modal === "edit") && (
-        <UserModal user={editing} roles={roles} teams={teams} onClose={() => setModal(null)} onSave={save} />
+        <UserModal user={editing} roles={roles} teams={teams} onClose={() => setModal(null)} onSave={(u) => { void save(u); }} />
       )}
-      {deleting && <DeleteConfirm label={deleting.name} onClose={() => setDeleting(null)} onConfirm={() => { setUsers((p) => p.filter((x) => x.id !== deleting.id)); setDeleting(null); }} />}
+      {deleting && <DeleteConfirm label={deleting.name} onClose={() => setDeleting(null)} onConfirm={() => confirmDelete(deleting)} />}
+      {saving && <div style={{ position: "fixed", inset: 0, zIndex: 200 }} />}
     </>
   );
 }
@@ -837,7 +917,7 @@ function TeamsTab({ users }: { users: User[] }) {
 
   const save = (t: Team) => {
     if (modal === "create") {
-      const nextId = Math.max(0, ...teams.map((x) => x.id)) + 1;
+      const nextId = String(Math.max(0, ...teams.map((x) => Number(x.id))) + 1);
       setTeams((p) => [...p, { ...t, id: nextId }]);
     } else {
       setTeams((p) => p.map((x) => (x.id === t.id ? t : x)));
@@ -1070,20 +1150,55 @@ const CRUD_COLORS_INLINE: Record<CRUDKey, { on: string; bg: string; label: strin
   delete: { on: "#EF4444", bg: "#FEE2E2", label: "D" },
 };
 
-function RolesTab() {
-  const [roles, setRoles] = useState<Role[]>(initRoles);
-  const [modal, setModal] = useState<"create" | "edit" | null>(null);
-  const [editing, setEditing] = useState<Partial<Role>>({});
+function RolesTab({ onRolesChange }: { onRolesChange: (roles: Role[]) => void }) {
+  const [roles, setRoles]       = useState<Role[]>([]);
+  const [loading, setLoading]   = useState(true);
+  const [fetchKey, setFetchKey] = useState(0);
+  const [saving, setSaving]     = useState(false);
+  const [modal, setModal]       = useState<"create" | "edit" | null>(null);
+  const [editing, setEditing]   = useState<Partial<Role>>({});
   const [deleting, setDeleting] = useState<Role | null>(null);
 
-  const save = (r: Role) => {
-    if (modal === "create") {
-      const nextId = Math.max(0, ...roles.map((x) => x.id)) + 1;
-      setRoles((p) => [...p, { ...r, id: nextId }]);
-    } else {
-      setRoles((p) => p.map((x) => (x.id === r.id ? r : x)));
+  useEffect(() => {
+    const companyId = getCompanyId();
+    setLoading(true);
+    api.get<any[]>(`/owner/companies/${companyId}/roles`)
+      .then((data) => {
+        const mapped = (data ?? []).map(toRole);
+        setRoles(mapped);
+        onRolesChange(mapped);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [fetchKey]);
+
+  const save = async (r: Role) => {
+    const companyId = getCompanyId();
+    const isNew = modal === "create";
+    setSaving(true);
+    try {
+      if (isNew) {
+        await api.post(`/owner/companies/${companyId}/roles`, fromRole(r));
+      } else {
+        await api.put(`/owner/companies/${companyId}/roles/${r.id}`, fromRole(r));
+      }
+      setFetchKey((k) => k + 1);
+      setModal(null);
+    } catch {
+      // keep modal open
+    } finally {
+      setSaving(false);
     }
-    setModal(null);
+  };
+
+  const confirmDelete = async (r: Role) => {
+    const companyId = getCompanyId();
+    try {
+      await api.delete(`/owner/companies/${companyId}/roles/${r.id}`);
+      setFetchKey((k) => k + 1);
+    } catch { /* noop */ } finally {
+      setDeleting(null);
+    }
   };
 
   return (
@@ -1108,7 +1223,10 @@ function RolesTab() {
             </tr>
           </thead>
           <tbody>
-            {roles.map((r, i) => {
+            {loading && (
+              <tr><td colSpan={PAGES.length + 3} style={{ padding: "32px 24px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>Loading…</td></tr>
+            )}
+            {!loading && roles.map((r, i) => {
               const isEven = i % 2 === 0;
               const ROLE_COLOR: Record<string, { color: string; bg: string }> = {
                 Admin:      { color: "#1D4ED8", bg: "#DBEAFE" },
@@ -1162,9 +1280,10 @@ function RolesTab() {
       </div>
 
       {(modal === "create" || modal === "edit") && (
-        <RoleModal role={editing} onClose={() => setModal(null)} onSave={save} />
+        <RoleModal role={editing} onClose={() => setModal(null)} onSave={(r) => { void save(r); }} />
       )}
-      {deleting && <DeleteConfirm label={deleting.name} onClose={() => setDeleting(null)} onConfirm={() => { setRoles((p) => p.filter((x) => x.id !== deleting.id)); setDeleting(null); }} />}
+      {deleting && <DeleteConfirm label={deleting.name} onClose={() => setDeleting(null)} onConfirm={() => confirmDelete(deleting)} />}
+      {saving && <div style={{ position: "fixed", inset: 0, zIndex: 200 }} />}
     </>
   );
 }
@@ -1175,7 +1294,15 @@ type TabId = "users" | "teams" | "roles";
 
 export function SettingsPage() {
   const [tab, setTab] = useState<TabId>("users");
-  const [users] = useState<User[]>(initUsers);
+  const [roles, setRoles] = useState<Role[]>([]);
+
+  // Fetch roles on mount so UsersTab's role dropdown is populated immediately
+  useEffect(() => {
+    const companyId = getCompanyId();
+    api.get<any[]>(`/owner/companies/${companyId}/roles`)
+      .then((data) => setRoles((data ?? []).map(toRole)))
+      .catch(() => {});
+  }, []);
 
   const tabs: { id: TabId; label: string; icon: React.ReactNode; color: string; bg: string }[] = [
     { id: "users",  label: "Users",              icon: <Users      size={15} />, color: "#1D4ED8", bg: "#DBEAFE" },
@@ -1207,9 +1334,9 @@ export function SettingsPage() {
       </div>
       <div style={{ flex: 1, overflow: "hidden", padding: "20px 24px", display: "flex", flexDirection: "column" }}>
         <div style={{ flex: 1, display: "flex", flexDirection: "column", backgroundColor: "var(--card)", borderRadius: 12, overflow: "hidden", border: "1px solid var(--border)" }}>
-          {tab === "users" && <UsersTab roles={initRoles} teams={initTeams} />}
-          {tab === "teams" && <TeamsTab users={users} />}
-          {tab === "roles" && <RolesTab />}
+          {tab === "users" && <UsersTab roles={roles} teams={initTeams} />}
+          {tab === "teams" && <TeamsTab users={[]} />}
+          {tab === "roles" && <RolesTab onRolesChange={setRoles} />}
         </div>
       </div>
     </div>
