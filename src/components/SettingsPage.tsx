@@ -1216,7 +1216,6 @@ function RolesTab({ onRolesChange }: { onRolesChange: (roles: Role[]) => void })
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
             <tr>
-              <TH width={40}>#</TH>
               <TH width={150}>Role Name</TH>
               {PAGES.map((p) => <TH key={p} width={140}>{p}</TH>)}
               <TH width={90} align="center">Actions</TH>
@@ -1224,7 +1223,7 @@ function RolesTab({ onRolesChange }: { onRolesChange: (roles: Role[]) => void })
           </thead>
           <tbody>
             {loading && (
-              <tr><td colSpan={PAGES.length + 3} style={{ padding: "32px 24px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>Loading…</td></tr>
+              <tr><td colSpan={PAGES.length + 2} style={{ padding: "32px 24px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>Loading…</td></tr>
             )}
             {!loading && roles.map((r, i) => {
               const isEven = i % 2 === 0;
@@ -1238,7 +1237,6 @@ function RolesTab({ onRolesChange }: { onRolesChange: (roles: Role[]) => void })
                   onMouseEnter={(e) => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = "rgba(59,130,246,0.03)"; }}
                   onMouseLeave={(e) => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = isEven ? "var(--card)" : "var(--background)"; }}
                 >
-                  <TD mono center>{r.id}</TD>
                   <td style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", verticalAlign: "middle" }}>
                     <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: 700, color: rc.color, backgroundColor: rc.bg, borderRadius: 4, padding: "3px 10px" }}>{r.name}</span>
                   </td>
