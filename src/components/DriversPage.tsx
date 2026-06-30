@@ -1078,8 +1078,20 @@ function AddMenu({ entityLabel, onManual, onImport, onEld }: {
 // ─── Driver Detail ────────────────────────────────────────────────────────────
 
 function DriverDetail({ driver, onBack }: { driver: SoloDriver; onBack: () => void }) {
-  const loads: { id: string; origin: string; destination: string; miles: number; rate: number; date: string; status: Status }[] = [];
-  const totalGross = loads.reduce((s, l) => s + l.rate, 0);
+  const [weekOffset, setWeekOffset] = useState(0);
+  const [loads, setLoads]           = useState<WeekLoad[]>([]);
+  const [loadingLoads, setLoadingLoads] = useState(true);
+
+  useEffect(() => {
+    setLoadingLoads(true);
+    fetchWeekLoads(driver.id, weekOffset)
+      .then(setLoads)
+      .catch(() => setLoads([]))
+      .finally(() => setLoadingLoads(false));
+  }, [driver.id, weekOffset]);
+
+  const { start: weekStart, end: weekEnd } = getWeekBounds(weekOffset);
+  const totalGross = loads.reduce((s, l) => s + l.payout, 0);
   const totalMiles = loads.reduce((s, l) => s + l.miles, 0);
   const avgRate    = totalMiles > 0 ? totalGross / totalMiles : 0;
   const target     = driver.weeklyGrossTarget;
@@ -1097,6 +1109,7 @@ function DriverDetail({ driver, onBack }: { driver: SoloDriver; onBack: () => vo
   const infoRows: { icon: React.ReactNode; label: string; value: string; mono?: boolean; highlight?: boolean }[] = [
     { icon: <Phone        size={13} />, label: "Phone",        value: driver.phone,          mono: true },
     { icon: <Package      size={13} />, label: "Current Load", value: driver.currentLoad ?? "", mono: true, highlight: true },
+    { icon: <Package      size={13} />, label: "Next Load",    value: driver.nextLoad    ?? "", mono: true },
     { icon: <Truck        size={13} />, label: "Truck",        value: driver.truck,          mono: true },
     { icon: <Truck        size={13} />, label: "Trailer",      value: driver.trailer,        mono: true },
     { icon: <MapPin       size={13} />, label: "Location",     value: driver.location             },
@@ -1194,13 +1207,26 @@ function DriverDetail({ driver, onBack }: { driver: SoloDriver; onBack: () => vo
         {/* ── Right: metrics + loads ── */}
         <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 16 }}>
 
-          {/* Week label */}
-          <div>
-            <div style={{ fontFamily: "var(--font-sans)", fontSize: 14, fontWeight: 700, color: "var(--foreground)" }}>
-              This Week's Performance
+          {/* Week label + nav */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div>
+              <div style={{ fontFamily: "var(--font-sans)", fontSize: 14, fontWeight: 700, color: "var(--foreground)" }}>
+                {weekOffset === 0 ? "This Week" : weekOffset === -1 ? "Last Week" : `${Math.abs(weekOffset)} Weeks Ago`}
+              </div>
+              <div style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)", marginTop: 3 }}>
+                {fmtWeekRange(weekStart, weekEnd)}
+              </div>
             </div>
-            <div style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)", marginTop: 3 }}>
-              Jun 9 – Jun 13, 2026
+            <div style={{ display: "flex", gap: 4 }}>
+              <button
+                onClick={() => setWeekOffset((o) => o - 1)}
+                style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 28, height: 28, border: "1px solid var(--border)", borderRadius: 6, background: "var(--card)", cursor: "pointer", color: "var(--foreground)" }}
+              ><ChevronLeft size={14} /></button>
+              <button
+                onClick={() => setWeekOffset((o) => o + 1)}
+                disabled={weekOffset >= 0}
+                style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 28, height: 28, border: "1px solid var(--border)", borderRadius: 6, background: "var(--card)", cursor: weekOffset >= 0 ? "default" : "pointer", color: weekOffset >= 0 ? "var(--muted-foreground)" : "var(--foreground)", opacity: weekOffset >= 0 ? 0.4 : 1 }}
+              ><ChevronRight size={14} /></button>
             </div>
           </div>
 
@@ -1247,16 +1273,20 @@ function DriverDetail({ driver, onBack }: { driver: SoloDriver; onBack: () => vo
           <div style={{ backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "13px 16px", borderBottom: "1px solid var(--border)" }}>
               <span style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, color: "var(--foreground)" }}>
-                Loads This Week
+                {weekOffset === 0 ? "Loads This Week" : "Loads"}
               </span>
               <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--muted-foreground)", backgroundColor: "var(--muted)", borderRadius: 6, padding: "2px 8px" }}>
-                {loads.length} {loads.length === 1 ? "load" : "loads"}
+                {loadingLoads ? "…" : `${loads.length} ${loads.length === 1 ? "load" : "loads"}`}
               </span>
             </div>
 
-            {loads.length === 0 ? (
+            {loadingLoads ? (
               <div style={{ padding: "48px 20px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
-                No loads recorded this week.
+                Loading…
+              </div>
+            ) : loads.length === 0 ? (
+              <div style={{ padding: "48px 20px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
+                No loads for this week.
               </div>
             ) : (
               <div style={{ overflowX: "auto" }}>
@@ -1267,33 +1297,35 @@ function DriverDetail({ driver, onBack }: { driver: SoloDriver; onBack: () => vo
                       <TH>Origin</TH>
                       <TH>Destination</TH>
                       <TH width={80} align="center">Miles</TH>
-                      <TH width={100} align="center">Rate</TH>
-                      <TH width={110} align="center">Date</TH>
+                      <TH width={100} align="center">Payout</TH>
+                      <TH width={110} align="center">Pickup</TH>
                       <TH width={110} align="center">Status</TH>
                     </tr>
                   </thead>
                   <tbody>
                     {loads.map((load, i) => {
-                      const sc = STATUS_CONFIG[load.status];
+                      const sc = STATUS_CONFIG[load.status as Status];
                       return (
                         <tr
                           key={load.id}
                           style={{ backgroundColor: i % 2 === 0 ? "var(--card)" : "var(--background)" }}
                         >
-                          <TD mono>{load.id}</TD>
+                          <TD mono>{load.loadId || load.id}</TD>
                           <TD>{load.origin}</TD>
                           <TD>{load.destination}</TD>
                           <TD mono center>{load.miles.toLocaleString()}</TD>
-                          <TD mono center>${load.rate.toLocaleString()}</TD>
-                          <TD center>{load.date}</TD>
+                          <TD mono center>${load.payout.toLocaleString()}</TD>
+                          <TD center>{load.pickupAppt ? new Date(load.pickupAppt).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}</TD>
                           <td style={{ padding: "10px 12px", borderBottom: "1px solid var(--border)", verticalAlign: "middle", textAlign: "center" }}>
-                            <span style={{
-                              display: "inline-block",
-                              fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600,
-                              color: sc.color, backgroundColor: sc.bg, borderRadius: 4, padding: "2px 8px",
-                            }}>
-                              {sc.label}
-                            </span>
+                            {sc ? (
+                              <span style={{
+                                display: "inline-block",
+                                fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600,
+                                color: sc.color, backgroundColor: sc.bg, borderRadius: 4, padding: "2px 8px",
+                              }}>
+                                {sc.label}
+                              </span>
+                            ) : <span style={{ color: "var(--muted-foreground)" }}>—</span>}
                           </td>
                         </tr>
                       );
@@ -1309,11 +1341,65 @@ function DriverDetail({ driver, onBack }: { driver: SoloDriver; onBack: () => vo
   );
 }
 
+// ─── Week helpers ────────────────────────────────────────────────────────────
+
+function getWeekBounds(offset: number): { start: Date; end: Date } {
+  const now = new Date();
+  const day = now.getDay();
+  const mon = new Date(now);
+  mon.setDate(now.getDate() - (day === 0 ? 6 : day - 1) + offset * 7);
+  mon.setHours(0, 0, 0, 0);
+  const sun = new Date(mon);
+  sun.setDate(mon.getDate() + 6);
+  sun.setHours(23, 59, 59, 999);
+  return { start: mon, end: sun };
+}
+
+function fmtWeekRange(start: Date, end: Date): string {
+  const o: Intl.DateTimeFormatOptions = { month: "short", day: "numeric" };
+  return `${start.toLocaleDateString("en-US", o)} – ${end.toLocaleDateString("en-US", o)}, ${end.getFullYear()}`;
+}
+
+interface WeekLoad {
+  id: string; loadId: string; origin: string; destination: string;
+  miles: number; payout: number; pickupAppt: string; status: string;
+}
+
+function fetchWeekLoads(driverId: string, offset: number): Promise<WeekLoad[]> {
+  const { start, end } = getWeekBounds(offset);
+  return api.getList<any>("/loads", { page_size: 200 }).then(({ items }) =>
+    (items ?? [])
+      .filter((l: any) => {
+        if (l.driver_id !== driverId) return false;
+        const d = new Date(l.pickup_appt ?? "");
+        return !isNaN(d.getTime()) && d >= start && d <= end;
+      })
+      .map((l: any) => ({
+        id: l.id, loadId: l.load_id ?? "",
+        origin: l.origin ?? "", destination: l.destination ?? "",
+        miles: l.miles ?? 0, payout: l.payout ?? 0,
+        pickupAppt: l.pickup_appt ?? "", status: l.status ?? "",
+      }))
+  );
+}
+
 // ─── Team Detail ─────────────────────────────────────────────────────────────
 
 function TeamDetail({ team, onBack }: { team: TeamDriver; onBack: () => void }) {
-  const loads: { id: string; origin: string; destination: string; miles: number; rate: number; date: string; status: Status }[] = [];
-  const totalGross = loads.reduce((s, l) => s + l.rate, 0);
+  const [weekOffset, setWeekOffset] = useState(0);
+  const [loads, setLoads]           = useState<WeekLoad[]>([]);
+  const [loadingLoads, setLoadingLoads] = useState(true);
+
+  useEffect(() => {
+    setLoadingLoads(true);
+    fetchWeekLoads(team.id, weekOffset)
+      .then(setLoads)
+      .catch(() => setLoads([]))
+      .finally(() => setLoadingLoads(false));
+  }, [team.id, weekOffset]);
+
+  const { start: weekStart, end: weekEnd } = getWeekBounds(weekOffset);
+  const totalGross = loads.reduce((s, l) => s + l.payout, 0);
   const totalMiles = loads.reduce((s, l) => s + l.miles, 0);
   const avgRate    = totalMiles > 0 ? totalGross / totalMiles : 0;
   const target     = team.weeklyGrossTarget;
@@ -1413,6 +1499,7 @@ function TeamDetail({ team, onBack }: { team: TeamDriver; onBack: () => void }) 
           <div style={{ backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
             {[
               { icon: <Package       size={13} />, label: "Current Load", value: team.currentLoad ?? "", mono: true, highlight: true },
+              { icon: <Package       size={13} />, label: "Next Load",    value: team.nextLoad    ?? "", mono: true },
               { icon: <Truck         size={13} />, label: "Truck",        value: team.truck,            mono: true  },
               { icon: <Truck         size={13} />, label: "Trailer",      value: team.trailer,          mono: true  },
               { icon: <MessageSquare size={13} />, label: "Note",         value: team.comment                       },
@@ -1444,12 +1531,26 @@ function TeamDetail({ team, onBack }: { team: TeamDriver; onBack: () => void }) 
         {/* ── Right: metrics + loads ── */}
         <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 16 }}>
 
-          <div>
-            <div style={{ fontFamily: "var(--font-sans)", fontSize: 14, fontWeight: 700, color: "var(--foreground)" }}>
-              This Week's Performance
+          {/* Week label + nav */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div>
+              <div style={{ fontFamily: "var(--font-sans)", fontSize: 14, fontWeight: 700, color: "var(--foreground)" }}>
+                {weekOffset === 0 ? "This Week" : weekOffset === -1 ? "Last Week" : `${Math.abs(weekOffset)} Weeks Ago`}
+              </div>
+              <div style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)", marginTop: 3 }}>
+                {fmtWeekRange(weekStart, weekEnd)}
+              </div>
             </div>
-            <div style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)", marginTop: 3 }}>
-              Jun 9 – Jun 13, 2026
+            <div style={{ display: "flex", gap: 4 }}>
+              <button
+                onClick={() => setWeekOffset((o) => o - 1)}
+                style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 28, height: 28, border: "1px solid var(--border)", borderRadius: 6, background: "var(--card)", cursor: "pointer", color: "var(--foreground)" }}
+              ><ChevronLeft size={14} /></button>
+              <button
+                onClick={() => setWeekOffset((o) => o + 1)}
+                disabled={weekOffset >= 0}
+                style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 28, height: 28, border: "1px solid var(--border)", borderRadius: 6, background: "var(--card)", cursor: weekOffset >= 0 ? "default" : "pointer", color: weekOffset >= 0 ? "var(--muted-foreground)" : "var(--foreground)", opacity: weekOffset >= 0 ? 0.4 : 1 }}
+              ><ChevronRight size={14} /></button>
             </div>
           </div>
 
@@ -1496,16 +1597,20 @@ function TeamDetail({ team, onBack }: { team: TeamDriver; onBack: () => void }) 
           <div style={{ backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "13px 16px", borderBottom: "1px solid var(--border)" }}>
               <span style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, color: "var(--foreground)" }}>
-                Loads This Week
+                {weekOffset === 0 ? "Loads This Week" : "Loads"}
               </span>
               <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--muted-foreground)", backgroundColor: "var(--muted)", borderRadius: 6, padding: "2px 8px" }}>
-                {loads.length} {loads.length === 1 ? "load" : "loads"}
+                {loadingLoads ? "…" : `${loads.length} ${loads.length === 1 ? "load" : "loads"}`}
               </span>
             </div>
 
-            {loads.length === 0 ? (
+            {loadingLoads ? (
               <div style={{ padding: "48px 20px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
-                No loads recorded this week.
+                Loading…
+              </div>
+            ) : loads.length === 0 ? (
+              <div style={{ padding: "48px 20px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
+                No loads for this week.
               </div>
             ) : (
               <div style={{ overflowX: "auto" }}>
@@ -1516,30 +1621,32 @@ function TeamDetail({ team, onBack }: { team: TeamDriver; onBack: () => void }) 
                       <TH>Origin</TH>
                       <TH>Destination</TH>
                       <TH width={80} align="center">Miles</TH>
-                      <TH width={100} align="center">Rate</TH>
-                      <TH width={110} align="center">Date</TH>
+                      <TH width={100} align="center">Payout</TH>
+                      <TH width={110} align="center">Pickup</TH>
                       <TH width={110} align="center">Status</TH>
                     </tr>
                   </thead>
                   <tbody>
                     {loads.map((load, i) => {
-                      const sc = STATUS_CONFIG[load.status];
+                      const sc = STATUS_CONFIG[load.status as Status];
                       return (
                         <tr key={load.id} style={{ backgroundColor: i % 2 === 0 ? "var(--card)" : "var(--background)" }}>
-                          <TD mono>{load.id}</TD>
+                          <TD mono>{load.loadId || load.id}</TD>
                           <TD>{load.origin}</TD>
                           <TD>{load.destination}</TD>
                           <TD mono center>{load.miles.toLocaleString()}</TD>
-                          <TD mono center>${load.rate.toLocaleString()}</TD>
-                          <TD center>{load.date}</TD>
+                          <TD mono center>${load.payout.toLocaleString()}</TD>
+                          <TD center>{load.pickupAppt ? new Date(load.pickupAppt).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}</TD>
                           <td style={{ padding: "10px 12px", borderBottom: "1px solid var(--border)", verticalAlign: "middle", textAlign: "center" }}>
-                            <span style={{
-                              display: "inline-block",
-                              fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600,
-                              color: sc.color, backgroundColor: sc.bg, borderRadius: 4, padding: "2px 8px",
-                            }}>
-                              {sc.label}
-                            </span>
+                            {sc ? (
+                              <span style={{
+                                display: "inline-block",
+                                fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600,
+                                color: sc.color, backgroundColor: sc.bg, borderRadius: 4, padding: "2px 8px",
+                              }}>
+                                {sc.label}
+                              </span>
+                            ) : <span style={{ color: "var(--muted-foreground)" }}>—</span>}
                           </td>
                         </tr>
                       );
