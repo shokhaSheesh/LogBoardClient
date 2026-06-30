@@ -120,7 +120,7 @@ function fromUser(u: Partial<User>, isNew: boolean, roles: Role[]): Record<strin
     full_name: u.name,
     phone:     u.phone,
     email:     u.login,
-    role:      roleName,
+    role:      roleName.toLowerCase(),
     status:    (u.status ?? "Active").toLowerCase(),
     work_days: u.workDays,
     work_from: u.workFrom,
