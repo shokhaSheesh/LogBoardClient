@@ -674,7 +674,6 @@ function UsersTab({ roles, teams }: { roles: Role[]; teams: Team[] }) {
         <table style={{ width: "max-content", minWidth: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
           <thead>
             <tr>
-              <TH width={40}>#</TH>
               <TH width={180}>Name</TH>
               <TH width={150}>Phone</TH>
               <TH width={100}>Work Days</TH>
@@ -699,7 +698,6 @@ function UsersTab({ roles, teams }: { roles: Role[]; teams: Team[] }) {
                   onMouseEnter={(e) => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = "rgba(59,130,246,0.03)"; }}
                   onMouseLeave={(e) => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = isEven ? "var(--card)" : "var(--background)"; }}
                 >
-                  <TD mono center>{u.id}</TD>
                   <TD><span style={{ fontWeight: 500 }}>{u.name}</span></TD>
                   <TD mono>{u.phone}</TD>
                   <TD>{u.workDays}</TD>
