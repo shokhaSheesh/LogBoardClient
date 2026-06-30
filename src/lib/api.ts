@@ -99,6 +99,29 @@ async function requestList<T>(
   return { items, total };
 }
 
+async function requestPayouts<T>(
+  params?: Record<string, string | number | undefined>
+): Promise<{ items: T[]; total: number; totals: { rate: number; added: number; deducted: number; net: number } }> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const token = getToken();
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  const companyId = getCompanyId();
+  if (companyId) headers["X-Company-ID"] = companyId;
+
+  const res = await fetch(`${BASE}${buildUrl("/payouts", params)}`, { method: "GET", headers });
+  if (res.status === 401) { clearToken(); window.location.href = "/login"; throw new Error("Unauthorized"); }
+  if (res.status === 204) return { items: [], total: 0, totals: { rate: 0, added: 0, deducted: 0, net: 0 } };
+
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) { throw new Error(json?.error?.message ?? json?.error ?? `HTTP ${res.status}`); }
+
+  return {
+    items: Array.isArray(json.data) ? json.data : [],
+    total: json.meta?.total ?? 0,
+    totals: json.totals ?? { rate: 0, added: 0, deducted: 0, net: 0 },
+  };
+}
+
 export const api = {
   get: <T>(path: string) => request<T>("GET", path),
   post: <T>(path: string, body?: unknown) => request<T>("POST", path, body),
@@ -107,4 +130,6 @@ export const api = {
   delete: <T>(path: string) => request<T>("DELETE", path),
   getList: <T>(path: string, params?: Record<string, string | number | undefined>) =>
     requestList<T>(path, params),
+  getPayouts: <T>(params?: Record<string, string | number | undefined>) =>
+    requestPayouts<T>(params),
 };
