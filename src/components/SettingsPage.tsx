@@ -43,6 +43,7 @@ interface User {
 interface BackendUser {
   id: string;
   full_name?: string;
+  email?: string;
   login?: string;
   phone?: string;
   role_id?: string;
@@ -107,18 +108,19 @@ function toUser(b: BackendUser): User {
     workTo:   b.work_to   ?? "17:00",
     roleId:   b.role_id   ?? "",
     teamId:   null,
-    login:    b.login     ?? "",
+    login:    b.email ?? b.login ?? "",
     password: "",
     status:   (b.status === "active" || b.status === "Active") ? "Active" : "Inactive",
   };
 }
 
-function fromUser(u: Partial<User>, isNew: boolean): Record<string, unknown> {
+function fromUser(u: Partial<User>, isNew: boolean, roles: Role[]): Record<string, unknown> {
+  const roleName = roles.find((r) => r.id === u.roleId)?.name ?? u.roleId ?? "";
   const body: Record<string, unknown> = {
     full_name: u.name,
     phone:     u.phone,
-    login:     u.login,
-    role_id:   u.roleId,
+    email:     u.login,
+    role:      roleName,
     status:    (u.status ?? "Active").toLowerCase(),
     work_days: u.workDays,
     work_from: u.workFrom,
@@ -513,8 +515,8 @@ function UserModal({ user, roles, teams, onClose, onSave }: {
 
           {/* Login */}
           <label style={fieldStyle}>
-            <span style={capStyle}>Login</span>
-            <input value={form.login ?? ""} onChange={(e) => set("login", e.target.value)} style={{ ...inputStyle, fontFamily: "var(--font-mono)" }} autoComplete="off" />
+            <span style={capStyle}>Email</span>
+            <input value={form.login ?? ""} onChange={(e) => set("login", e.target.value)} style={{ ...inputStyle, fontFamily: "var(--font-mono)" }} autoComplete="off" type="email" />
           </label>
           {/* Password */}
           <label style={fieldStyle}>
@@ -585,9 +587,9 @@ function UsersTab({ roles, teams }: { roles: Role[]; teams: Team[] }) {
     setSaving(true);
     try {
       if (isNew) {
-        await api.post(`/owner/companies/${companyId}/users`, fromUser(u, true));
+        await api.post(`/owner/companies/${companyId}/users`, fromUser(u, true, roles));
       } else {
-        await api.put(`/owner/companies/${companyId}/users/${u.id}`, fromUser(u, false));
+        await api.put(`/owner/companies/${companyId}/users/${u.id}`, fromUser(u, false, roles));
       }
       setFetchKey((k) => k + 1);
       setModal(null);
@@ -666,7 +668,7 @@ function UsersTab({ roles, teams }: { roles: Role[]; teams: Team[] }) {
               <TH width={120}>Hours</TH>
               <TH width={110}>Role</TH>
               <TH width={130}>Team</TH>
-              <TH width={140}>Login</TH>
+              <TH width={140}>Email</TH>
               <TH width={90}>Status</TH>
               <TH width={90} align="center">Actions</TH>
             </tr>
