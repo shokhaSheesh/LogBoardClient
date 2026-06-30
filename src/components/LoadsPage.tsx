@@ -46,6 +46,7 @@ interface BackendLoad {
   payout: number;
   miles: number;
   broker?: string;
+  stops?: Stop[];
 }
 
 // ─── Config ───────────────────────────────────────────────────────────────────
@@ -70,13 +71,14 @@ function toLoad(b: BackendLoad, drivers: { id: string; name: string }[]): Load {
     driver_id: b.driver_id ?? "",
     driver: driverName,
     broker: b.broker ?? "",
-    status: b.status ?? "reserved",
+    status: b.status as Status,
     pickupAppt: b.pickup_appt ?? "",
     dropAppt: b.drop_appt ?? "",
     origin: b.origin ?? "",
     destination: b.destination ?? "",
     payout: b.payout ?? 0,
     totalMiles: b.miles ?? 0,
+    stops: b.stops,
     dispatcher: "",
   };
 }
@@ -93,6 +95,7 @@ function toBackend(l: Partial<Load>): Partial<BackendLoad> {
     payout: l.payout ?? 0,
     miles: l.totalMiles ?? 0,
     broker: l.broker,
+    stops: l.stops,
   };
 }
 
@@ -276,6 +279,7 @@ const TH = ({ children, width, align = "left" }: { children: React.ReactNode; wi
 
 function StatusBadge({ status }: { status: Status }) {
   const c = SHARED_STATUS_CONFIG[status];
+  if (!c) return <span style={{ color: "var(--muted-foreground)", fontFamily: "var(--font-sans)", fontSize: 13 }}>—</span>;
   return (
     <span style={{
       display: "inline-flex", alignItems: "center",
@@ -313,16 +317,20 @@ function StatusDropdown({ value, onChange }: { value: Status; onChange: (s: Stat
 
   return (
     <>
-      <div ref={anchorRef} onClick={toggle} style={{ cursor: "pointer", display: "inline-flex" }}>
-        <span style={{
-          display: "inline-flex", alignItems: "center", gap: 5,
-          fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600,
-          color: cfg.color, backgroundColor: cfg.bg,
-          borderRadius: 4, padding: "3px 8px", whiteSpace: "nowrap", userSelect: "none",
-        }}>
-          {cfg.label}
-          <ChevronDown size={10} style={{ opacity: 0.7, marginLeft: 1 }} />
-        </span>
+      <div ref={anchorRef} onClick={cfg ? toggle : undefined} style={{ cursor: cfg ? "pointer" : "default", display: "inline-flex" }}>
+        {cfg ? (
+          <span style={{
+            display: "inline-flex", alignItems: "center", gap: 5,
+            fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600,
+            color: cfg.color, backgroundColor: cfg.bg,
+            borderRadius: 4, padding: "3px 8px", whiteSpace: "nowrap", userSelect: "none",
+          }}>
+            {cfg.label}
+            <ChevronDown size={10} style={{ opacity: 0.7, marginLeft: 1 }} />
+          </span>
+        ) : (
+          <span style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)", userSelect: "none" }}>—</span>
+        )}
       </div>
       {open && rect && createPortal(
         <div ref={dropRef} style={{
@@ -959,7 +967,6 @@ function LoadModal({ load, onClose, onSave, driverOpts = [], saving = false }: {
                   >
                     <Plus size={12} /> Add Stop
                   </button>
-                  <span style={{ fontSize: 8, fontWeight: 700, color: "#D97706", backgroundColor: "#FEF3C7", borderRadius: 4, padding: "2px 5px", letterSpacing: "0.04em" }}>backend pending</span>
                 </div>
               </div>
             </div>
@@ -1258,6 +1265,8 @@ function LoadDetail({ load, onBack }: { load: Load; onBack: () => void }) {
 
 export function LoadsPage() {
   const [loads, setLoads]           = useState<Load[]>([]);
+  const [total, setTotal]           = useState(0);
+  const [driverList, setDriverList] = useState<{ id: string; name: string }[] | null>(null);
   const [driverOpts, setDriverOpts] = useState<SelectOpt[]>([]);
   const [loading, setLoading]       = useState(true);
   const [fetchKey, setFetchKey]     = useState(0);
@@ -1267,6 +1276,7 @@ export function LoadsPage() {
   const [deleting, setDeleting]     = useState<Load | null>(null);
   const [filterStatus, setFilter]   = useState("All");
   const [search, setSearch]         = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [page, setPage]             = useState(1);
   const [pageSize, setPageSize]     = useState(20);
   const [detailLoad, setDetail]     = useState<Load | null>(null);
@@ -1279,22 +1289,40 @@ export function LoadsPage() {
   }, [toast]);
 
   useEffect(() => {
+    const t = setTimeout(() => { setDebouncedSearch(search); setPage(1); }, 250);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  useEffect(() => { setPage(1); }, [filterStatus]);
+
+  useEffect(() => {
+    api.get<any[]>("/drivers")
+      .then((drivers) => {
+        const list = (drivers ?? []).map((d: any) => ({ id: d.id as string, name: (d.name ?? d.name1 ?? d.id) as string }));
+        setDriverList(list);
+        setDriverOpts(list.map((d) => ({ value: d.id, label: d.name })));
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (driverList === null) return;
     setLoading(true);
-    Promise.all([
-      api.get<BackendLoad[]>("/loads"),
-      api.get<any[]>("/drivers"),
-    ])
-      .then(([backendLoads, drivers]) => {
-        const drvList = (drivers ?? []).map((d: any) => ({ id: d.id as string, name: (d.name ?? d.name1 ?? d.id) as string }));
-        const opts = drvList.map((d) => ({ value: d.id, label: d.name }));
-        setDriverOpts(opts);
-        const mapped = (backendLoads ?? []).map((b) => toLoad(b, drvList));
+    api.getList<BackendLoad>("/loads", {
+      q: debouncedSearch || undefined,
+      status: filterStatus !== "All" ? filterStatus : undefined,
+      page,
+      page_size: pageSize,
+    })
+      .then(({ items, total: t }) => {
+        const mapped = (items ?? []).map((b) => toLoad(b, driverList));
         setLoads(mapped);
+        setTotal(t);
         setDetail((prev) => prev ? (mapped.find((l) => l.id === prev.id) ?? null) : null);
       })
       .catch((e) => setToast({ type: "error", msg: String(e) }))
       .finally(() => setLoading(false));
-  }, [fetchKey]);
+  }, [fetchKey, debouncedSearch, filterStatus, page, pageSize, driverList]);
 
   const patchLoad = async (id: string, fields: Partial<Load>) => {
     const current = loads.find((l) => l.id === id);
@@ -1344,16 +1372,8 @@ export function LoadsPage() {
     }
   };
 
-  const q = search.toLowerCase();
-  const filtered = loads.filter((l) => {
-    const ms = !q || l.loadId.toLowerCase().includes(q) || l.broker.toLowerCase().includes(q) || l.driver.toLowerCase().includes(q) || l.origin.toLowerCase().includes(q) || l.destination.toLowerCase().includes(q);
-    const mf = filterStatus === "All" || l.status === filterStatus;
-    return ms && mf;
-  });
-  const paged = filtered.slice((page - 1) * pageSize, page * pageSize);
-
-  const handleSearch = (v: string) => { setSearch(v);  setPage(1); };
-  const handleFilter = (v: string) => { setFilter(v);  setPage(1); };
+  const handleSearch = (v: string) => setSearch(v);
+  const handleFilter = (v: string) => setFilter(v);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", backgroundColor: "var(--background)", overflow: "hidden" }}>
@@ -1389,37 +1409,31 @@ export function LoadsPage() {
             backgroundColor: "var(--card)", flexShrink: 0,
           }}>
             {/* Search */}
-            <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-              <div style={{ position: "relative", width: 260 }}>
-                <Search size={13} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--muted-foreground)", pointerEvents: "none" }} />
-                <input
-                  value={search}
-                  onChange={(e) => handleSearch(e.target.value)}
-                  placeholder="Search loads, brokers, drivers…"
-                  style={{
-                    width: "100%", height: 34, paddingLeft: 30, paddingRight: 10,
-                    fontFamily: "var(--font-sans)", fontSize: 13,
-                    backgroundColor: "var(--input-background)", border: "1px solid var(--border)",
-                    borderRadius: 7, color: "var(--foreground)", outline: "none", boxSizing: "border-box",
-                    transition: "border-color 0.15s, box-shadow 0.15s",
-                  }}
-                  onFocus={(e) => { e.currentTarget.style.borderColor = "var(--primary)"; e.currentTarget.style.boxShadow = "0 0 0 3px rgba(59,130,246,0.12)"; }}
-                  onBlur={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.boxShadow = "none"; }}
-                />
-              </div>
-              <span style={{ fontSize: 8, fontWeight: 700, color: "#D97706", backgroundColor: "#FEF3C7", borderRadius: 4, padding: "2px 5px", letterSpacing: "0.04em", whiteSpace: "nowrap" }}>backend pending</span>
+            <div style={{ position: "relative", width: 260 }}>
+              <Search size={13} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--muted-foreground)", pointerEvents: "none" }} />
+              <input
+                value={search}
+                onChange={(e) => handleSearch(e.target.value)}
+                placeholder="Search loads, brokers, drivers…"
+                style={{
+                  width: "100%", height: 34, paddingLeft: 30, paddingRight: 10,
+                  fontFamily: "var(--font-sans)", fontSize: 13,
+                  backgroundColor: "var(--input-background)", border: "1px solid var(--border)",
+                  borderRadius: 7, color: "var(--foreground)", outline: "none", boxSizing: "border-box",
+                  transition: "border-color 0.15s, box-shadow 0.15s",
+                }}
+                onFocus={(e) => { e.currentTarget.style.borderColor = "var(--primary)"; e.currentTarget.style.boxShadow = "0 0 0 3px rgba(59,130,246,0.12)"; }}
+                onBlur={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.boxShadow = "none"; }}
+              />
             </div>
 
             {/* Status filter */}
-            <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-              <CustomSelect
-                value={filterStatus}
-                options={STATUS_FILTER_OPTS}
-                onChange={handleFilter}
-                width={172}
-              />
-              <span style={{ fontSize: 8, fontWeight: 700, color: "#D97706", backgroundColor: "#FEF3C7", borderRadius: 4, padding: "2px 5px", letterSpacing: "0.04em", whiteSpace: "nowrap" }}>backend pending</span>
-            </div>
+            <CustomSelect
+              value={filterStatus}
+              options={STATUS_FILTER_OPTS}
+              onChange={handleFilter}
+              width={172}
+            />
 
             <div style={{ flex: 1 }} />
 
@@ -1445,7 +1459,7 @@ export function LoadsPage() {
                 </tr>
               </thead>
               <tbody>
-                {paged.map((l, i) => (
+                {loads.map((l, i) => (
                   <tr
                     key={l.id}
                     style={{ backgroundColor: i % 2 === 0 ? "var(--card)" : "var(--background)" }}
@@ -1597,7 +1611,7 @@ export function LoadsPage() {
                     </td>
                   </tr>
                 )}
-                {!loading && paged.length === 0 && (
+                {!loading && loads.length === 0 && (
                   <tr>
                     <td colSpan={11} style={{ padding: "40px 20px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
                       No loads match your filters.
@@ -1609,7 +1623,7 @@ export function LoadsPage() {
           </div>
 
           <Pagination
-            page={page} total={filtered.length} pageSize={pageSize}
+            page={page} total={total} pageSize={pageSize}
             onPage={setPage} onPageSize={setPageSize}
           />
           </>)}
