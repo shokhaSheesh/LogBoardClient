@@ -9,11 +9,7 @@ import { api, getCompanyId } from "../lib/api";
 
 type UserStatus = "Active" | "Inactive";
 
-const PAGES = ["Board", "Gross", "Loads", "Drivers", "Equipments", "Settings"] as const;
-type PageName = typeof PAGES[number];
-type CRUDKey = "create" | "read" | "update" | "delete";
-const CRUD_KEYS: CRUDKey[] = ["create", "read", "update", "delete"];
-type Permissions = Record<PageName, Record<CRUDKey, boolean>>;
+type Permissions = Record<string, Record<string, boolean>>;
 
 interface Role {
   id: string;
@@ -63,10 +59,17 @@ interface BackendRole {
   permissions?: string[] | Record<string, Record<string, boolean>>;
 }
 
-function emptyPerms(): Permissions {
-  return Object.fromEntries(
-    PAGES.map((p) => [p, { create: false, read: false, update: false, delete: false }])
-  ) as Permissions;
+function parseCatalog(perms: string[]): { page: string; actions: string[] }[] {
+  const map = new Map<string, string[]>();
+  for (const p of perms) {
+    const dot = p.lastIndexOf(".");
+    if (dot === -1) continue;
+    const page = p.slice(0, dot);
+    const action = p.slice(dot + 1);
+    if (!map.has(page)) map.set(page, []);
+    map.get(page)!.push(action);
+  }
+  return [...map.entries()].map(([page, actions]) => ({ page, actions }));
 }
 
 function toUser(b: BackendUser): User {
@@ -101,29 +104,24 @@ function fromUser(u: Partial<User>, isNew: boolean): Record<string, unknown> {
 }
 
 function toRole(b: BackendRole): Role {
-  const perms = emptyPerms();
+  const perms: Permissions = {};
   if (Array.isArray(b.permissions)) {
-    // Backend format: ["board.read", "loads.create", ...]
     for (const perm of b.permissions) {
       const dot = perm.lastIndexOf(".");
       if (dot === -1) continue;
       const page = perm.slice(0, dot);
       const action = perm.slice(dot + 1);
-      const pageName = PAGES.find((p) => p.toLowerCase() === page.toLowerCase());
-      if (pageName) {
-        const key = action === "view" ? "read" : action === "edit" ? "update" : action as CRUDKey;
-        if (key in perms[pageName]) perms[pageName][key as CRUDKey] = true;
-      }
+      if (!perms[page]) perms[page] = {};
+      perms[page][action] = true;
     }
   } else if (b.permissions && typeof b.permissions === "object") {
     for (const [page, actions] of Object.entries(b.permissions as Record<string, Record<string, boolean>>)) {
-      const k = page as PageName;
-      if (k in perms) {
-        perms[k].read   = !!(actions.read || actions.view);
-        perms[k].create = !!actions.create;
-        perms[k].update = !!(actions.update || actions.edit);
-        perms[k].delete = !!actions.delete;
-      }
+      perms[page] = {
+        read:   !!(actions.read || actions.view),
+        create: !!actions.create,
+        update: !!(actions.update || actions.edit),
+        delete: !!actions.delete,
+      };
     }
   }
   return { id: b.id, name: b.name, permissions: perms };
@@ -151,7 +149,7 @@ const initTeams: Team[] = [
 
 // ─── Shared UI primitives ─────────────────────────────────────────────────────
 
-const TH = ({ children, width, align = "left" }: { children: React.ReactNode; width?: number; align?: string }) => (
+const TH = ({ children, width, align = "left", style: extraStyle }: { children: React.ReactNode; width?: number; align?: string; style?: React.CSSProperties }) => (
   <th style={{
     padding: "8px 14px", textAlign: align as "left" | "center",
     fontFamily: "var(--font-sans)", fontSize: 10, fontWeight: 600,
@@ -161,6 +159,7 @@ const TH = ({ children, width, align = "left" }: { children: React.ReactNode; wi
     whiteSpace: "nowrap", userSelect: "none",
     width: width ?? "auto", minWidth: width ?? "auto",
     position: "sticky", top: 0, zIndex: 5,
+    ...extraStyle,
   }}>{children}</th>
 );
 
@@ -1058,34 +1057,50 @@ function TeamsTab({ users }: { users: User[] }) {
 
 // ─── ROLES & PERMISSIONS TAB ─────────────────────────────────────────────────
 
-function RoleModal({ role, onClose, onSave }: {
-  role: Partial<Role>; onClose: () => void; onSave: (r: Role) => void;
+function RoleModal({ role, catalog, onClose, onSave }: {
+  role: Partial<Role>; catalog: string[]; onClose: () => void; onSave: (r: Role) => void;
 }) {
-  const emptyPerms = () => Object.fromEntries(PAGES.map((p) => [p, { create: false, read: false, update: false, delete: false }])) as Permissions;
-  const [form, setForm] = useState<Partial<Role>>({ ...role, permissions: role.permissions ? JSON.parse(JSON.stringify(role.permissions)) : emptyPerms() });
+  const catalogEntries = parseCatalog(catalog);
+  const allActions = [...new Set(catalogEntries.flatMap((e) => e.actions))].sort(
+    (a, b) => (ACTION_ORDER.indexOf(a) + 1 || 99) - (ACTION_ORDER.indexOf(b) + 1 || 99)
+  );
+
+  const buildEmpty = (): Permissions =>
+    Object.fromEntries(catalogEntries.map(({ page, actions }) => [page, Object.fromEntries(actions.map((a) => [a, false]))]));
+
+  const initPerms = (): Permissions => {
+    const base = buildEmpty();
+    if (role.permissions) {
+      for (const [page, actions] of Object.entries(role.permissions)) {
+        if (base[page]) {
+          for (const [action, val] of Object.entries(actions)) {
+            if (action in base[page]) base[page][action] = val as boolean;
+          }
+        }
+      }
+    }
+    return base;
+  };
+
+  const [form, setForm] = useState<Partial<Role>>({ ...role, permissions: initPerms() });
   const isNew = !role.id;
 
-  const toggle = (page: PageName, key: CRUDKey) => {
+  const toggle = (page: string, action: string) => {
     setForm((f) => {
       const perms = JSON.parse(JSON.stringify(f.permissions)) as Permissions;
-      perms[page][key] = !perms[page][key];
+      if (!perms[page]) perms[page] = {};
+      perms[page][action] = !perms[page][action];
       return { ...f, permissions: perms };
     });
   };
 
-  const toggleAll = (page: PageName, val: boolean) => {
+  const toggleAll = (page: string, val: boolean, actions: string[]) => {
     setForm((f) => {
       const perms = JSON.parse(JSON.stringify(f.permissions)) as Permissions;
-      CRUD_KEYS.forEach((k) => { perms[page][k] = val; });
+      if (!perms[page]) perms[page] = {};
+      actions.forEach((a) => { perms[page][a] = val; });
       return { ...f, permissions: perms };
     });
-  };
-
-  const CRUD_COLORS: Record<CRUDKey, { on: string; bg: string }> = {
-    create: { on: "#10B981", bg: "#D1FAE5" },
-    read:   { on: "#3B82F6", bg: "#DBEAFE" },
-    update: { on: "#F59E0B", bg: "#FEF3C7" },
-    delete: { on: "#EF4444", bg: "#FEE2E2" },
   };
 
   return (
@@ -1104,53 +1119,52 @@ function RoleModal({ role, onClose, onSave }: {
           {/* RBAC matrix */}
           <div>
             <div style={{ ...capStyle, marginBottom: 10, display: "block" }}>Page Permissions</div>
-            <div style={{ border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden" }}>
-              {/* Header */}
-              <div style={{ display: "grid", gridTemplateColumns: "160px 60px repeat(4, 1fr)", backgroundColor: "var(--muted)", borderBottom: "1px solid var(--border)" }}>
-                <div style={{ padding: "8px 14px", fontFamily: "var(--font-sans)", fontSize: 10, fontWeight: 700, color: "var(--muted-foreground)", textTransform: "uppercase", letterSpacing: "0.07em" }}>Page</div>
-                <div style={{ padding: "8px 6px", fontFamily: "var(--font-sans)", fontSize: 10, fontWeight: 700, color: "var(--muted-foreground)", textTransform: "uppercase", textAlign: "center" }}>All</div>
-                {CRUD_KEYS.map((k) => (
-                  <div key={k} style={{ padding: "8px 6px", fontFamily: "var(--font-sans)", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", textAlign: "center", color: CRUD_COLORS[k].on }}>{k}</div>
-                ))}
-              </div>
-              {/* Rows */}
-              {PAGES.map((page, pi) => {
-                const perms = form.permissions![page];
-                const allOn = CRUD_KEYS.every((k) => perms[k]);
-                return (
-                  <div
-                    key={page}
-                    style={{ display: "grid", gridTemplateColumns: "160px 60px repeat(4, 1fr)", borderBottom: pi < PAGES.length - 1 ? "1px solid var(--border)" : "none", backgroundColor: pi % 2 === 0 ? "var(--card)" : "var(--background)" }}
-                  >
-                    <div style={{ padding: "10px 14px", fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 500, color: "var(--foreground)", display: "flex", alignItems: "center" }}>{page}</div>
-                    {/* All toggle */}
-                    <div style={{ padding: "10px 6px", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                      <button onClick={() => toggleAll(page, !allOn)} style={{ background: "none", border: "none", cursor: "pointer", color: allOn ? "#3B82F6" : "var(--muted-foreground)", display: "flex" }}>
-                        {allOn ? <ToggleRight size={22} /> : <ToggleLeft size={22} />}
-                      </button>
+            {catalogEntries.length === 0 ? (
+              <div style={{ padding: "24px 16px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>Loading permissions…</div>
+            ) : (
+              <div style={{ border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden" }}>
+                {/* Header */}
+                <div style={{ display: "grid", gridTemplateColumns: `160px 60px repeat(${allActions.length}, 1fr)`, backgroundColor: "var(--muted)", borderBottom: "1px solid var(--border)" }}>
+                  <div style={{ padding: "8px 14px", fontFamily: "var(--font-sans)", fontSize: 10, fontWeight: 700, color: "var(--muted-foreground)", textTransform: "uppercase", letterSpacing: "0.07em" }}>Page</div>
+                  <div style={{ padding: "8px 6px", fontFamily: "var(--font-sans)", fontSize: 10, fontWeight: 700, color: "var(--muted-foreground)", textTransform: "uppercase", textAlign: "center" }}>All</div>
+                  {allActions.map((a) => {
+                    const cc = ACTION_COLOR[a] ?? defaultActionColor;
+                    return <div key={a} style={{ padding: "8px 6px", fontFamily: "var(--font-sans)", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", textAlign: "center", color: cc.on }}>{a}</div>;
+                  })}
+                </div>
+                {/* Rows */}
+                {catalogEntries.map(({ page, actions }, pi) => {
+                  const perms = form.permissions?.[page] ?? {};
+                  const allOn = actions.every((a) => perms[a]);
+                  return (
+                    <div key={page} style={{ display: "grid", gridTemplateColumns: `160px 60px repeat(${allActions.length}, 1fr)`, borderBottom: pi < catalogEntries.length - 1 ? "1px solid var(--border)" : "none", backgroundColor: pi % 2 === 0 ? "var(--card)" : "var(--background)" }}>
+                      <div style={{ padding: "10px 14px", fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 500, color: "var(--foreground)", display: "flex", alignItems: "center", textTransform: "capitalize" }}>{page}</div>
+                      <div style={{ padding: "10px 6px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        <button onClick={() => toggleAll(page, !allOn, actions)} style={{ background: "none", border: "none", cursor: "pointer", color: allOn ? "#3B82F6" : "var(--muted-foreground)", display: "flex" }}>
+                          {allOn ? <ToggleRight size={22} /> : <ToggleLeft size={22} />}
+                        </button>
+                      </div>
+                      {allActions.map((action) => {
+                        const applicable = actions.includes(action);
+                        const on = applicable && !!perms[action];
+                        const cc = ACTION_COLOR[action] ?? defaultActionColor;
+                        return (
+                          <div key={action} style={{ padding: "10px 6px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                            {applicable ? (
+                              <button onClick={() => toggle(page, action)} style={{ width: 22, height: 22, borderRadius: 4, border: "none", cursor: "pointer", backgroundColor: on ? cc.bg : "var(--muted)", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.1s" }}>
+                                {on && <Check size={13} style={{ color: cc.on }} strokeWidth={2.5} />}
+                              </button>
+                            ) : (
+                              <div style={{ width: 22, height: 22, borderRadius: 4, backgroundColor: "var(--muted)", opacity: 0.35 }} />
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
-                    {CRUD_KEYS.map((k) => {
-                      const on = perms[k];
-                      return (
-                        <div key={k} style={{ padding: "10px 6px", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                          <button
-                            onClick={() => toggle(page, k)}
-                            style={{
-                              width: 22, height: 22, borderRadius: 4, border: "none", cursor: "pointer",
-                              backgroundColor: on ? CRUD_COLORS[k].bg : "var(--muted)",
-                              display: "flex", alignItems: "center", justifyContent: "center",
-                              transition: "all 0.1s",
-                            }}
-                          >
-                            {on && <Check size={13} style={{ color: CRUD_COLORS[k].on }} strokeWidth={2.5} />}
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, padding: "14px 20px", borderTop: "1px solid var(--border)", flexShrink: 0 }}>
@@ -1164,12 +1178,14 @@ function RoleModal({ role, onClose, onSave }: {
   );
 }
 
-const CRUD_COLORS_INLINE: Record<CRUDKey, { on: string; bg: string; label: string }> = {
-  create: { on: "#10B981", bg: "#D1FAE5", label: "C" },
+const ACTION_COLOR: Record<string, { on: string; bg: string; label: string }> = {
   read:   { on: "#3B82F6", bg: "#DBEAFE", label: "R" },
+  create: { on: "#10B981", bg: "#D1FAE5", label: "C" },
   update: { on: "#F59E0B", bg: "#FEF3C7", label: "U" },
   delete: { on: "#EF4444", bg: "#FEE2E2", label: "D" },
 };
+const defaultActionColor = { on: "#6B7280", bg: "#F3F4F6", label: "?" };
+const ACTION_ORDER = ["read", "create", "update", "delete"];
 
 function RolesTab({ onRolesChange }: { onRolesChange: (roles: Role[]) => void }) {
   const [roles, setRoles]       = useState<Role[]>([]);
@@ -1179,6 +1195,17 @@ function RolesTab({ onRolesChange }: { onRolesChange: (roles: Role[]) => void })
   const [modal, setModal]       = useState<"create" | "edit" | null>(null);
   const [editing, setEditing]   = useState<Partial<Role>>({});
   const [deleting, setDeleting] = useState<Role | null>(null);
+  const [catalog, setCatalog]   = useState<string[]>([]);
+
+  useEffect(() => {
+    const companyId = getCompanyId();
+    api.get<any>(`/owner/companies/${companyId}/catalog`)
+      .then((raw) => {
+        const perms: string[] = Array.isArray(raw) ? raw : (raw?.permissions ?? raw?.data ?? []);
+        setCatalog(perms);
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     const companyId = getCompanyId();
@@ -1238,13 +1265,13 @@ function RolesTab({ onRolesChange }: { onRolesChange: (roles: Role[]) => void })
           <thead>
             <tr>
               <TH width={150}>Role Name</TH>
-              {PAGES.map((p) => <TH key={p} width={140}>{p}</TH>)}
+              {parseCatalog(catalog).map(({ page }) => <TH key={page} width={140} align="center" style={{ textTransform: "capitalize" }}>{page}</TH>)}
               <TH width={90} align="center">Actions</TH>
             </tr>
           </thead>
           <tbody>
             {loading && (
-              <tr><td colSpan={PAGES.length + 2} style={{ padding: "32px 24px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>Loading…</td></tr>
+              <tr><td colSpan={parseCatalog(catalog).length + 2} style={{ padding: "32px 24px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>Loading…</td></tr>
             )}
             {!loading && roles.map((r, i) => {
               const isEven = i % 2 === 0;
@@ -1253,6 +1280,7 @@ function RolesTab({ onRolesChange }: { onRolesChange: (roles: Role[]) => void })
                 Dispatcher: { color: "#5B21B6", bg: "#EDE9FE" },
               };
               const rc = ROLE_COLOR[r.name] ?? { color: "#374151", bg: "#F3F4F6" };
+              const catalogEntries = parseCatalog(catalog);
               return (
                 <tr key={r.id} style={{ backgroundColor: isEven ? "var(--card)" : "var(--background)" }}
                   onMouseEnter={(e) => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = "rgba(59,130,246,0.03)"; }}
@@ -1261,16 +1289,16 @@ function RolesTab({ onRolesChange }: { onRolesChange: (roles: Role[]) => void })
                   <td style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", verticalAlign: "middle" }}>
                     <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: 700, color: rc.color, backgroundColor: rc.bg, borderRadius: 4, padding: "3px 10px" }}>{r.name}</span>
                   </td>
-                  {PAGES.map((page) => {
-                    const perms = r.permissions[page];
+                  {catalogEntries.map(({ page, actions }) => {
+                    const perms = r.permissions[page] ?? {};
                     return (
                       <td key={page} style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", verticalAlign: "middle" }}>
-                        <div style={{ display: "flex", gap: 4 }}>
-                          {CRUD_KEYS.map((k) => {
-                            const on = perms[k];
-                            const cc = CRUD_COLORS_INLINE[k];
+                        <div style={{ display: "flex", gap: 4, justifyContent: "center" }}>
+                          {actions.map((a) => {
+                            const on = !!perms[a];
+                            const cc = ACTION_COLOR[a] ?? defaultActionColor;
                             return (
-                              <span key={k} style={{
+                              <span key={a} style={{
                                 width: 20, height: 20, borderRadius: 4, display: "inline-flex", alignItems: "center", justifyContent: "center",
                                 fontFamily: "var(--font-mono)", fontSize: 9, fontWeight: 700,
                                 backgroundColor: on ? cc.bg : "var(--muted)",
@@ -1299,7 +1327,7 @@ function RolesTab({ onRolesChange }: { onRolesChange: (roles: Role[]) => void })
       </div>
 
       {(modal === "create" || modal === "edit") && (
-        <RoleModal role={editing} onClose={() => setModal(null)} onSave={(r) => { void save(r); }} />
+        <RoleModal role={editing} catalog={catalog} onClose={() => setModal(null)} onSave={(r) => { void save(r); }} />
       )}
       {deleting && <DeleteConfirm label={deleting.name} onClose={() => setDeleting(null)} onConfirm={() => confirmDelete(deleting)} />}
       {saving && <div style={{ position: "fixed", inset: 0, zIndex: 200 }} />}
