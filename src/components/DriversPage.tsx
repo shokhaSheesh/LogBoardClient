@@ -1367,10 +1367,9 @@ interface WeekLoad {
 
 function fetchWeekLoads(driverId: string, offset: number): Promise<WeekLoad[]> {
   const { start, end } = getWeekBounds(offset);
-  return api.getList<any>("/loads", { page_size: 200 }).then(({ items }) =>
+  return api.getList<any>("/loads", { driver_id: driverId, page_size: 200 }).then(({ items }) =>
     (items ?? [])
       .filter((l: any) => {
-        if (l.driver_id !== driverId) return false;
         const d = new Date(l.pickup_appt ?? "");
         return !isNaN(d.getTime()) && d >= start && d <= end;
       })
