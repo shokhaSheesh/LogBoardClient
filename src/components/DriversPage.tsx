@@ -1365,13 +1365,21 @@ interface WeekLoad {
   miles: number; payout: number; pickupAppt: string; status: string;
 }
 
+// Backend sends pickup_appt as "MM/DD · HH:mm" — parse it into a real Date
+function parseAppt(raw: string): Date | null {
+  const m = raw.match(/^(\d{1,2})\/(\d{1,2})\s·\s(\d{2}):(\d{2})$/);
+  if (!m) return null;
+  const year = new Date().getFullYear();
+  return new Date(year, Number(m[1]) - 1, Number(m[2]), Number(m[3]), Number(m[4]));
+}
+
 function fetchWeekLoads(driverId: string, offset: number): Promise<WeekLoad[]> {
   const { start, end } = getWeekBounds(offset);
   return api.getList<any>("/loads", { driver_id: driverId, page_size: 200 }).then(({ items }) =>
     (items ?? [])
       .filter((l: any) => {
-        const d = new Date(l.pickup_appt ?? "");
-        return !isNaN(d.getTime()) && d >= start && d <= end;
+        const d = parseAppt(l.pickup_appt ?? "");
+        return d !== null && d >= start && d <= end;
       })
       .map((l: any) => ({
         id: l.id, loadId: l.load_id ?? "",
