@@ -20,7 +20,9 @@ interface SoloDriver {
   status: DriverStatus; truck: string; trailer: string; location: string; comment: string;
   weeklyGrossTarget?: number;
   currentLoad?: string;
+  currentLoadId?: string;
   nextLoad?: string;
+  nextLoadId?: string;
 }
 
 interface TeamDriver {
@@ -28,7 +30,9 @@ interface TeamDriver {
   type: DriverType; status: DriverStatus; truck: string; trailer: string; comment: string;
   weeklyGrossTarget?: number;
   currentLoad?: string;
+  currentLoadId?: string;
   nextLoad?: string;
+  nextLoadId?: string;
 }
 
 // ─── API ↔ local shape mappers ───────────────────────────────────────────────
@@ -46,8 +50,10 @@ function toSolo(d: any): SoloDriver {
     location: d.location ?? "",
     comment: d.comment ?? "",
     weeklyGrossTarget: d.weekly_gross_target || undefined,
-    currentLoad: d.current_load || undefined,
-    nextLoad: d.next_load || undefined,
+    currentLoad:   d.current_load    || undefined,
+    currentLoadId: d.current_load_id || undefined,
+    nextLoad:      d.next_load       || undefined,
+    nextLoadId:    d.next_load_id    || undefined,
   };
 }
 
@@ -65,8 +71,10 @@ function toTeam(d: any): TeamDriver {
     trailer: d.trailer ?? "",
     comment: d.comment ?? "",
     weeklyGrossTarget: d.weekly_gross_target || undefined,
-    currentLoad: d.current_load || undefined,
-    nextLoad: d.next_load || undefined,
+    currentLoad:   d.current_load    || undefined,
+    currentLoadId: d.current_load_id || undefined,
+    nextLoad:      d.next_load       || undefined,
+    nextLoadId:    d.next_load_id    || undefined,
   };
 }
 
@@ -80,6 +88,7 @@ function fromSolo(d: Partial<SoloDriver>) {
     location: d.location ?? "",
     comment: d.comment ?? "",
     weekly_gross_target: d.weeklyGrossTarget ?? 0,
+    next_load_id: d.nextLoadId || null,
   };
 }
 
@@ -94,6 +103,7 @@ function fromTeam(d: Partial<TeamDriver>) {
     status: d.status ?? "ready",
     comment: d.comment ?? "",
     weekly_gross_target: d.weeklyGrossTarget ?? 0,
+    next_load_id: d.nextLoadId || null,
   };
 }
 
@@ -593,9 +603,22 @@ function SoloModal({ driver, onClose, onSave, truckOpts, trailerOpts, saving }: 
 }) {
   const [form, setForm] = useState<Partial<SoloDriver>>(driver);
   const [touched, setTouched] = useState<Partial<Record<keyof SoloDriver, boolean>>>({});
+  const [loadOpts, setLoadOpts] = useState<SelectOpt[]>([]);
   const set = (k: keyof SoloDriver, v: string) => setForm((f) => ({ ...f, [k]: v }));
   const touch = (k: keyof SoloDriver) => setTouched((t) => ({ ...t, [k]: true }));
   const isNew = !driver.id;
+
+  useEffect(() => {
+    if (!driver.id) return;
+    api.getList<any>("/loads", { driver_id: driver.id, page_size: 100 })
+      .then(({ items }) => {
+        const opts = (items ?? [])
+          .filter((l: any) => l.status !== "completed" && l.status !== "delivered" && l.id !== driver.currentLoadId)
+          .map((l: any) => ({ value: l.id, label: l.load_id ?? l.id }));
+        setLoadOpts([{ value: "", label: "— None —" }, ...opts]);
+      })
+      .catch(() => {});
+  }, [driver.id]);
 
   const err = (k: keyof SoloDriver) => touched[k] && !form[k]?.toString().trim();
 
@@ -667,6 +690,22 @@ function SoloModal({ driver, onClose, onSave, truckOpts, trailerOpts, saving }: 
             </div>
           </label>
 
+          {!isNew && (
+            <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+              <FieldLabel>Current Load</FieldLabel>
+              <div style={{ height: 34, display: "flex", alignItems: "center", padding: "0 10px", borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "var(--muted)", fontFamily: "var(--font-mono)", fontSize: 12, color: form.currentLoad ? "var(--foreground)" : "var(--muted-foreground)" }}>
+                {form.currentLoad ?? "—"}
+              </div>
+            </label>
+          )}
+
+          {!isNew && (
+            <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+              <FieldLabel>Next Load</FieldLabel>
+              <CustomSelect value={form.nextLoadId ?? ""} options={loadOpts} onChange={(v) => set("nextLoadId", v)} searchable />
+            </label>
+          )}
+
           <label style={{ display: "flex", flexDirection: "column", gap: 5, gridColumn: "1 / -1" }}>
             <FieldLabel>Comment</FieldLabel>
             <FieldInput value={form.comment ?? ""} onChange={(v) => set("comment", v)} />
@@ -696,6 +735,20 @@ function TeamModal({ driver, onClose, onSave, truckOpts, trailerOpts, saving }: 
   const set = (k: keyof TeamDriver, v: string) => setForm((f) => ({ ...f, [k]: v }));
   const touch = (k: keyof TeamDriver) => setTouched((t) => ({ ...t, [k]: true }));
   const isNew = !driver.id;
+
+  const [loadOpts, setLoadOpts] = useState<SelectOpt[]>([]);
+
+  useEffect(() => {
+    if (!driver.id) return;
+    api.getList<any>("/loads", { driver_id: driver.id, page_size: 100 })
+      .then(({ items }) => {
+        const opts = (items ?? [])
+          .filter((l: any) => l.status !== "completed" && l.status !== "delivered" && l.id !== driver.currentLoadId)
+          .map((l: any) => ({ value: l.id, label: l.load_id ?? l.id }));
+        setLoadOpts([{ value: "", label: "— None —" }, ...opts]);
+      })
+      .catch(() => {});
+  }, [driver.id]);
 
   const err = (k: keyof TeamDriver) => touched[k] && !form[k]?.toString().trim();
 
@@ -776,6 +829,22 @@ function TeamModal({ driver, onClose, onSave, truckOpts, trailerOpts, saving }: 
               />
             </div>
           </label>
+
+          {!isNew && (
+            <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+              <FieldLabel>Current Load</FieldLabel>
+              <div style={{ height: 34, display: "flex", alignItems: "center", padding: "0 10px", borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "var(--muted)", fontFamily: "var(--font-mono)", fontSize: 12, color: form.currentLoad ? "var(--foreground)" : "var(--muted-foreground)" }}>
+                {form.currentLoad ?? "—"}
+              </div>
+            </label>
+          )}
+
+          {!isNew && (
+            <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+              <FieldLabel>Next Load</FieldLabel>
+              <CustomSelect value={form.nextLoadId ?? ""} options={loadOpts} onChange={(v) => set("nextLoadId", v)} searchable />
+            </label>
+          )}
 
           <label style={{ display: "flex", flexDirection: "column", gap: 5, gridColumn: "1 / -1" }}>
             <FieldLabel>Comment</FieldLabel>
