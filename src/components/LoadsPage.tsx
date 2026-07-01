@@ -780,9 +780,13 @@ function LoadModal({ load, onClose, onSave, driverOpts = [], dispatcherOpts = []
   // All locations in one unified array: [stop1 (origin), stop2, ..., stopN (destination)]
   const [stops, setStops] = useState<Stop[]>(() => {
     if (load.stops && load.stops.length > 0) {
+      const intermediate = load.stops.map((s) => ({ ...s }));
+      // Destination may have been incorrectly stored as last intermediate stop in old data
+      const lastIsDestination = intermediate[intermediate.length - 1]?.city === load.destination && !!load.destination;
       return [
         { city: load.origin ?? "", done: false, appt: load.pickupAppt ?? "" },
-        ...load.stops.map((s) => ({ ...s })),
+        ...intermediate,
+        ...(lastIsDestination ? [] : [{ city: load.destination ?? "", done: false, appt: load.dropAppt ?? "" }]),
       ];
     }
     return [
@@ -817,7 +821,7 @@ function LoadModal({ load, onClose, onSave, driverOpts = [], dispatcherOpts = []
   const handleSave = () => {
     const filled = stops.filter((s) => s.city.trim());
     const first  = filled[0];
-    const rest   = filled.slice(1);
+    const middle = filled.slice(1, -1); // intermediate stops only (not origin, not destination)
     const last   = filled[filled.length - 1];
     onSave({
       ...form,
@@ -825,7 +829,7 @@ function LoadModal({ load, onClose, onSave, driverOpts = [], dispatcherOpts = []
       pickupAppt:  first?.appt      ?? "",
       destination: last?.city       ?? first?.city ?? "",
       dropAppt:    last?.appt       ?? first?.appt ?? "",
-      stops:       rest.length > 0  ? rest : undefined,
+      stops:       middle.length > 0 ? middle : undefined,
     } as Load);
   };
 
