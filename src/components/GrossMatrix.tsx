@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useRef } from "react";
 import { Search, Calendar, Check, ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { createPortal } from "react-dom";
 import { Status, STATUS_CONFIG, ALL_STATUSES } from "../lib/statuses";
+import { api } from "../lib/api";
 
 type CellType = Status | "load" | "empty";
 
@@ -21,44 +22,43 @@ interface DriverRow {
   companyProfit: number;
 }
 
-// ─── Seed helpers ─────────────────────────────────────────────────────────────
+// ─── Backend types + mapper ───────────────────────────────────────────────────
 
-function mkLoad(amount: number, loadId: string): DayCell { return { type: "load", amount, loadId }; }
-const enroute: DayCell = { type: "enroute" };
-const home: DayCell    = { type: "home" };
-const rest: DayCell    = { type: "rest" };
-const nd: DayCell      = { type: "ready" };
-
-function toDateMap(weekStart: string, days: DayCell[]): Record<string, DayCell> {
-  const map: Record<string, DayCell> = {};
-  const base = new Date(weekStart + "T00:00:00");
-  days.forEach((cell, i) => {
-    const d = new Date(base);
-    d.setDate(base.getDate() + i);
-    map[d.toISOString().split("T")[0]] = cell;
-  });
-  return map;
+interface BackendCell {
+  type: string;
+  amount?: number;
+  load_id?: string;
 }
 
-const W = "2026-06-08";
+interface BackendDriverRow {
+  id: number;
+  name: string;
+  driver_type?: string;
+  unit?: string;
+  weekly_target?: number;
+  company_profit?: number;
+  days?: Record<string, BackendCell>;
+}
 
-const INITIAL_DRIVERS: DriverRow[] = [
-  { id: 1,  name: "Carlos Mendez",        driverType: "C/D", unit: "001", weeklyTarget: 4000,  companyProfit: -4500, dateMap: toDateMap(W, [mkLoad(1250,"57760165"), mkLoad(1250,"57760191"), home, home, home, home, home]) },
-  { id: 2,  name: "Angela Torres",         driverType: "C/D", unit: "002", weeklyTarget: 3500,  companyProfit: -7000, dateMap: toDateMap(W, [nd, nd, nd, nd, nd, nd, nd]) },
-  { id: 3,  name: "Darnell Washington",    driverType: "O/O", unit: "003", weeklyTarget: 4000,  companyProfit: -5650, dateMap: toDateMap(W, [mkLoad(550,"4332979"), mkLoad(800,"4367209"), home, home, home, home, home]) },
-  { id: 4,  name: "Priya Sharma",          driverType: "C/D", unit: "004", weeklyTarget: 4500,  companyProfit: -7000, dateMap: toDateMap(W, [nd, nd, nd, nd, nd, nd, nd]) },
-  { id: 5,  name: "Marcus Webb",           driverType: "O/O", unit: "100", weeklyTarget: 9000,  companyProfit:  3000, dateMap: toDateMap(W, [rest, enroute, mkLoad(3500,"126185/5777218"), mkLoad(1000,"35101523"), mkLoad(2500,"35241535"), mkLoad(1500,"127218503"), mkLoad(1500,"QUICKFREIGHT")]) },
-  { id: 6,  name: "Linda Okafor",          driverType: "C/D", unit: "101",                      companyProfit: -7000, dateMap: toDateMap(W, [home, home, home, home, home, home, home]) },
-  { id: 7,  name: "Ray Kowalski",          driverType: "O/O", unit: "102", weeklyTarget: 4500,  companyProfit: -6100, dateMap: toDateMap(W, [mkLoad(900,"G064863703"), home, home, home, home, home, home]) },
-  { id: 8,  name: "Tomás García",          driverType: "C/D", unit: "103", weeklyTarget: 8000,  companyProfit:  2550, dateMap: toDateMap(W, [enroute, mkLoad(1550,"35132250"), mkLoad(2000,"35189864"), mkLoad(1450,"0245461"), mkLoad(1450,"0245328"), mkLoad(1550,"142896"), mkLoad(1550,"142901")]) },
-  { id: 9,  name: "Jean Eddy Simon",       driverType: "C/D", unit: "104", weeklyTarget: 8000,  companyProfit:  2315, dateMap: toDateMap(W, [mkLoad(1250,"57760155"), mkLoad(2000,"0118551"), mkLoad(1250,"57760203"), mkLoad(565,"127197643"), mkLoad(1250,"57760228"), mkLoad(1500,"T01359997"), mkLoad(1500,"QUICKFREIGHT")]) },
-  { id: 10, name: "Jean Wesly Herard",     driverType: "O/O", unit: "105", weeklyTarget: 7000,  companyProfit:   750, dateMap: toDateMap(W, [mkLoad(1250,"57760157"), mkLoad(1250,"57760175"), mkLoad(1250,"57760173"), mkLoad(1250,"57760177"), mkLoad(1250,"57760233"), mkLoad(1500,"T01358372"), { type: "empty" }]) },
-  { id: 11, name: "Keavis Dyer",           driverType: "C/D", unit: "701", weeklyTarget: 8000,  companyProfit:  1250, dateMap: toDateMap(W, [enroute, mkLoad(1450,"127120603"), mkLoad(750,"4338260"), mkLoad(1250,"57760202"), mkLoad(1800,"T01356218"), enroute, mkLoad(1500,"57790748")]) },
-  { id: 12, name: "James Alan Schwein",    driverType: "C/D", unit: "702",                      companyProfit: -7000, dateMap: toDateMap(W, [home, home, home, home, home, home, home]) },
-  { id: 13, name: "Shokhnurbek Komilov",   driverType: "O/O", unit: "104", weeklyTarget: 7000,  companyProfit:  -150, dateMap: toDateMap(W, [rest, mkLoad(1250,"57760154"), mkLoad(1250,"57760151"), mkLoad(1250,"57760172"), { type: "load", amount: undefined, loadId: "?" }, mkLoad(1200,"57760179/577601"), mkLoad(1900,"35243285")]) },
-  { id: 14, name: "Umarkhon Kholmirzaev",  driverType: "C/D", unit: "465", weeklyTarget: 7000,  companyProfit:   365, dateMap: toDateMap(W, [mkLoad(550,"4332793"), mkLoad(3200,"127129288"), mkLoad(825,"4349224"), mkLoad(1000,"374553/437455"), mkLoad(1040,"4375926/4359065"), mkLoad(1250,"57760207"), { type: "empty" }]) },
-  { id: 15, name: "Bakhodir Azamov",       driverType: "O/O", unit: "10",  weeklyTarget: 7500,  companyProfit:   500, dateMap: toDateMap(W, [mkLoad(1250,"57760149"), mkLoad(1250,"57760170"), mkLoad(1250,"57760194"), mkLoad(1250,"57760198"), mkLoad(1250,"57760174"), mkLoad(1250,"57760213"), { type: "empty" }]) },
-];
+function toDriverRow(b: BackendDriverRow): DriverRow {
+  const dateMap: Record<string, DayCell> = {};
+  for (const [date, cell] of Object.entries(b.days ?? {})) {
+    dateMap[date] = {
+      type: (cell.type as CellType) ?? "empty",
+      amount: cell.amount,
+      loadId: cell.load_id,
+    };
+  }
+  return {
+    id:           b.id,
+    name:         b.name         ?? "",
+    driverType:   (b.driver_type as "O/O" | "C/D") ?? "O/O",
+    unit:         b.unit         ?? "",
+    weeklyTarget: b.weekly_target,
+    companyProfit: b.company_profit ?? 0,
+    dateMap,
+  };
+}
 
 // ─── Date utilities ───────────────────────────────────────────────────────────
 
@@ -80,30 +80,10 @@ function colLabel(iso: string) {
 }
 function fmt(n: number) { return `$${n.toLocaleString()}`; }
 
-// ─── Available loads ──────────────────────────────────────────────────────────
-
-const GROSS_LOADS = [
-  { id: "57760165", payout: 1250, totalMiles: 318 }, { id: "57760191", payout: 1250, totalMiles: 325 }, { id: "57760149", payout: 1250, totalMiles: 312 },
-  { id: "57760170", payout: 1250, totalMiles: 320 }, { id: "57760194", payout: 1250, totalMiles: 315 }, { id: "57760198", payout: 1250, totalMiles: 308 },
-  { id: "57760174", payout: 1250, totalMiles: 322 }, { id: "57760213", payout: 1250, totalMiles: 316 }, { id: "57760154", payout: 1250, totalMiles: 311 },
-  { id: "57760151", payout: 1250, totalMiles: 319 }, { id: "57760172", payout: 1250, totalMiles: 314 }, { id: "57760179", payout: 1200, totalMiles: 310 },
-  { id: "57760177", payout: 1250, totalMiles: 321 }, { id: "57760233", payout: 1250, totalMiles: 317 }, { id: "57760202", payout: 1250, totalMiles: 313 },
-  { id: "57760203", payout: 1250, totalMiles: 324 }, { id: "57760207", payout: 1250, totalMiles: 318 }, { id: "57760228", payout: 1250, totalMiles: 323 },
-  { id: "57760155", payout: 1250, totalMiles: 316 }, { id: "57760157", payout: 1250, totalMiles: 320 }, { id: "57760175", payout: 1250, totalMiles: 315 },
-  { id: "57760173", payout: 1250, totalMiles: 319 }, { id: "4332979",  payout: 550,  totalMiles: 175 }, { id: "4367209",  payout: 800,  totalMiles: 232 },
-  { id: "4332793",  payout: 550,  totalMiles: 170 }, { id: "4338260",  payout: 750,  totalMiles: 210 }, { id: "4349224",  payout: 825,  totalMiles: 240 },
-  { id: "127129288",payout: 3200, totalMiles: 780 }, { id: "127120603",payout: 1450, totalMiles: 420 }, { id: "127197643",payout: 565,  totalMiles: 162 },
-  { id: "126185",   payout: 3500, totalMiles: 840 }, { id: "35101523", payout: 1000, totalMiles: 290 }, { id: "35241535", payout: 2500, totalMiles: 630 },
-  { id: "35132250", payout: 1550, totalMiles: 430 }, { id: "35189864", payout: 2000, totalMiles: 520 }, { id: "35243285", payout: 1900, totalMiles: 510 },
-  { id: "0118551",  payout: 2000, totalMiles: 530 }, { id: "0245461",  payout: 1450, totalMiles: 400 }, { id: "0245328",  payout: 1450, totalMiles: 395 },
-  { id: "127218503",payout: 1500, totalMiles: 410 }, { id: "142896",   payout: 1550, totalMiles: 420 }, { id: "142901",   payout: 1550, totalMiles: 425 },
-  { id: "G064863703",payout: 900, totalMiles: 250 }, { id: "T01359997",payout: 1500, totalMiles: 400 }, { id: "T01358372",payout: 1500, totalMiles: 405 },
-  { id: "T01356218",payout: 1800, totalMiles: 470 }, { id: "374553",   payout: 1000, totalMiles: 280 }, { id: "QUICKFREIGHT",payout: 1500, totalMiles: 395 },
-];
-
-const GROSS_MILES_MAP = new Map(GROSS_LOADS.map((l) => [l.id, l.totalMiles]));
+// miles lookup is now derived from fetched rows — kept as a ref updated after each fetch
+const grossMilesMapRef = new Map<string, number>();
 function getLoadMiles(loadId: string): number {
-  return loadId.split("/").reduce((s, id) => s + (GROSS_MILES_MAP.get(id.trim()) ?? 0), 0);
+  return loadId.split("/").reduce((s, id) => s + (grossMilesMapRef.get(id.trim()) ?? 0), 0);
 }
 
 // ─── Cell display styles ──────────────────────────────────────────────────────
@@ -149,20 +129,30 @@ function LoadIdSelect({ value, onSelect }: {
 }) {
   const [query, setQuery] = useState(value);
   const [open, setOpen]   = useState(false);
+  const [results, setResults] = useState<{ id: string; payout: number }[]>([]);
   const wrapRef = useRef<HTMLDivElement>(null);
 
-  const filtered = GROSS_LOADS.filter((l) =>
-    l.id.toLowerCase().includes(query.toLowerCase())
-  );
+  useEffect(() => { setQuery(value); }, [value]);
+
+  useEffect(() => {
+    if (!query.trim()) { setResults([]); return; }
+    const t = setTimeout(() => {
+      api.getList<any>("/loads", { q: query, page_size: 20 })
+        .then(({ items }) => {
+          setResults((items ?? []).map((l: any) => ({ id: l.load_id ?? l.id, payout: l.payout ?? 0 })));
+        })
+        .catch(() => {});
+    }, 200);
+    return () => clearTimeout(t);
+  }, [query]);
+
+  const filtered = results;
 
   function pick(load: { id: string; payout: number }) {
     onSelect(load.id, String(load.payout));
     setQuery(load.id);
     setOpen(false);
   }
-
-  // sync external clear
-  useEffect(() => { setQuery(value); }, [value]);
 
   useEffect(() => {
     if (!open) return;
@@ -696,10 +686,42 @@ function DateRangePicker({ from, to, onChange }: DateRangePickerProps) {
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function GrossMatrix() {
-  const [rows,     setRows]     = useState<DriverRow[]>(INITIAL_DRIVERS);
+  const today = new Date();
+  const dow = today.getDay();
+  const mondayOffset = dow === 0 ? -6 : 1 - dow;
+  const monday = new Date(today); monday.setDate(today.getDate() + mondayOffset);
+  const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const fmtD = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+
+  const [rows,     setRows]     = useState<DriverRow[]>([]);
+  const [loading,  setLoading]  = useState(true);
   const [search,   setSearch]   = useState("");
-  const [dateFrom, setDateFrom] = useState("2026-06-08");
-  const [dateTo,   setDateTo]   = useState("2026-06-14");
+  const [dateFrom, setDateFrom] = useState(fmtD(monday));
+  const [dateTo,   setDateTo]   = useState(fmtD(sunday));
+
+  // Fetch gross data from backend
+  useEffect(() => {
+    if (!dateFrom || !dateTo) return;
+    setLoading(true);
+    api.get<any>(`/gross?from=${dateFrom}&to=${dateTo}${search ? `&q=${encodeURIComponent(search)}` : ""}`)
+      .then((data) => {
+        const items: BackendDriverRow[] = Array.isArray(data) ? data : (data?.data ?? []);
+        const mapped = items.map(toDriverRow);
+        // update miles lookup from fresh load data
+        grossMilesMapRef.clear();
+        for (const row of mapped) {
+          for (const cell of Object.values(row.dateMap)) {
+            if (cell.type === "load" && cell.loadId && cell.amount) {
+              grossMilesMapRef.set(cell.loadId, grossMilesMapRef.get(cell.loadId) ?? 0);
+            }
+          }
+        }
+        setRows(mapped);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [dateFrom, dateTo, search]);
 
   function shiftWeek(dir: -1 | 1) {
     const pad = (n: number) => String(n).padStart(2, "0");
@@ -727,10 +749,18 @@ export function GrossMatrix() {
     const newCell: DayCell = editState.type === "load"
       ? { type: "load", amount: editState.amount ? Number(editState.amount) : undefined, loadId: editState.loadId || undefined }
       : { type: editState.type };
+    // optimistic update
     setRows((prev) => prev.map((d) => d.id === editState.driverId
       ? { ...d, dateMap: { ...d.dateMap, [editState.date]: newCell } }
       : d
     ));
+    api.patch("/gross", {
+      driver_id: editState.driverId,
+      date:      editState.date,
+      type:      editState.type,
+      amount:    newCell.type === "load" ? newCell.amount : undefined,
+      load_id:   newCell.type === "load" ? newCell.loadId : undefined,
+    }).catch(() => {});
     setEditState(null);
   }
 
@@ -739,9 +769,11 @@ export function GrossMatrix() {
   // Row-level field saves
   function saveTarget(driverId: number, value: number | undefined) {
     setRows((prev) => prev.map((d) => d.id === driverId ? { ...d, weeklyTarget: value } : d));
+    api.patch("/gross", { driver_id: driverId, weekly_target: value ?? null }).catch(() => {});
   }
   function saveProfit(driverId: number, value: number | undefined) {
     setRows((prev) => prev.map((d) => d.id === driverId ? { ...d, companyProfit: value ?? 0 } : d));
+    api.patch("/gross", { driver_id: driverId, company_profit: value ?? 0 }).catch(() => {});
   }
 
   // Date columns
@@ -837,6 +869,10 @@ export function GrossMatrix() {
             {dates.length === 0 ? (
               <div style={{ padding: "60px 20px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
                 Select a valid date range to display data.
+              </div>
+            ) : loading ? (
+              <div style={{ padding: "60px 20px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
+                Loading…
               </div>
             ) : (
               <table style={{ borderCollapse: "separate", borderSpacing: 0, tableLayout: "fixed", minWidth: "100%" }}>
