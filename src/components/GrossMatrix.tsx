@@ -123,30 +123,32 @@ function DayCellContent({ cell }: { cell: DayCell }) {
 
 // ─── Searchable load ID selector ──────────────────────────────────────────────
 
-function LoadIdSelect({ value, onSelect }: {
+function LoadIdSelect({ value, driverId, onSelect }: {
   value: string;
+  driverId: string;
   onSelect: (id: string, payout: string) => void;
 }) {
   const [query, setQuery] = useState(value);
   const [open, setOpen]   = useState(false);
-  const [results, setResults] = useState<{ id: string; payout: number }[]>([]);
+  const [allLoads, setAllLoads] = useState<{ id: string; payout: number }[]>([]);
   const wrapRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { setQuery(value); }, [value]);
 
+  // Fetch driver's loads on mount and open dropdown
   useEffect(() => {
-    if (!query.trim()) { setResults([]); return; }
-    const t = setTimeout(() => {
-      api.getList<any>("/loads", { q: query, page_size: 20 })
-        .then(({ items }) => {
-          setResults((items ?? []).map((l: any) => ({ id: l.load_id ?? l.id, payout: l.payout ?? 0 })));
-        })
-        .catch(() => {});
-    }, 200);
-    return () => clearTimeout(t);
-  }, [query]);
+    if (!driverId) return;
+    setOpen(true);
+    api.getList<any>("/loads", { driver_id: driverId, page_size: 100 })
+      .then(({ items }) => {
+        setAllLoads((items ?? []).map((l: any) => ({ id: l.load_id ?? l.id, payout: l.payout ?? 0 })));
+      })
+      .catch(() => {});
+  }, [driverId]);
 
-  const filtered = results;
+  const filtered = query.trim()
+    ? allLoads.filter((l) => l.id.toLowerCase().includes(query.toLowerCase()))
+    : allLoads;
 
   function pick(load: { id: string; payout: number }) {
     onSelect(load.id, String(load.payout));
@@ -332,6 +334,7 @@ function CellEditPanel({
             </div>
             <LoadIdSelect
               value={edit.loadId}
+              driverId={edit.driverId}
               onSelect={(id, payout) => { onLoadId(id); onAmount(payout); }}
             />
           </div>
