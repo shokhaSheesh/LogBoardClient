@@ -1434,9 +1434,9 @@ interface WeekLoad {
   miles: number; payout: number; pickupAppt: string; status: string;
 }
 
-// Backend sends pickup_appt as "MM/DD · HH:mm" — parse it into a real Date
+// Backend sends pickup_appt as "MM/DD · HH:mm" from /loads, "MM/DD HH:mm" from /board
 function parseAppt(raw: string): Date | null {
-  const m = raw.match(/^(\d{1,2})\/(\d{1,2})\s·\s(\d{2}):(\d{2})$/);
+  const m = raw.match(/^(\d{1,2})\/(\d{1,2})\s*(?:·\s*)?(\d{2}):(\d{2})$/);
   if (!m) return null;
   const year = new Date().getFullYear();
   return new Date(year, Number(m[1]) - 1, Number(m[2]), Number(m[3]), Number(m[4]));
