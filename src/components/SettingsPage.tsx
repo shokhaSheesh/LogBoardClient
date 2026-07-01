@@ -1113,8 +1113,10 @@ function TeamModal({ team, users, allDriverNames, saving, onClose, onSave }: {
   );
 }
 
-function TeamsTab({ users }: { users: User[] }) {
+function TeamsTab({ users: _users }: { users: User[] }) {
   const [teams, setTeams]       = useState<Team[]>([]);
+  const [users, setUsers]       = useState<User[]>([]);
+  const [driverNames, setDriverNames] = useState<string[]>([]);
   const [loading, setLoading]   = useState(true);
   const [fetchKey, setFetchKey] = useState(0);
   const [saving, setSaving]     = useState(false);
@@ -1129,8 +1131,16 @@ function TeamsTab({ users }: { users: User[] }) {
   useEffect(() => {
     const companyId = getCompanyId();
     setLoading(true);
-    api.get<any[]>(`/owner/companies/${companyId}/teams`)
-      .then((data) => setTeams((data ?? []).map(toTeam)))
+    Promise.all([
+      api.get<any[]>(`/owner/companies/${companyId}/teams`),
+      api.get<any[]>(`/owner/companies/${companyId}/users`),
+      api.getList<any>("/drivers", { page_size: 200 }),
+    ])
+      .then(([teamsData, usersData, driversResp]) => {
+        setTeams((teamsData ?? []).map(toTeam));
+        setUsers((usersData ?? []).map(toUser));
+        setDriverNames((driversResp.items ?? []).map((d: any) => d.name ?? "").filter(Boolean));
+      })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [fetchKey]);
@@ -1174,7 +1184,7 @@ function TeamsTab({ users }: { users: User[] }) {
     }
   };
 
-  const allDriverNames = Array.from(new Set(teams.flatMap((t) => t.driverNames)));
+  const allDriverNames = Array.from(new Set([...driverNames, ...teams.flatMap((t) => t.driverNames)]));
 
   const q = search.toLowerCase();
   const filtered = teams.filter((t) =>
