@@ -61,6 +61,30 @@ interface BackendRole {
   permissions?: string[] | Record<string, Record<string, boolean>>;
 }
 
+interface BackendTeam {
+  id: string;
+  name: string;
+  user_ids?: string[];
+  driver_names?: string[];
+}
+
+function toTeam(b: BackendTeam): Team {
+  return {
+    id:          b.id,
+    name:        b.name,
+    userIds:     b.user_ids     ?? [],
+    driverNames: b.driver_names ?? [],
+  };
+}
+
+function fromTeam(t: Partial<Team>): Record<string, unknown> {
+  return {
+    name:         t.name,
+    user_ids:     t.userIds     ?? [],
+    driver_names: t.driverNames ?? [],
+  };
+}
+
 function parseCatalog(perms: string[]): { page: string; actions: string[] }[] {
   const map = new Map<string, string[]>();
   for (const p of perms) {
@@ -888,9 +912,9 @@ function MultiSelectSearch<T>({
   );
 }
 
-function TeamModal({ team, users, allDriverNames, onClose, onSave }: {
+function TeamModal({ team, users, allDriverNames, saving, onClose, onSave }: {
   team: Partial<Team>; users: User[]; allDriverNames: string[];
-  onClose: () => void; onSave: (t: Team) => void;
+  saving?: boolean; onClose: () => void; onSave: (t: Team) => void;
 }) {
   const [form, setForm] = useState<Partial<Team>>(team);
   const isNew = !team.id;
@@ -955,8 +979,8 @@ function TeamModal({ team, users, allDriverNames, onClose, onSave }: {
         </div>
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, padding: "14px 20px", borderTop: "1px solid var(--border)", borderRadius: "0 0 12px 12px", flexShrink: 0 }}>
           <button onClick={onClose} style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 16px", borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "var(--muted)", color: "var(--foreground)", cursor: "pointer" }}>Cancel</button>
-          <button onClick={() => onSave(form as Team)} style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 16px", borderRadius: 6, border: "none", backgroundColor: "var(--primary)", color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
-            <Check size={14} /> {isNew ? "Create Team" : "Save Changes"}
+          <button onClick={() => onSave(form as Team)} disabled={saving} style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 16px", borderRadius: 6, border: "none", backgroundColor: saving ? "var(--muted)" : "var(--primary)", color: saving ? "var(--muted-foreground)" : "#fff", cursor: saving ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+            <Check size={14} /> {saving ? "Saving…" : isNew ? "Create Team" : "Save Changes"}
           </button>
         </div>
       </div>
@@ -965,22 +989,64 @@ function TeamModal({ team, users, allDriverNames, onClose, onSave }: {
 }
 
 function TeamsTab({ users }: { users: User[] }) {
-  const [teams, setTeams] = useState<Team[]>(initTeams);
-  const [modal, setModal] = useState<"create" | "edit" | null>(null);
-  const [editing, setEditing] = useState<Partial<Team>>({});
+  const [teams, setTeams]       = useState<Team[]>([]);
+  const [loading, setLoading]   = useState(true);
+  const [fetchKey, setFetchKey] = useState(0);
+  const [saving, setSaving]     = useState(false);
+  const [modal, setModal]       = useState<"create" | "edit" | null>(null);
+  const [editing, setEditing]   = useState<Partial<Team>>({});
   const [deleting, setDeleting] = useState<Team | null>(null);
-  const [search, setSearch] = useState("");
-  const [page, setPage] = useState(1);
+  const [search, setSearch]     = useState("");
+  const [page, setPage]         = useState(1);
   const [pageSize, setPageSize] = useState(20);
+  const [toast, setToast]       = useState<{ type: "success" | "error"; msg: string } | null>(null);
 
-  const save = (t: Team) => {
-    if (modal === "create") {
-      const nextId = String(Math.max(0, ...teams.map((x) => Number(x.id))) + 1);
-      setTeams((p) => [...p, { ...t, id: nextId }]);
-    } else {
-      setTeams((p) => p.map((x) => (x.id === t.id ? t : x)));
+  useEffect(() => {
+    const companyId = getCompanyId();
+    setLoading(true);
+    api.get<any[]>(`/owner/companies/${companyId}/teams`)
+      .then((data) => setTeams((data ?? []).map(toTeam)))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [fetchKey]);
+
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 3000);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  const save = async (t: Team) => {
+    const companyId = getCompanyId();
+    setSaving(true);
+    try {
+      if (modal === "create") {
+        await api.post(`/owner/companies/${companyId}/teams`, fromTeam(t));
+        setToast({ type: "success", msg: "Team created" });
+      } else {
+        await api.put(`/owner/companies/${companyId}/teams/${t.id}`, fromTeam(t));
+        setToast({ type: "success", msg: "Team updated" });
+      }
+      setFetchKey((k) => k + 1);
+      setModal(null);
+    } catch (e) {
+      setToast({ type: "error", msg: e instanceof Error ? e.message : "Save failed" });
+    } finally {
+      setSaving(false);
     }
-    setModal(null);
+  };
+
+  const confirmDelete = async (t: Team) => {
+    const companyId = getCompanyId();
+    try {
+      await api.delete(`/owner/companies/${companyId}/teams/${t.id}`);
+      setToast({ type: "success", msg: "Team deleted" });
+      setFetchKey((k) => k + 1);
+    } catch (e) {
+      setToast({ type: "error", msg: e instanceof Error ? e.message : "Delete failed" });
+    } finally {
+      setDeleting(null);
+    }
   };
 
   const allDriverNames = Array.from(new Set(teams.flatMap((t) => t.driverNames)));
@@ -1068,7 +1134,14 @@ function TeamsTab({ users }: { users: User[] }) {
                 </tr>
               );
             })}
-            {paginated.length === 0 && (
+            {loading && (
+              <tr>
+                <td colSpan={5} style={{ padding: "32px 24px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)", borderBottom: "1px solid var(--border)" }}>
+                  Loading…
+                </td>
+              </tr>
+            )}
+            {!loading && paginated.length === 0 && (
               <tr>
                 <td colSpan={5} style={{ padding: "32px 24px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)", borderBottom: "1px solid var(--border)" }}>
                   No teams match your search.
@@ -1085,10 +1158,17 @@ function TeamsTab({ users }: { users: User[] }) {
         onPage={setPage} onPageSize={setPageSize}
       />
 
-      {(modal === "create" || modal === "edit") && (
-        <TeamModal team={editing} users={users} allDriverNames={allDriverNames} onClose={() => setModal(null)} onSave={save} />
+      {/* Toast */}
+      {toast && (
+        <div style={{ position: "fixed", bottom: 24, right: 24, zIndex: 9999, display: "flex", alignItems: "center", gap: 10, padding: "10px 16px", borderRadius: 8, backgroundColor: toast.type === "success" ? "#10B981" : "#EF4444", color: "#fff", fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 500, boxShadow: "0 4px 12px rgba(0,0,0,0.15)", animation: "slideUp 0.2s ease" }}>
+          {toast.msg}
+        </div>
       )}
-      {deleting && <DeleteConfirm label={deleting.name} onClose={() => setDeleting(null)} onConfirm={() => { setTeams((p) => p.filter((x) => x.id !== deleting.id)); setDeleting(null); }} />}
+
+      {(modal === "create" || modal === "edit") && (
+        <TeamModal team={editing} users={users} allDriverNames={allDriverNames} saving={saving} onClose={() => setModal(null)} onSave={(t) => { void save(t); }} />
+      )}
+      {deleting && <DeleteConfirm label={deleting.name} onClose={() => setDeleting(null)} onConfirm={() => { void confirmDelete(deleting); }} />}
     </>
   );
 }
@@ -1384,12 +1464,15 @@ type TabId = "users" | "teams" | "roles";
 export function SettingsPage() {
   const [tab, setTab] = useState<TabId>("users");
   const [roles, setRoles] = useState<Role[]>([]);
+  const [teams, setTeams] = useState<Team[]>([]);
 
-  // Fetch roles on mount so UsersTab's role dropdown is populated immediately
   useEffect(() => {
     const companyId = getCompanyId();
     api.get<any[]>(`/owner/companies/${companyId}/roles`)
       .then((data) => setRoles((data ?? []).map(toRole)))
+      .catch(() => {});
+    api.get<any[]>(`/owner/companies/${companyId}/teams`)
+      .then((data) => setTeams((data ?? []).map(toTeam)))
       .catch(() => {});
   }, []);
 
@@ -1423,7 +1506,7 @@ export function SettingsPage() {
       </div>
       <div style={{ flex: 1, overflow: "hidden", padding: "20px 24px", display: "flex", flexDirection: "column" }}>
         <div style={{ flex: 1, display: "flex", flexDirection: "column", backgroundColor: "var(--card)", borderRadius: 12, overflow: "hidden", border: "1px solid var(--border)" }}>
-          {tab === "users" && <UsersTab roles={roles} teams={initTeams} />}
+          {tab === "users" && <UsersTab roles={roles} teams={teams} />}
           {tab === "teams" && <TeamsTab users={[]} />}
           {tab === "roles" && <RolesTab onRolesChange={setRoles} />}
         </div>
