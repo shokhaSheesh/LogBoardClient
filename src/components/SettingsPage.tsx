@@ -170,11 +170,7 @@ function fromRole(r: Partial<Role>): Record<string, unknown> {
 
 // ─── Seed data (Teams only — Users and Roles are API-backed) ─────────────────
 
-const initTeams: Team[] = [
-  { id: "1", name: "Alpha Team",   userIds: ["1", "2"],       driverNames: ["Carlos Mendez", "Angela Torres", "Darnell Washington"] },
-  { id: "2", name: "Bravo Team",   userIds: ["3"],            driverNames: ["Priya Sharma", "Marcus Webb"] },
-  { id: "3", name: "Charlie Team", userIds: ["4", "5"],       driverNames: ["Linda Okafor", "Ray Kowalski", "Tomás García"] },
-];
+const initTeams: Team[] = [];
 
 // ─── Shared UI primitives ─────────────────────────────────────────────────────
 

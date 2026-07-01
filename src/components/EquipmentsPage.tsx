@@ -326,14 +326,6 @@ function EquipModal({ title, row, onClose, onSave, saving = false, driverOpts = 
   const touch = (k: keyof EquipRow) => setTouched((t) => ({ ...t, [k]: true }));
   const isNew = !row.id;
 
-  // text-only fields: [key, label, mono, required]
-  const textFields: [keyof EquipRow, string, boolean, boolean][] = [
-    ["unit",  "Unit #", false, true],
-    ["make",  "Make",   false, false],
-    ["model", "Model",  false, false],
-    ["vin",   "VIN",    true,  false],
-  ];
-
   const handleSave = () => {
     setTouched({ unit: true });
     if (!form.unit?.toString().trim()) return;
