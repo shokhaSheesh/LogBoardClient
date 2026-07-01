@@ -787,7 +787,132 @@ function UsersTab({ roles, teams }: { roles: Role[]; teams: Team[] }) {
 
 // ─── TEAMS TAB ────────────────────────────────────────────────────────────────
 
-function MultiSelectSearch<T>({
+function DropdownMultiSelect<T>({
+  label,
+  selected,
+  options,
+  getKey,
+  getLabel,
+  onToggle,
+  placeholder,
+  chipColor = "#1D4ED8",
+  chipBg = "#DBEAFE",
+}: {
+  label: string;
+  selected: T[];
+  options: T[];
+  getKey: (item: T) => string;
+  getLabel: (item: T) => string;
+  onToggle: (item: T) => void;
+  placeholder?: string;
+  chipColor?: string;
+  chipBg?: string;
+}) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const h = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, []);
+
+  const q = query.toLowerCase();
+  const filtered = options.filter((o) => getLabel(o).toLowerCase().includes(q));
+  const selectedKeys = new Set(selected.map(getKey));
+
+  return (
+    <div style={fieldStyle}>
+      <span style={capStyle}>{label}</span>
+      <div ref={containerRef} style={{ position: "relative" }}>
+        {/* Trigger button — matches CustomSelect style */}
+        <button
+          type="button"
+          onClick={() => { setOpen((v) => !v); setQuery(""); }}
+          style={{
+            display: "flex", alignItems: "center", gap: 8, width: "100%",
+            height: 34, paddingLeft: 10, paddingRight: 8,
+            fontFamily: "var(--font-sans)", fontSize: 13,
+            backgroundColor: "var(--input-background)",
+            border: `1px solid ${open ? "var(--primary)" : "var(--border)"}`,
+            borderRadius: 7, color: selected.length === 0 ? "var(--muted-foreground)" : "var(--foreground)",
+            cursor: "pointer",
+            boxShadow: open ? "0 0 0 3px rgba(59,130,246,0.12)" : "none",
+            transition: "border-color 0.15s, box-shadow 0.15s",
+            outline: "none",
+          }}
+        >
+          <span style={{ flex: 1, textAlign: "left", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {selected.length === 0
+              ? (placeholder ?? "Select…")
+              : selected.length === 1
+                ? getLabel(selected[0])
+                : `${selected.length} selected`}
+          </span>
+          <ChevronDown size={13} style={{ color: "var(--muted-foreground)", flexShrink: 0, transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s" }} />
+        </button>
+
+        {/* Selected chips shown below trigger */}
+        {selected.length > 0 && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 6 }}>
+            {selected.map((item) => (
+              <span key={getKey(item)} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600, color: chipColor, backgroundColor: chipBg, borderRadius: 4, padding: "2px 6px 2px 8px" }}>
+                {getLabel(item)}
+                <button type="button" onClick={() => onToggle(item)} style={{ background: "none", border: "none", cursor: "pointer", color: chipColor, display: "flex", padding: 0, lineHeight: 1 }}>
+                  <X size={10} />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+
+        {/* Dropdown panel */}
+        {open && (
+          <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 8, boxShadow: "0 8px 24px rgba(0,0,0,0.12)", zIndex: 9999, overflow: "hidden" }}>
+            <div style={{ padding: "8px 8px 4px" }}>
+              <div style={{ position: "relative" }}>
+                <Search size={12} style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", color: "var(--muted-foreground)", pointerEvents: "none" }} />
+                <input
+                  autoFocus
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Search…"
+                  style={{ width: "100%", height: 30, paddingLeft: 26, paddingRight: 8, fontFamily: "var(--font-sans)", fontSize: 12, border: "1px solid var(--border)", borderRadius: 6, backgroundColor: "var(--input-background)", color: "var(--foreground)", outline: "none", boxSizing: "border-box" }}
+                />
+              </div>
+            </div>
+            <div style={{ maxHeight: 180, overflowY: "auto", scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent" }}>
+              {filtered.length === 0 ? (
+                <div style={{ padding: "10px 12px", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>No results</div>
+              ) : filtered.map((item) => {
+                const isSelected = selectedKeys.has(getKey(item));
+                return (
+                  <button
+                    key={getKey(item)}
+                    type="button"
+                    onMouseDown={(e) => { e.preventDefault(); onToggle(item); }}
+                    style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "8px 12px", border: "none", backgroundColor: isSelected ? "rgba(59,130,246,0.06)" : "transparent", fontFamily: "var(--font-sans)", fontSize: 13, color: isSelected ? "var(--primary)" : "var(--foreground)", cursor: "pointer", textAlign: "left" }}
+                    onMouseEnter={(e) => { if (!isSelected) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--muted)"; }}
+                    onMouseLeave={(e) => { if (!isSelected) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "transparent"; }}
+                  >
+                    <span style={{ flex: 1 }}>{getLabel(item)}</span>
+                    {isSelected && <Check size={13} style={{ color: "var(--primary)", flexShrink: 0 }} />}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// kept for potential reuse elsewhere
+function _MultiSelectSearch<T>({
   label,
   selected,
   options,
@@ -953,26 +1078,26 @@ function TeamModal({ team, users, allDriverNames, saving, onClose, onSave }: {
             <input value={form.name ?? ""} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} style={inputStyle} />
           </label>
 
-          <MultiSelectSearch
+          <DropdownMultiSelect
             label="Users"
             selected={selectedUsers}
             options={users}
             getKey={(u) => String(u.id)}
             getLabel={(u) => u.name}
             onToggle={toggleUser}
-            placeholder="Search users…"
+            placeholder="Select users…"
             chipColor="#1D4ED8"
             chipBg="#DBEAFE"
           />
 
-          <MultiSelectSearch
+          <DropdownMultiSelect
             label="Drivers"
             selected={selectedDrivers}
             options={driverOptions}
             getKey={(d) => d.name}
             getLabel={(d) => d.name}
             onToggle={toggleDriver}
-            placeholder="Search drivers…"
+            placeholder="Select drivers…"
             chipColor="#374151"
             chipBg="var(--muted)"
           />
