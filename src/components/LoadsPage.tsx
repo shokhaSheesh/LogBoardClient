@@ -16,6 +16,8 @@ interface Stop {
   city: string;
   done: boolean;
   appt?: string;
+  lat?: number;
+  lng?: number;
 }
 
 interface Load {
@@ -791,8 +793,26 @@ function LoadModal({ load, onClose, onSave, driverOpts = [], dispatcherOpts = []
 
   const addStop    = () => setStops((p) => [...p, { city: "", done: false, appt: "" }]);
   const removeStop = (idx: number) => setStops((p) => p.filter((_, i) => i !== idx));
-  const updateCity = (idx: number, val: string) => setStops((p) => p.map((s, i) => i === idx ? { ...s, city: val } : s));
+  const updateCity = (idx: number, val: string) => setStops((p) => p.map((s, i) => i === idx ? { ...s, city: val, lat: undefined, lng: undefined } : s));
   const updateAppt = (idx: number, val: string) => setStops((p) => p.map((s, i) => i === idx ? { ...s, appt: val } : s));
+
+  const updateCoords = (idx: number, lat: number, lng: number) => {
+    setStops((prev) => {
+      const next = prev.map((s, i) => i === idx ? { ...s, lat, lng } : s);
+      const allHaveCoords = next.length >= 2 && next.every((s) => s.lat !== undefined && s.lng !== undefined);
+      if (allHaveCoords) {
+        const coords = next.map((s) => `${s.lng},${s.lat}`).join(";");
+        fetch(`https://router.project-osrm.org/route/v1/driving/${coords}?overview=false`)
+          .then((r) => r.json())
+          .then((data) => {
+            const meters = data.routes?.[0]?.distance;
+            if (meters) set("totalMiles", Math.round(meters / 1609.344));
+          })
+          .catch(() => {});
+      }
+      return next;
+    });
+  };
 
   const handleSave = () => {
     const filled = stops.filter((s) => s.city.trim());
@@ -928,6 +948,7 @@ function LoadModal({ load, onClose, onSave, driverOpts = [], dispatcherOpts = []
                         <CityAutocomplete
                           value={stop.city}
                           onChange={(v) => updateCity(idx, v)}
+                          onCoords={(lat, lng) => updateCoords(idx, lat, lng)}
                           style={inputStyle}
                           onFocus={focusInput}
                           onBlur={blurInput}

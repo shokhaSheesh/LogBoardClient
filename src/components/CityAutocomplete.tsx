@@ -5,18 +5,21 @@ interface Suggestion {
   display: string;
   city: string;
   state: string;
+  lat: number;
+  lng: number;
 }
 
 interface Props {
   value: string;
   onChange: (val: string) => void;
+  onCoords?: (lat: number, lng: number) => void;
   placeholder?: string;
   style?: React.CSSProperties;
   onFocus?: React.FocusEventHandler<HTMLInputElement>;
   onBlur?: React.FocusEventHandler<HTMLInputElement>;
 }
 
-export function CityAutocomplete({ value, onChange, placeholder = "City, ST", style, onFocus, onBlur }: Props) {
+export function CityAutocomplete({ value, onChange, onCoords, placeholder = "City, ST", style, onFocus, onBlur }: Props) {
   const inputRef                      = useRef<HTMLInputElement>(null);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [open, setOpen]               = useState(false);
@@ -54,7 +57,7 @@ export function CityAutocomplete({ value, onChange, placeholder = "City, ST", st
           const key = `${city},${abbr}`;
           if (seen.has(key)) continue;
           seen.add(key);
-          results.push({ display: `${city}, ${abbr}`, city, state: abbr });
+          results.push({ display: `${city}, ${abbr}`, city, state: abbr, lat: parseFloat(item.lat), lng: parseFloat(item.lon) });
         }
         setSuggestions(results);
         setOpen(results.length > 0);
@@ -68,6 +71,7 @@ export function CityAutocomplete({ value, onChange, placeholder = "City, ST", st
 
   const pick = (s: Suggestion) => {
     onChange(s.display);
+    onCoords?.(s.lat, s.lng);
     setSuggestions([]);
     setOpen(false);
     setActiveIdx(-1);
