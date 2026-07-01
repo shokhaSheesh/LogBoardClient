@@ -1780,9 +1780,12 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
     if (!existing) return;
     const updated = { ...existing, ...fields };
     setRows((prev) => prev.map((d) => (d.id === id ? updated : d)));
-    api.put(`/drivers/${id}`, fromSolo(updated)).catch(() => {
+    try {
+      await api.put(`/drivers/${id}`, fromSolo(updated));
+      setFetchKey((k) => k + 1);
+    } catch {
       setRows((prev) => prev.map((d) => (d.id === id ? existing : d)));
-    });
+    }
   };
 
   const openCreate = () => { setEditing({}); setModal("create"); };
@@ -2013,9 +2016,12 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
     if (!existing) return;
     const updated = { ...existing, ...fields };
     setRows((prev) => prev.map((d) => (d.id === id ? updated : d)));
-    api.put(`/drivers/${id}`, fromTeam(updated)).catch(() => {
+    try {
+      await api.put(`/drivers/${id}`, fromTeam(updated));
+      setFetchKey((k) => k + 1);
+    } catch {
       setRows((prev) => prev.map((d) => (d.id === id ? existing : d)));
-    });
+    }
   };
 
   const openCreate = () => { setEditing({}); setModal("create"); };

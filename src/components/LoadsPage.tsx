@@ -1373,6 +1373,7 @@ export function LoadsPage() {
     setLoads((prev) => prev.map((l) => (l.id === id ? updated : l)));
     try {
       await api.put<BackendLoad>(`/loads/${id}`, toBackend(updated));
+      setFetchKey((k) => k + 1);
     } catch (e) {
       setToast({ type: "error", msg: String(e) });
       setFetchKey((k) => k + 1);
