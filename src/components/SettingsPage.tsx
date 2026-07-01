@@ -81,9 +81,11 @@ function normalizeCatalog(raw: unknown): string[] {
     // string[] — ideal case
     const strings = raw.filter((x) => typeof x === "string") as string[];
     if (strings.length > 0) return strings;
-    // array of objects like { name: "board.read" } or { resource, action }
+    // array of objects: { key, actions[] } or { name } or { resource, action }
     return raw.flatMap((x: any) => {
       if (typeof x !== "object" || x === null) return [];
+      if (typeof x.key === "string" && Array.isArray(x.actions))
+        return (x.actions as string[]).map((a: string) => `${x.key}.${a}`);
       if (typeof x.name === "string") return [x.name];
       if (typeof x.resource === "string" && typeof x.action === "string")
         return [`${x.resource}.${x.action}`];
