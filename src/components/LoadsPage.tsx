@@ -1052,8 +1052,28 @@ function DeleteConfirm({ label, onClose, onConfirm }: { label: string; onClose: 
 // ─── Load Detail ──────────────────────────────────────────────────────────────
 
 
+interface HistoryChange { field: string; from: string | number | null; to: string | number | null; }
+interface HistoryEvent {
+  id: string; actor_name: string; action: "create" | "update" | "delete";
+  changes: HistoryChange[] | null; created_at: string;
+}
+
 function LoadDetail({ load, onBack }: { load: Load; onBack: () => void }) {
   const [tab, setTab] = useState<"info" | "log">("info");
+  const [log, setLog]         = useState<HistoryEvent[]>([]);
+  const [logLoading, setLogLoading] = useState(false);
+  const [logError, setLogError]     = useState<string | null>(null);
+  const logFetched = useRef(false);
+
+  useEffect(() => {
+    if (tab !== "log" || logFetched.current) return;
+    logFetched.current = true;
+    setLogLoading(true);
+    api.get<HistoryEvent[]>(`/board/history?entity_type=load&entity_id=${load.id}&limit=100`)
+      .then((data) => setLog(data ?? []))
+      .catch((e) => setLogError(e instanceof Error ? e.message : "Failed to load"))
+      .finally(() => setLogLoading(false));
+  }, [tab, load.id]);
 
   const infoRows: { icon: React.ReactNode; label: string; value: React.ReactNode }[] = [
     { icon: <Building2 size={13} />, label: "Broker",     value: load.broker },
@@ -1095,8 +1115,8 @@ function LoadDetail({ load, onBack }: { load: Load; onBack: () => void }) {
   ];
 
   const tabs = [
-    { id: "info" as const, label: "Load Info",   icon: <Package  size={14} /> },
-    { id: "log"  as const, label: "Change Log",  icon: <History  size={14} />, pending: true },
+    { id: "info" as const, label: "Load Info",  icon: <Package size={14} /> },
+    { id: "log"  as const, label: "Change Log", icon: <History size={14} /> },
   ];
 
   return (
@@ -1180,112 +1200,45 @@ function LoadDetail({ load, onBack }: { load: Load; onBack: () => void }) {
             <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 12 }}>
 
               {/* Route card */}
-              <div style={{ backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 12, padding: "20px 24px" }}>
-                <div style={{ fontFamily: "var(--font-sans)", fontSize: 10, fontWeight: 600, color: "var(--muted-foreground)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 16 }}>
-                  Route
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-                  {/* Origin */}
-                  <div style={{ flex: 1 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-                      <div style={{ width: 10, height: 10, borderRadius: "50%", backgroundColor: "#10B981", flexShrink: 0 }} />
-                      <span style={{ fontFamily: "var(--font-sans)", fontSize: 10, fontWeight: 700, color: "#10B981", textTransform: "uppercase", letterSpacing: "0.07em" }}>Origin</span>
+              {(() => {
+                const waypoints = [
+                  { city: load.origin,      appt: load.pickupAppt, done: false },
+                  ...(load.stops ?? []).map((s) => ({ city: s.city, appt: s.appt, done: s.done ?? false })),
+                  { city: load.destination, appt: load.dropAppt,   done: false },
+                ];
+                const isLast = (i: number) => i === waypoints.length - 1;
+                return (
+                  <div style={{ backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 12, padding: "20px 24px" }}>
+                    <div style={{ fontFamily: "var(--font-sans)", fontSize: 10, fontWeight: 600, color: "var(--muted-foreground)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 16 }}>
+                      Route · {waypoints.length} stop{waypoints.length !== 1 ? "s" : ""}
                     </div>
-                    <div style={{ fontFamily: "var(--font-sans)", fontSize: 16, fontWeight: 700, color: "var(--foreground)" }}>{load.origin}</div>
-                  </div>
-
-                  {/* Arrow */}
-                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, flexShrink: 0 }}>
-                    <ArrowRight size={20} style={{ color: "var(--muted-foreground)" }} />
-                  </div>
-
-                  {/* Destination */}
-                  <div style={{ flex: 1 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-                      <div style={{ width: 10, height: 10, borderRadius: "50%", backgroundColor: "#EF4444", flexShrink: 0 }} />
-                      <span style={{ fontFamily: "var(--font-sans)", fontSize: 10, fontWeight: 700, color: "#EF4444", textTransform: "uppercase", letterSpacing: "0.07em" }}>Destination</span>
-                    </div>
-                    <div style={{ fontFamily: "var(--font-sans)", fontSize: 16, fontWeight: 700, color: "var(--foreground)" }}>{load.destination}</div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Appointments card */}
-              <div style={{ backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
-                {(() => {
-                  const pickupDone = load.stops ? load.stops[0]?.done === true : false;
-                  const rows: React.ReactNode[] = [];
-
-                  // PU row
-                  rows.push(
-                    <div key="pu" style={{ display: "flex", alignItems: "center", gap: 12, padding: "13px 16px", borderBottom: "1px solid var(--border)" }}>
-                      <Clock size={13} style={{ color: "var(--muted-foreground)", flexShrink: 0 }} />
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontFamily: "var(--font-sans)", fontSize: 10, fontWeight: 600, color: "var(--muted-foreground)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 3 }}>
-                          Pickup Appointment
-                        </div>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, fontWeight: 700, color: "#10B981", backgroundColor: "#D1FAE5", borderRadius: 3, padding: "1px 6px" }}>PU</span>
-                          <span style={{ fontFamily: "var(--font-mono)", fontSize: 13, color: pickupDone ? "var(--muted-foreground)" : "var(--foreground)", textDecoration: pickupDone ? "line-through" : "none" }}>{load.pickupAppt}</span>
-                        </div>
-                      </div>
-                    </div>
-                  );
-
-                  if (load.stops) {
-                    load.stops.forEach((stop, si) => {
-                      const prevDone = si === 0 ? true : load.stops![si - 1].done;
-                      const isCurrent = !stop.done && prevDone;
-                      const isDone = stop.done;
-                      const isLast = si === load.stops!.length - 1;
-                      rows.push(
-                        <div key={`stop-${si}`} style={{ display: "flex", alignItems: "center", gap: 12, padding: "13px 16px", borderBottom: isLast ? "none" : "1px solid var(--border)" }}>
-                          <div style={{ width: 13, height: 13, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                            {isDone ? (
-                              <span style={{ width: 13, height: 13, borderRadius: "50%", backgroundColor: "#D1FAE5", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
-                                <Check size={9} style={{ color: "#10B981" }} />
-                              </span>
-                            ) : isCurrent ? (
-                              <span style={{ width: 13, height: 13, borderRadius: "50%", backgroundColor: "#DBEAFE", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
-                                <ArrowRight size={9} style={{ color: "#2563EB" }} />
-                              </span>
-                            ) : (
-                              <span style={{ width: 6, height: 6, borderRadius: "50%", backgroundColor: "var(--muted-foreground)" }} />
+                    <div style={{ display: "flex", flexDirection: "column" }}>
+                      {waypoints.map((wp, i) => (
+                        <div key={i} style={{ display: "flex", gap: 14, alignItems: "stretch" }}>
+                          {/* Timeline spine */}
+                          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0, width: 16 }}>
+                            <div style={{ width: 12, height: 12, borderRadius: "50%", backgroundColor: wp.done ? "#10B981" : isLast(i) ? "#EF4444" : i === 0 ? "#10B981" : "#94A3B8", flexShrink: 0, marginTop: 3 }} />
+                            {!isLast(i) && <div style={{ width: 2, flex: 1, backgroundColor: "var(--border)", marginTop: 4, marginBottom: 4 }} />}
+                          </div>
+                          {/* Content */}
+                          <div style={{ flex: 1, paddingBottom: isLast(i) ? 0 : 14 }}>
+                            <div style={{ fontFamily: "var(--font-sans)", fontSize: 10, fontWeight: 600, color: "var(--muted-foreground)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 2 }}>
+                              Stop {i + 1}
+                            </div>
+                            <div style={{ fontFamily: "var(--font-sans)", fontSize: 15, fontWeight: 700, color: wp.done ? "var(--muted-foreground)" : "var(--foreground)", textDecoration: wp.done ? "line-through" : "none" }}>
+                              {wp.city || "—"}
+                            </div>
+                            {wp.appt && (
+                              <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--muted-foreground)", marginTop: 2 }}>{wp.appt}</div>
                             )}
                           </div>
-                          <div style={{ flex: 1 }}>
-                            <div style={{ fontFamily: "var(--font-sans)", fontSize: 10, fontWeight: 600, color: "var(--muted-foreground)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 3 }}>
-                              {stop.city}
-                            </div>
-                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                              <span style={{ fontFamily: "var(--font-mono)", fontSize: 13, color: isDone ? "var(--muted-foreground)" : isCurrent ? "#2563EB" : "var(--foreground)", textDecoration: isDone ? "line-through" : "none" }}>
-                                {stop.appt ?? "—"}
-                              </span>
-                            </div>
-                          </div>
                         </div>
-                      );
-                    });
-                  } else {
-                    rows.push(
-                      <div key="dr" style={{ display: "flex", alignItems: "center", gap: 12, padding: "13px 16px" }}>
-                        <Clock size={13} style={{ color: "var(--muted-foreground)", flexShrink: 0 }} />
-                        <div style={{ flex: 1 }}>
-                          <div style={{ fontFamily: "var(--font-sans)", fontSize: 10, fontWeight: 600, color: "var(--muted-foreground)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 3 }}>
-                            Drop Appointment
-                          </div>
-                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                            <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, fontWeight: 700, color: "#EF4444", backgroundColor: "#FEE2E2", borderRadius: 3, padding: "1px 6px" }}>DR</span>
-                            <span style={{ fontFamily: "var(--font-mono)", fontSize: 13, color: "var(--foreground)" }}>{load.dropAppt}</span>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  }
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
 
-                  return rows;
-                })()}
-              </div>
             </div>
           </div>
         )}
@@ -1293,9 +1246,52 @@ function LoadDetail({ load, onBack }: { load: Load; onBack: () => void }) {
         {/* ── Change Log tab ── */}
         {tab === "log" && (
           <div style={{ maxWidth: 640 }}>
-            <div style={{ padding: "48px 20px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
-              No change log entries.
-            </div>
+            {logLoading ? (
+              <div style={{ padding: "48px 20px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>Loading…</div>
+            ) : logError ? (
+              <div style={{ padding: "48px 20px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "#EF4444" }}>{logError}</div>
+            ) : log.length === 0 ? (
+              <div style={{ padding: "48px 20px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>No change log entries.</div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
+                {log.map((entry) => {
+                  const time = new Date(entry.created_at).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+                  const actionColor = entry.action === "create" ? "#10B981" : entry.action === "delete" ? "#EF4444" : "#3B82F6";
+                  const actionBg    = entry.action === "create" ? "#D1FAE5" : entry.action === "delete" ? "#FEE2E2" : "#DBEAFE";
+                  return (
+                    <div key={entry.id} style={{ backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 10, padding: "13px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
+                      {/* Header */}
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: 600, color: "var(--foreground)" }}>
+                          {entry.actor_name || "Unknown"}
+                        </span>
+                        <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 700, color: actionColor, backgroundColor: actionBg, borderRadius: 4, padding: "1px 7px", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                          {entry.action}
+                        </span>
+                        <span style={{ marginLeft: "auto", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--muted-foreground)" }}>{time}</span>
+                      </div>
+                      {/* Changes */}
+                      {entry.changes && entry.changes.length > 0 && (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                          {entry.changes.map((c, i) => (
+                            <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, fontFamily: "var(--font-sans)", fontSize: 12 }}>
+                              <span style={{ color: "var(--muted-foreground)", minWidth: 90, textTransform: "capitalize" }}>{c.field.replace(/_/g, " ")}</span>
+                              <span style={{ color: "#EF4444", backgroundColor: "#FEE2E2", borderRadius: 3, padding: "0 5px", fontFamily: "var(--font-mono)", fontSize: 11, textDecoration: "line-through" }}>
+                                {String(c.from ?? "—")}
+                              </span>
+                              <span style={{ color: "var(--muted-foreground)" }}>→</span>
+                              <span style={{ color: "#10B981", backgroundColor: "#D1FAE5", borderRadius: 3, padding: "0 5px", fontFamily: "var(--font-mono)", fontSize: 11 }}>
+                                {String(c.to ?? "—")}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
       </div>
