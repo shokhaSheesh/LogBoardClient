@@ -1162,9 +1162,6 @@ function LoadDetail({ load, onBack }: { load: Load; onBack: () => void }) {
             >
               <span style={{ opacity: active ? 1 : 0.6 }}>{t.icon}</span>
               {t.label}
-              {"pending" in t && t.pending && (
-                <span style={{ fontSize: 8, fontWeight: 700, color: "#D97706", backgroundColor: "#FEF3C7", borderRadius: 4, padding: "2px 5px", letterSpacing: "0.04em" }}>pending</span>
-              )}
             </button>
           );
         })}

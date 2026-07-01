@@ -570,6 +570,168 @@ function ActiveUsers() {
   );
 }
 
+// ─── Notification Bell ───────────────────────────────────────────────────────
+
+interface NotifItem {
+  id: string; kind: string; title: string; body: string;
+  entity_type?: string; entity_id?: string;
+  read: boolean; created_at: string;
+}
+interface NotifResponse { items: NotifItem[]; unread_count: number; }
+
+function NotificationBell() {
+  const [open, setOpen]             = useState(false);
+  const [items, setItems]           = useState<NotifItem[]>([]);
+  const [unread, setUnread]         = useState(0);
+  const [loading, setLoading]       = useState(false);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const btnRef   = useRef<HTMLButtonElement>(null);
+
+  const fetchNotifs = () => {
+    setLoading(true);
+    api.get<NotifResponse>("/notifications")
+      .then((data) => { setItems(data?.items ?? []); setUnread(data?.unread_count ?? 0); })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    fetchNotifs();
+    const id = setInterval(fetchNotifs, 30_000);
+    return () => clearInterval(id);
+  }, []);
+
+  // Close on outside click
+  useEffect(() => {
+    if (!open) return;
+    const h = (e: MouseEvent) => {
+      if (!panelRef.current?.contains(e.target as Node) && !btnRef.current?.contains(e.target as Node))
+        setOpen(false);
+    };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [open]);
+
+  const markOne = (id: string) => {
+    api.patch(`/notifications/${id}`, { read: true }).catch(() => {});
+    setItems((prev) => prev.map((n) => n.id === id ? { ...n, read: true } : n));
+    setUnread((c) => Math.max(0, c - 1));
+  };
+
+  const markAll = () => {
+    api.post("/notifications/read-all").catch(() => {});
+    setItems((prev) => prev.map((n) => ({ ...n, read: true })));
+    setUnread(0);
+  };
+
+  const timeAgo = (iso: string) => {
+    const diff = Date.now() - new Date(iso).getTime();
+    const m = Math.floor(diff / 60000);
+    if (m < 1)  return "just now";
+    if (m < 60) return `${m}m ago`;
+    const h = Math.floor(m / 60);
+    if (h < 24) return `${h}h ago`;
+    return `${Math.floor(h / 24)}d ago`;
+  };
+
+  return (
+    <div style={{ position: "relative" }}>
+      <button
+        ref={btnRef}
+        onClick={() => setOpen((v) => !v)}
+        className="relative flex items-center justify-center rounded-lg transition-colors"
+        style={{ width: 34, height: 34, backgroundColor: open ? "var(--accent)" : "var(--muted)" }}
+        onMouseEnter={(e) => ((e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--accent)")}
+        onMouseLeave={(e) => ((e.currentTarget as HTMLButtonElement).style.backgroundColor = open ? "var(--accent)" : "var(--muted)")}
+      >
+        <Bell size={16} style={{ color: "var(--foreground)" }} />
+        {unread > 0 && (
+          <span style={{
+            position: "absolute", top: 5, right: 5,
+            minWidth: 7, height: 7, borderRadius: "50%",
+            backgroundColor: "#EF4444", border: "1.5px solid var(--card)",
+          }} />
+        )}
+      </button>
+
+      {open && createPortal(
+        <div
+          ref={panelRef}
+          style={{
+            position: "fixed",
+            top: 68, right: 24,
+            width: 360, maxHeight: 480,
+            backgroundColor: "var(--card)",
+            border: "1px solid var(--border)",
+            borderRadius: 12,
+            boxShadow: "0 8px 32px rgba(0,0,0,0.12)",
+            zIndex: 9999,
+            display: "flex", flexDirection: "column",
+            overflow: "hidden",
+          }}
+        >
+          {/* Header */}
+          <div style={{ display: "flex", alignItems: "center", padding: "14px 16px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
+            <span style={{ fontFamily: "var(--font-sans)", fontSize: 14, fontWeight: 700, color: "var(--foreground)", flex: 1 }}>
+              Notifications {unread > 0 && <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 700, color: "#EF4444", backgroundColor: "#FEE2E2", borderRadius: 10, padding: "1px 7px", marginLeft: 6 }}>{unread}</span>}
+            </span>
+            {unread > 0 && (
+              <button
+                onClick={markAll}
+                style={{ fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: 500, color: "var(--primary)", background: "none", border: "none", cursor: "pointer", padding: "2px 6px", borderRadius: 4 }}
+              >
+                Mark all read
+              </button>
+            )}
+          </div>
+
+          {/* List */}
+          <div style={{ flex: 1, overflowY: "auto", scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent" }}>
+            {loading && items.length === 0 ? (
+              <div style={{ padding: "32px 16px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>Loading…</div>
+            ) : items.length === 0 ? (
+              <div style={{ padding: "32px 16px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>No notifications yet</div>
+            ) : (
+              items.map((n) => (
+                <div
+                  key={n.id}
+                  onClick={() => { if (!n.read) markOne(n.id); }}
+                  style={{
+                    display: "flex", gap: 10, padding: "12px 16px",
+                    borderBottom: "1px solid var(--border)",
+                    backgroundColor: n.read ? "transparent" : "var(--secondary)",
+                    cursor: n.read ? "default" : "pointer",
+                    transition: "background 0.1s",
+                  }}
+                  onMouseEnter={(e) => { if (!n.read) (e.currentTarget as HTMLDivElement).style.backgroundColor = "var(--accent)"; }}
+                  onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.backgroundColor = n.read ? "transparent" : "var(--secondary)"; }}
+                >
+                  {/* Unread dot */}
+                  <div style={{ flexShrink: 0, width: 7, height: 7, borderRadius: "50%", backgroundColor: n.read ? "transparent" : "#3B82F6", marginTop: 5 }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: n.read ? 400 : 600, color: "var(--foreground)", marginBottom: 2 }}>
+                      {n.title}
+                    </div>
+                    {n.body && (
+                      <div style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {n.body}
+                      </div>
+                    )}
+                    <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--muted-foreground)", marginTop: 4 }}>
+                      {timeAgo(n.created_at)}
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>,
+        document.body
+      )}
+    </div>
+  );
+}
+
 // ─── Top Header ──────────────────────────────────────────────────────────────
 
 function TopHeader({ onToggleSidebar }: { onToggleSidebar: () => void }) {
@@ -623,32 +785,7 @@ function TopHeader({ onToggleSidebar }: { onToggleSidebar: () => void }) {
       <div className="flex items-center gap-4">
         <ActiveUsers />
 
-        <button
-          className="relative flex items-center justify-center rounded-lg transition-colors"
-          style={{ width: 34, height: 34, backgroundColor: "var(--muted)" }}
-          onMouseEnter={(e) =>
-            ((e.currentTarget as HTMLButtonElement).style.backgroundColor =
-              "var(--accent)")
-          }
-          onMouseLeave={(e) =>
-            ((e.currentTarget as HTMLButtonElement).style.backgroundColor =
-              "var(--muted)")
-          }
-        >
-          <Bell size={16} style={{ color: "var(--foreground)" }} />
-          <span
-            className="absolute rounded-full"
-            style={{
-              top: 6,
-              right: 6,
-              width: 7,
-              height: 7,
-              backgroundColor: "#EF4444",
-              border: "1.5px solid #fff",
-              boxShadow: "0 0 0 2px #fff",
-            }}
-          />
-        </button>
+        <NotificationBell />
       </div>
     </header>
   );

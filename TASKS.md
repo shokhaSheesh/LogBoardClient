@@ -17,7 +17,7 @@
 | # | Task | Status |
 |---|------|--------|
 | 7 | Teams Settings tab — full CRUD | ✅ Done |
-| 8 | Notifications bell — `GET /notifications`, `PATCH /:id`, `POST /read-all` | ⏳ Not started |
+| 8 | Notifications bell — `GET /notifications`, `PATCH /:id`, `POST /read-all` | ✅ Done |
 | 9 | Comments — `GET/POST /board/comments` per entity | ⏳ Not started |
 | 11 | Per-team board — `GET /board?team_id=` (filter snapshot rows client-side) | 🔒 Blocked by #2 |
 | 16 | Board history panel — `GET /board/history` (company-wide, live badge) | ⏳ Not started |
