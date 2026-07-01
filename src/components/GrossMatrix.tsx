@@ -706,7 +706,7 @@ export function GrossMatrix() {
     setLoading(true);
     api.get<any>(`/gross?from=${dateFrom}&to=${dateTo}${search ? `&q=${encodeURIComponent(search)}` : ""}`)
       .then((data) => {
-        const items: BackendDriverRow[] = Array.isArray(data?.data) ? data.data : (data?.data?.drivers ?? []);
+        const items: BackendDriverRow[] = data?.drivers ?? [];
         const mapped = items.map(toDriverRow);
         // update miles lookup from fresh load data
         grossMilesMapRef.clear();
