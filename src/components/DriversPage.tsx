@@ -1782,9 +1782,11 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
     setRows((prev) => prev.map((d) => (d.id === id ? updated : d)));
     try {
       await api.put(`/drivers/${id}`, fromSolo(updated));
+      setToast({ type: "success", msg: "Status updated" });
       setFetchKey((k) => k + 1);
-    } catch {
+    } catch (e) {
       setRows((prev) => prev.map((d) => (d.id === id ? existing : d)));
+      setToast({ type: "error", msg: e instanceof Error ? e.message : "Update failed" });
     }
   };
 
@@ -2018,9 +2020,11 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
     setRows((prev) => prev.map((d) => (d.id === id ? updated : d)));
     try {
       await api.put(`/drivers/${id}`, fromTeam(updated));
+      setToast({ type: "success", msg: "Status updated" });
       setFetchKey((k) => k + 1);
-    } catch {
+    } catch (e) {
       setRows((prev) => prev.map((d) => (d.id === id ? existing : d)));
+      setToast({ type: "error", msg: e instanceof Error ? e.message : "Update failed" });
     }
   };
 
