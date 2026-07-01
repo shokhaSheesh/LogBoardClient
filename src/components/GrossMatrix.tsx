@@ -878,9 +878,8 @@ export function GrossMatrix() {
               <table style={{ borderCollapse: "separate", borderSpacing: 0, tableLayout: "fixed", minWidth: "100%" }}>
                 <thead>
                   <tr style={{ position: "sticky", top: 0, zIndex: 20, backgroundColor: "#0F172A" }}>
-                    <th style={thLeft({ width: 36,  left: 0   })}>#</th>
-                    <th style={thLeft({ width: 200, left: 36,  textAlign: "left" })}>Driver Name</th>
-                    <th style={thLeft({ width: 72,  left: 236, borderRight: "2px solid #334155" })}>Unit</th>
+                    <th style={thLeft({ width: 200, left: 0, textAlign: "left" })}>Driver Name</th>
+                    <th style={thLeft({ width: 72,  left: 200, borderRight: "2px solid #334155" })}>Unit</th>
                     {dates.map((iso) => {
                       const { day, date } = colLabel(iso);
                       const isWeekend = new Date(iso + "T00:00:00").getDay() % 6 === 0;
@@ -901,7 +900,7 @@ export function GrossMatrix() {
                 <tbody>
                   {filtered.length === 0 ? (
                     <tr>
-                      <td colSpan={3 + dates.length + 3} style={{ padding: "48px 20px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
+                      <td colSpan={2 + dates.length + 3} style={{ padding: "48px 20px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
                         No drivers match your search.
                       </td>
                     </tr>
@@ -919,17 +918,13 @@ export function GrossMatrix() {
 
                     return (
                       <tr key={driver.id}>
-                        {/* # */}
-                        <td style={{ width: 36, minWidth: 36, padding: "0 8px", textAlign: "center", verticalAlign: "middle", borderRight: "1px solid #E5E7EB", borderBottom: "1px solid #E5E7EB", fontFamily: "var(--font-mono)", fontSize: 11, color: "#9CA3AF", backgroundColor: rowBg, position: "sticky", left: 0, zIndex: 10, height: 46 }}>
-                          {driver.id}
-                        </td>
                         {/* Driver Name */}
-                        <td style={{ width: 200, minWidth: 200, padding: "0 12px", verticalAlign: "middle", borderRight: "1px solid #E5E7EB", borderBottom: "1px solid #E5E7EB", backgroundColor: rowBg, position: "sticky", left: 36, zIndex: 10 }}>
+                        <td style={{ width: 200, minWidth: 200, padding: "0 12px", verticalAlign: "middle", borderRight: "1px solid #E5E7EB", borderBottom: "1px solid #E5E7EB", backgroundColor: rowBg, position: "sticky", left: 0, zIndex: 10 }}>
                           <div style={{ fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: 600, color: "#111827", whiteSpace: "nowrap" }}>{driver.name}</div>
                           <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "#6B7280" }}>({driver.driverType})</div>
                         </td>
                         {/* Unit */}
-                        <td style={{ width: 72, minWidth: 72, padding: "0 8px", textAlign: "center", verticalAlign: "middle", borderRight: "2px solid #CBD5E1", borderBottom: "1px solid #E5E7EB", fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 500, color: "#374151", backgroundColor: rowBg, position: "sticky", left: 236, zIndex: 10 }}>
+                        <td style={{ width: 72, minWidth: 72, padding: "0 8px", textAlign: "center", verticalAlign: "middle", borderRight: "2px solid #CBD5E1", borderBottom: "1px solid #E5E7EB", fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 500, color: "#374151", backgroundColor: rowBg, position: "sticky", left: 200, zIndex: 10 }}>
                           {driver.unit}
                         </td>
 
@@ -1010,7 +1005,7 @@ export function GrossMatrix() {
 
                   {/* Totals row */}
                   <tr style={{ position: "sticky", bottom: 0, zIndex: 15 }}>
-                    <td colSpan={3} style={{ padding: "8px 12px", textAlign: "left", borderTop: "2px solid #334155", fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 700, color: "#CBD5E1", letterSpacing: "0.06em", textTransform: "uppercase", position: "sticky", left: 0, zIndex: 16, backgroundColor: "#0F172A" }}>
+                    <td colSpan={2} style={{ padding: "8px 12px", textAlign: "left", borderTop: "2px solid #334155", fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 700, color: "#CBD5E1", letterSpacing: "0.06em", textTransform: "uppercase", position: "sticky", left: 0, zIndex: 16, backgroundColor: "#0F172A" }}>
                       Totals
                     </td>
                     {dates.map((iso) => {
