@@ -1224,7 +1224,7 @@ function TeamsTab({ users: _users }: { users: User[] }) {
         <table style={{ width: "max-content", minWidth: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
           <thead>
             <tr>
-              <TH width={40}>#</TH>
+
               <TH width={180}>Team Name</TH>
               <TH width={340}>Users</TH>
               <TH width={380}>Drivers</TH>
@@ -1240,7 +1240,7 @@ function TeamsTab({ users: _users }: { users: User[] }) {
                   onMouseEnter={(e) => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = "rgba(59,130,246,0.03)"; }}
                   onMouseLeave={(e) => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = isEven ? "var(--card)" : "var(--background)"; }}
                 >
-                  <TD mono center>{t.id}</TD>
+
                   <TD><span style={{ fontWeight: 600 }}>{t.name}</span></TD>
                   <td style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", verticalAlign: "middle" }}>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
@@ -1271,14 +1271,14 @@ function TeamsTab({ users: _users }: { users: User[] }) {
             })}
             {loading && (
               <tr>
-                <td colSpan={5} style={{ padding: "32px 24px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)", borderBottom: "1px solid var(--border)" }}>
+                <td colSpan={4} style={{ padding: "32px 24px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)", borderBottom: "1px solid var(--border)" }}>
                   Loading…
                 </td>
               </tr>
             )}
             {!loading && paginated.length === 0 && (
               <tr>
-                <td colSpan={5} style={{ padding: "32px 24px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)", borderBottom: "1px solid var(--border)" }}>
+                <td colSpan={4} style={{ padding: "32px 24px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)", borderBottom: "1px solid var(--border)" }}>
                   No teams match your search.
                 </td>
               </tr>
@@ -1295,7 +1295,7 @@ function TeamsTab({ users: _users }: { users: User[] }) {
 
       {/* Toast */}
       {toast && (
-        <div style={{ position: "fixed", bottom: 24, right: 24, zIndex: 9999, display: "flex", alignItems: "center", gap: 10, padding: "10px 16px", borderRadius: 8, backgroundColor: toast.type === "success" ? "#10B981" : "#EF4444", color: "#fff", fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 500, boxShadow: "0 4px 12px rgba(0,0,0,0.15)", animation: "slideUp 0.2s ease" }}>
+        <div style={{ position: "fixed", top: 24, right: 24, zIndex: 9999, display: "flex", alignItems: "center", gap: 10, padding: "10px 16px", borderRadius: 8, backgroundColor: toast.type === "success" ? "#10B981" : "#EF4444", color: "#fff", fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 500, boxShadow: "0 4px 12px rgba(0,0,0,0.15)", animation: "slideUp 0.2s ease" }}>
           {toast.msg}
         </div>
       )}
