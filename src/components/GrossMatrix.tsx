@@ -13,7 +13,7 @@ interface DayCell {
 }
 
 interface DriverRow {
-  id: number;
+  id: string;
   name: string;
   driverType: "O/O" | "C/D";
   unit: string;
@@ -31,7 +31,7 @@ interface BackendCell {
 }
 
 interface BackendDriverRow {
-  id: number;
+  driver_id: string;
   name: string;
   driver_type?: string;
   unit?: string;
@@ -50,11 +50,11 @@ function toDriverRow(b: BackendDriverRow): DriverRow {
     };
   }
   return {
-    id:           b.id,
-    name:         b.name         ?? "",
-    driverType:   (b.driver_type as "O/O" | "C/D") ?? "O/O",
-    unit:         b.unit         ?? "",
-    weeklyTarget: b.weekly_target,
+    id:            b.driver_id,
+    name:          b.name          ?? "",
+    driverType:    (b.driver_type as "O/O" | "C/D") ?? "O/O",
+    unit:          b.unit          ?? "",
+    weeklyTarget:  b.weekly_target,
     companyProfit: b.company_profit ?? 0,
     dateMap,
   };
@@ -223,7 +223,7 @@ function LoadIdSelect({ value, onSelect }: {
 // ─── Cell edit panel (portal) ─────────────────────────────────────────────────
 
 interface EditState {
-  driverId: number;
+  driverId: string;
   date: string;
   rect: DOMRect;
   type: CellType;
@@ -706,7 +706,7 @@ export function GrossMatrix() {
     setLoading(true);
     api.get<any>(`/gross?from=${dateFrom}&to=${dateTo}${search ? `&q=${encodeURIComponent(search)}` : ""}`)
       .then((data) => {
-        const items: BackendDriverRow[] = Array.isArray(data) ? data : (data?.data ?? []);
+        const items: BackendDriverRow[] = Array.isArray(data?.data) ? data.data : (data?.data?.drivers ?? []);
         const mapped = items.map(toDriverRow);
         // update miles lookup from fresh load data
         grossMilesMapRef.clear();
@@ -738,7 +738,7 @@ export function GrossMatrix() {
   // Cell editing
   const [editState, setEditState] = useState<EditState | null>(null);
 
-  function openCellEdit(driverId: number, date: string, cell: DayCell, e: React.MouseEvent) {
+  function openCellEdit(driverId: string, date: string, cell: DayCell, e: React.MouseEvent) {
     e.stopPropagation();
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     setEditState({ driverId, date, rect, type: cell.type, amount: cell.amount !== undefined ? String(cell.amount) : "", loadId: cell.loadId ?? "" });
@@ -767,11 +767,11 @@ export function GrossMatrix() {
   function cancelCellEdit() { setEditState(null); }
 
   // Row-level field saves
-  function saveTarget(driverId: number, value: number | undefined) {
+  function saveTarget(driverId: string, value: number | undefined) {
     setRows((prev) => prev.map((d) => d.id === driverId ? { ...d, weeklyTarget: value } : d));
     api.patch("/gross", { driver_id: driverId, weekly_target: value ?? null }).catch(() => {});
   }
-  function saveProfit(driverId: number, value: number | undefined) {
+  function saveProfit(driverId: string, value: number | undefined) {
     setRows((prev) => prev.map((d) => d.id === driverId ? { ...d, companyProfit: value ?? 0 } : d));
     api.patch("/gross", { driver_id: driverId, company_profit: value ?? 0 }).catch(() => {});
   }
