@@ -643,7 +643,10 @@ function QueueReorder({ driverId, queue, onReorder }: {
     if (from === null || from === dropIdx) return;
     const next = [...items];
     const [moved] = next.splice(from, 1);
-    next.splice(dropIdx, 0, moved);
+    // Insert above the drop target. When dragging downward, removing `from` first
+    // shifts the target down by one, so compensate to land above it (not below).
+    const insertAt = from < dropIdx ? dropIdx - 1 : dropIdx;
+    next.splice(insertAt, 0, moved);
     persist(next);
   };
 
@@ -702,7 +705,7 @@ function SoloModal({ driver, onClose, onSave, truckOpts, trailerOpts, saving }: 
 }) {
   const [form, setForm] = useState<Partial<SoloDriver>>(driver);
   const [touched, setTouched] = useState<Partial<Record<keyof SoloDriver, boolean>>>({});
-  const set =(k: keyof SoloDriver, v: string) => setForm((f) => ({ ...f, [k]: v }));
+  const set = (k: keyof SoloDriver, v: string) => setForm((f) => ({ ...f, [k]: v }));
   const touch = (k: keyof SoloDriver) => setTouched((t) => ({ ...t, [k]: true }));
   const isNew = !driver.id;
 
@@ -825,8 +828,6 @@ function TeamModal({ driver, onClose, onSave, truckOpts, trailerOpts, saving }: 
   const set = (k: keyof TeamDriver, v: string) => setForm((f) => ({ ...f, [k]: v }));
   const touch = (k: keyof TeamDriver) => setTouched((t) => ({ ...t, [k]: true }));
   const isNew = !driver.id;
-
-  const [loadOpts, setLoadOpts] = useState<SelectOpt[]>([]);
 
   const err = (k: keyof TeamDriver) => touched[k] && !form[k]?.toString().trim();
 

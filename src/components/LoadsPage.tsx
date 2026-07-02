@@ -812,8 +812,8 @@ function LoadModal({ load, onClose, onSave, driverOpts = [], dispatcherOpts = []
   const isNew = !load.id;
 
   // All locations in one unified array: [stop1 (origin), stop2, ..., stopN (destination)].
-  // load.stops is already the normalized full route (see unifyStops); a new load starts
-  // with two blank stops (origin + destination placeholders).
+  // load.stops is the route exactly as the backend sent it; a new load starts with two
+  // blank stops (origin + destination placeholders).
   const [stops, setStops] = useState<Stop[]>(() => {
     if (load.stops && load.stops.length > 0) return load.stops.map((s) => ({ ...s }));
     return [
