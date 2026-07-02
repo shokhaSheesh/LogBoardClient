@@ -702,22 +702,9 @@ function SoloModal({ driver, onClose, onSave, truckOpts, trailerOpts, saving }: 
 }) {
   const [form, setForm] = useState<Partial<SoloDriver>>(driver);
   const [touched, setTouched] = useState<Partial<Record<keyof SoloDriver, boolean>>>({});
-  const [loadOpts, setLoadOpts] = useState<SelectOpt[]>([]);
-  const set = (k: keyof SoloDriver, v: string) => setForm((f) => ({ ...f, [k]: v }));
+  const set =(k: keyof SoloDriver, v: string) => setForm((f) => ({ ...f, [k]: v }));
   const touch = (k: keyof SoloDriver) => setTouched((t) => ({ ...t, [k]: true }));
   const isNew = !driver.id;
-
-  useEffect(() => {
-    if (!driver.id) return;
-    api.getList<any>("/loads", { driver_id: driver.id, page_size: 100 })
-      .then(({ items }) => {
-        const opts = (items ?? [])
-          .filter((l: any) => l.status !== "completed" && l.id !== driver.currentLoadId)
-          .map((l: any) => ({ value: l.id, label: l.load_id ?? l.id }));
-        setLoadOpts([{ value: "", label: "— None —" }, ...opts]);
-      })
-      .catch(() => {});
-  }, [driver.id]);
 
   const err = (k: keyof SoloDriver) => touched[k] && !form[k]?.toString().trim();
 
@@ -798,16 +785,9 @@ function SoloModal({ driver, onClose, onSave, truckOpts, trailerOpts, saving }: 
             </label>
           )}
 
-          {!isNew && (
-            <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-              <FieldLabel>Next Load</FieldLabel>
-              <CustomSelect value={form.nextLoadId ?? ""} options={loadOpts} onChange={(v) => set("nextLoadId", v)} searchable />
-            </label>
-          )}
-
-          {!isNew && (form.nextLoads?.length ?? 0) >= 2 && (
+          {!isNew && (form.nextLoads?.length ?? 0) >= 1 && (
             <div style={{ display: "flex", flexDirection: "column", gap: 5, gridColumn: "1 / -1" }}>
-              <FieldLabel>Load Queue — drag to reorder</FieldLabel>
+              <FieldLabel>{(form.nextLoads?.length ?? 0) >= 2 ? "Load Queue — drag to reorder" : "Next Load"}</FieldLabel>
               <QueueReorder
                 driverId={form.id!}
                 queue={form.nextLoads ?? []}
@@ -847,18 +827,6 @@ function TeamModal({ driver, onClose, onSave, truckOpts, trailerOpts, saving }: 
   const isNew = !driver.id;
 
   const [loadOpts, setLoadOpts] = useState<SelectOpt[]>([]);
-
-  useEffect(() => {
-    if (!driver.id) return;
-    api.getList<any>("/loads", { driver_id: driver.id, page_size: 100 })
-      .then(({ items }) => {
-        const opts = (items ?? [])
-          .filter((l: any) => l.status !== "completed" && l.id !== driver.currentLoadId)
-          .map((l: any) => ({ value: l.id, label: l.load_id ?? l.id }));
-        setLoadOpts([{ value: "", label: "— None —" }, ...opts]);
-      })
-      .catch(() => {});
-  }, [driver.id]);
 
   const err = (k: keyof TeamDriver) => touched[k] && !form[k]?.toString().trim();
 
@@ -949,16 +917,9 @@ function TeamModal({ driver, onClose, onSave, truckOpts, trailerOpts, saving }: 
             </label>
           )}
 
-          {!isNew && (
-            <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-              <FieldLabel>Next Load</FieldLabel>
-              <CustomSelect value={form.nextLoadId ?? ""} options={loadOpts} onChange={(v) => set("nextLoadId", v)} searchable />
-            </label>
-          )}
-
-          {!isNew && (form.nextLoads?.length ?? 0) >= 2 && (
+          {!isNew && (form.nextLoads?.length ?? 0) >= 1 && (
             <div style={{ display: "flex", flexDirection: "column", gap: 5, gridColumn: "1 / -1" }}>
-              <FieldLabel>Load Queue — drag to reorder</FieldLabel>
+              <FieldLabel>{(form.nextLoads?.length ?? 0) >= 2 ? "Load Queue — drag to reorder" : "Next Load"}</FieldLabel>
               <QueueReorder
                 driverId={form.id!}
                 queue={form.nextLoads ?? []}
@@ -2147,10 +2108,15 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
                   )}
                 </TD>
                 <TD mono>
-                  {d.nextLoad ? (
-                    <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 600, color: "#F59E0B", backgroundColor: "#FEF3C7", borderRadius: 4, padding: "2px 7px" }}>
-                      {d.nextLoad}
-                    </span>
+                  {(d.nextLoads?.length ?? 0) > 0 ? (
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                      {d.nextLoads!.map((q, i) => (
+                        <span key={q.id} title={i === 0 ? "Next up" : `Queue position ${i + 1}`}
+                          style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 600, color: "#F59E0B", backgroundColor: "#FEF3C7", borderRadius: 4, padding: "2px 7px", opacity: i === 0 ? 1 : 0.6 }}>
+                          {q.loadId}
+                        </span>
+                      ))}
+                    </div>
                   ) : (
                     <span style={{ color: "var(--muted-foreground)" }}>—</span>
                   )}
@@ -2389,10 +2355,15 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
                   )}
                 </TD>
                 <TD mono>
-                  {d.nextLoad ? (
-                    <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 600, color: "#F59E0B", backgroundColor: "#FEF3C7", borderRadius: 4, padding: "2px 7px" }}>
-                      {d.nextLoad}
-                    </span>
+                  {(d.nextLoads?.length ?? 0) > 0 ? (
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                      {d.nextLoads!.map((q, i) => (
+                        <span key={q.id} title={i === 0 ? "Next up" : `Queue position ${i + 1}`}
+                          style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 600, color: "#F59E0B", backgroundColor: "#FEF3C7", borderRadius: 4, padding: "2px 7px", opacity: i === 0 ? 1 : 0.6 }}>
+                          {q.loadId}
+                        </span>
+                      ))}
+                    </div>
                   ) : (
                     <span style={{ color: "var(--muted-foreground)" }}>—</span>
                   )}

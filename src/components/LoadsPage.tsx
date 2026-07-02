@@ -528,17 +528,35 @@ function fmtAppt(mo: number, d: number, y: number, t: string) {
   return `${String(mo + 1).padStart(2,"0")}/${String(d).padStart(2,"0")} · ${t}`;
 }
 
-function CalendarPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+// Parse an appt string ("MM/DD · HH:MM") into a JS Date for comparison.
+function apptToDate(v: string): Date | null {
+  const p = parseAppt(v);
+  if (!p) return null;
+  const [hh, mm] = p.t.split(":").map(Number);
+  return new Date(p.y, p.mo, p.d, hh || 0, mm || 0);
+}
+function startOfToday(): Date {
+  const n = new Date();
+  return new Date(n.getFullYear(), n.getMonth(), n.getDate());
+}
+
+function CalendarPicker({ value, onChange, min }: { value: string; onChange: (v: string) => void; min?: Date }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const [open, setOpen]   = useState(false);
   const now = new Date();
   const p   = parseAppt(value);
-  const [vy,  setVy]  = useState(p?.y  ?? now.getFullYear());
-  const [vmo, setVmo] = useState(p?.mo ?? now.getMonth());
-  const [vd,  setVd]  = useState(p?.d  ?? now.getDate());
+  const [vy,  setVy]  = useState(p?.y  ?? min?.getFullYear() ?? now.getFullYear());
+  const [vmo, setVmo] = useState(p?.mo ?? min?.getMonth()    ?? now.getMonth());
+  const [vd,  setVd]  = useState(p?.d  ?? min?.getDate()     ?? now.getDate());
   const [vt,  setVt]  = useState(p?.t  ?? "08:00");
   const [view, setView]     = useState<"day"|"month"|"year">("day");
   const [yPage, setYPage]   = useState(Math.floor((p?.y ?? now.getFullYear()) / 12) * 12);
+
+  // Minimum selectable date/time (past days + earlier stops are disabled)
+  const minDateOnly = min ? new Date(min.getFullYear(), min.getMonth(), min.getDate()) : null;
+  const minTime     = min ? `${String(min.getHours()).padStart(2,"0")}:${String(min.getMinutes()).padStart(2,"0")}` : null;
+  const selIsMinDay = !!minDateOnly && new Date(vy, vmo, vd).getTime() === minDateOnly.getTime();
+  const atMinMonth  = !!minDateOnly && (vy < minDateOnly.getFullYear() || (vy === minDateOnly.getFullYear() && vmo <= minDateOnly.getMonth()));
 
   useEffect(() => {
     if (!open) return;
@@ -585,7 +603,7 @@ function CalendarPicker({ value, onChange }: { value: string; onChange: (v: stri
           {/* ── Day view ── */}
           {view === "day" && (<>
             <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 8 }}>
-              <button style={NAV_BTN} onClick={() => { const d = new Date(vy, vmo-1); setVmo(d.getMonth()); setVy(d.getFullYear()); }}>‹</button>
+              <button style={{ ...NAV_BTN, opacity: atMinMonth ? 0.3 : 1, cursor: atMinMonth ? "default" : "pointer" }} disabled={atMinMonth} onClick={() => { const d = new Date(vy, vmo-1); setVmo(d.getMonth()); setVy(d.getFullYear()); }}>‹</button>
               <button style={hdrBtn} onClick={() => setView("month")}
                 onMouseEnter={e => (e.currentTarget.style.backgroundColor = "var(--muted)")}
                 onMouseLeave={e => (e.currentTarget.style.backgroundColor = "transparent")}
@@ -599,23 +617,34 @@ function CalendarPicker({ value, onChange }: { value: string; onChange: (v: stri
               {cells.map((day, ci) => {
                 const isSel   = day === vd;
                 const isToday = day === now.getDate() && vmo === now.getMonth() && vy === now.getFullYear();
+                const isPast  = !!day && !!minDateOnly && new Date(vy, vmo, day) < minDateOnly;
+                const disabled = !day || isPast;
                 return (
-                  <button key={ci} disabled={!day} onClick={() => { if (day) { setVd(day); commit(vy, vmo, day, vt); } }}
+                  <button key={ci} disabled={disabled} onClick={() => {
+                    if (!day || isPast) return;
+                    setVd(day);
+                    // Clamp time up to the minimum when landing on the earliest allowed day
+                    const isMinDay = !!minDateOnly && new Date(vy, vmo, day).getTime() === minDateOnly.getTime();
+                    let t = vt;
+                    if (isMinDay && minTime && vt < minTime) { t = minTime; setVt(minTime); }
+                    commit(vy, vmo, day, t);
+                  }}
                     style={{ height: 30, borderRadius: 6, border: "none", fontFamily: "var(--font-sans)", fontSize: 12,
                       backgroundColor: isSel ? "var(--primary)" : "transparent",
-                      color: !day ? "transparent" : isSel ? "#fff" : isToday ? "var(--primary)" : "var(--foreground)",
-                      fontWeight: isSel || isToday ? 600 : 400, cursor: day ? "pointer" : "default",
+                      color: !day ? "transparent" : isPast ? "var(--muted-foreground)" : isSel ? "#fff" : isToday ? "var(--primary)" : "var(--foreground)",
+                      opacity: isPast ? 0.35 : 1,
+                      fontWeight: isSel || isToday ? 600 : 400, cursor: disabled ? "default" : "pointer",
                     }}
-                    onMouseEnter={e => { if (day && !isSel) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--muted)"; }}
-                    onMouseLeave={e => { if (day && !isSel) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "transparent"; }}
+                    onMouseEnter={e => { if (!disabled && !isSel) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--muted)"; }}
+                    onMouseLeave={e => { if (!disabled && !isSel) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "transparent"; }}
                   >{day ?? ""}</button>
                 );
               })}
             </div>
             <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 8 }}>
               <Clock size={12} style={{ color: "var(--muted-foreground)", flexShrink: 0 }} />
-              <input type="time" value={vt}
-                onChange={e => { setVt(e.target.value); commit(vy, vmo, vd, e.target.value); }}
+              <input type="time" value={vt} min={selIsMinDay && minTime ? minTime : undefined}
+                onChange={e => { let t = e.target.value; if (selIsMinDay && minTime && t < minTime) t = minTime; setVt(t); commit(vy, vmo, vd, t); }}
                 style={{ fontFamily: "var(--font-mono)", fontSize: 13, border: "1px solid var(--border)", borderRadius: 6, padding: "3px 8px", backgroundColor: "var(--input-background)", color: "var(--foreground)", outline: "none" }}
               />
             </div>
@@ -793,10 +822,22 @@ function LoadModal({ load, onClose, onSave, driverOpts = [], dispatcherOpts = []
     ];
   });
 
+  const [apptError, setApptError] = useState<string | null>(null);
+
   const addStop    = () => setStops((p) => [...p, { city: "", done: false, appt: "" }]);
   const removeStop = (idx: number) => setStops((p) => p.filter((_, i) => i !== idx));
   const updateCity = (idx: number, val: string) => setStops((p) => p.map((s, i) => i === idx ? { ...s, city: val, lat: undefined, lng: undefined } : s));
-  const updateAppt = (idx: number, val: string) => setStops((p) => p.map((s, i) => i === idx ? { ...s, appt: val } : s));
+  const updateAppt = (idx: number, val: string) => { setApptError(null); setStops((p) => p.map((s, i) => i === idx ? { ...s, appt: val } : s)); };
+
+  // Earliest allowed time for a stop: not in the past, and not before any earlier stop.
+  const minForStop = (idx: number): Date => {
+    let m = startOfToday();
+    for (let i = 0; i < idx; i++) {
+      const d = apptToDate(stops[i].appt ?? "");
+      if (d && d > m) m = d;
+    }
+    return m;
+  };
 
   const updateCoords = (idx: number, lat: number, lng: number) => {
     setStops((prev) => {
@@ -819,6 +860,19 @@ function LoadModal({ load, onClose, onSave, driverOpts = [], dispatcherOpts = []
   const handleSave = () => {
     // Send the full route as one stops array (stops[0] = origin … last = destination).
     const filled = stops.filter((s) => s.city.trim());
+
+    // Validate appointment times: none in the past, each ≥ every earlier stop.
+    const today = startOfToday();
+    let prev: Date | null = null;
+    for (let i = 0; i < filled.length; i++) {
+      const d = apptToDate(filled[i].appt ?? "");
+      if (!d) continue; // empty appt is allowed
+      if (isNew && d < today) { setApptError(`Stop ${i + 1}'s appointment can't be in the past.`); return; }
+      if (prev && d < prev)   { setApptError(`Stop ${i + 1}'s appointment can't be before an earlier stop's.`); return; }
+      prev = d;
+    }
+
+    setApptError(null);
     onSave({ ...form, stops: filled } as Load);
   };
 
@@ -951,7 +1005,7 @@ function LoadModal({ load, onClose, onSave, driverOpts = [], dispatcherOpts = []
                       {/* Appt — calendar picker */}
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ ...capStyle, fontSize: 10, marginBottom: 4 }}>Appointment</div>
-                        <CalendarPicker value={stop.appt ?? ""} onChange={(v) => updateAppt(idx, v)} />
+                        <CalendarPicker value={stop.appt ?? ""} onChange={(v) => updateAppt(idx, v)} min={minForStop(idx)} />
                       </div>
 
                       {/* Remove */}
@@ -1007,7 +1061,12 @@ function LoadModal({ load, onClose, onSave, driverOpts = [], dispatcherOpts = []
         </div>
 
         {/* Footer */}
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, padding: "14px 20px", borderTop: "1px solid var(--border)" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 10, padding: "14px 20px", borderTop: "1px solid var(--border)" }}>
+          {apptError && (
+            <span style={{ marginRight: "auto", display: "flex", alignItems: "center", gap: 6, fontFamily: "var(--font-sans)", fontSize: 12, color: "#DC2626" }}>
+              <AlertCircle size={13} /> {apptError}
+            </span>
+          )}
           <button onClick={onClose} style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 16px", borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "var(--muted)", color: "var(--foreground)", cursor: "pointer" }}>Cancel</button>
           <button onClick={handleSave} disabled={saving} style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 16px", borderRadius: 6, border: "none", backgroundColor: "var(--primary)", color: "#fff", cursor: saving ? "default" : "pointer", display: "flex", alignItems: "center", gap: 6, opacity: saving ? 0.7 : 1 }}>
             <Check size={14} /> {saving ? "Saving…" : isNew ? "Create Load" : "Save Changes"}
