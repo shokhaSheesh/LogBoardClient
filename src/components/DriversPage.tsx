@@ -641,12 +641,9 @@ function QueueReorder({ driverId, queue, onReorder }: {
     const from = dragIdx;
     setDragIdx(null); setOverIdx(null);
     if (from === null || from === dropIdx) return;
+    // Swap the dragged item and the drop target, leaving everything else in place.
     const next = [...items];
-    const [moved] = next.splice(from, 1);
-    // Insert above the drop target. When dragging downward, removing `from` first
-    // shifts the target down by one, so compensate to land above it (not below).
-    const insertAt = from < dropIdx ? dropIdx - 1 : dropIdx;
-    next.splice(insertAt, 0, moved);
+    [next[from], next[dropIdx]] = [next[dropIdx], next[from]];
     persist(next);
   };
 
@@ -668,10 +665,9 @@ function QueueReorder({ driverId, queue, onReorder }: {
               display: "flex", alignItems: "center", gap: 8,
               padding: "8px 10px", borderRadius: 6,
               border: `1px solid ${isOver ? "var(--primary)" : "var(--border)"}`,
-              borderTop: isOver ? "2px solid var(--primary)" : undefined,
-              backgroundColor: isDragging ? "var(--muted)" : "var(--input-background)",
+              backgroundColor: isDragging ? "var(--muted)" : isOver ? "var(--secondary)" : "var(--input-background)",
               opacity: isDragging ? 0.5 : 1,
-              cursor: "grab", transition: "border-color 0.12s, opacity 0.12s",
+              cursor: "grab", transition: "border-color 0.12s, background-color 0.12s, opacity 0.12s",
             }}
           >
             <GripVertical size={14} style={{ color: "var(--muted-foreground)", flexShrink: 0 }} />
