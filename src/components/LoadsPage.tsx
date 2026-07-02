@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { Status, STATUS_CONFIG as SHARED_STATUS_CONFIG, ALL_STATUSES as SHARED_ALL_STATUSES } from "../lib/statuses";
 import { api, getCompanyId } from "../lib/api";
+import { menuPosition } from "../lib/menuPosition";
 import { CityAutocomplete } from "./CityAutocomplete";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -345,12 +346,15 @@ function StatusDropdown({ value, onChange }: { value: Status; onChange: (s: Stat
           <span style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)", userSelect: "none" }}>—</span>
         )}
       </div>
-      {open && rect && createPortal(
+      {open && rect && (() => {
+        const { top, left } = menuPosition(rect, SHARED_ALL_STATUSES.length, 168);
+        return createPortal(
         <div ref={dropRef} style={{
-          position: "fixed", top: rect.bottom + 5, left: rect.left, zIndex: 9999,
+          position: "fixed", top, left, zIndex: 9999,
           backgroundColor: "var(--card)", border: "1px solid var(--border)",
           borderRadius: 10, boxShadow: "0 10px 30px rgba(0,0,0,0.16)",
-          padding: "5px", minWidth: 168, display: "flex", flexDirection: "column", gap: 1,
+          padding: "5px", minWidth: 168, maxHeight: "calc(100vh - 16px)", overflowY: "auto",
+          display: "flex", flexDirection: "column", gap: 1,
         }}>
           {SHARED_ALL_STATUSES.map((s) => {
             const c = SHARED_STATUS_CONFIG[s];
@@ -376,7 +380,8 @@ function StatusDropdown({ value, onChange }: { value: Status; onChange: (s: Stat
           })}
         </div>,
         document.body
-      )}
+        );
+      })()}
     </>
   );
 }

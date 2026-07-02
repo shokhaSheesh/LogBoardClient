@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { MapPin, Lock, MessageSquare, ChevronDown, Search, Navigation, Check, ArrowRight, History, X, AlertCircle } from "lucide-react";
 import { Status, STATUS_CONFIG, ALL_STATUSES } from "../lib/statuses";
 import { api, getCompanyId } from "../lib/api";
+import { menuPosition } from "../lib/menuPosition";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -195,8 +196,10 @@ function StatusDropdown({ value, onChange }: { value: Status; onChange: (s: Stat
           <ChevronDown size={10} style={{ opacity: 0.7, marginLeft: 1 }} />
         </span>
       </div>
-      {open && rect && createPortal(
-        <div ref={dropRef} style={{ position: "fixed", top: rect.bottom + 5, left: rect.left, zIndex: 9999, backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 10, boxShadow: "0 10px 30px rgba(0,0,0,0.16)", padding: "5px", minWidth: 168, display: "flex", flexDirection: "column", gap: 1 }}>
+      {open && rect && (() => {
+        const { top, left } = menuPosition(rect, ALL_STATUSES.length, 168);
+        return createPortal(
+        <div ref={dropRef} style={{ position: "fixed", top, left, zIndex: 9999, backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 10, boxShadow: "0 10px 30px rgba(0,0,0,0.16)", padding: "5px", minWidth: 168, maxHeight: "calc(100vh - 16px)", overflowY: "auto", display: "flex", flexDirection: "column", gap: 1 }}>
           {ALL_STATUSES.map((s) => {
             const c = STATUS_CONFIG[s];
             const active = s === value;
@@ -213,7 +216,8 @@ function StatusDropdown({ value, onChange }: { value: Status; onChange: (s: Stat
           })}
         </div>,
         document.body
-      )}
+        );
+      })()}
     </>
   );
 }
@@ -232,8 +236,10 @@ function TypeDropdown({ value, onChange }: { value: DriverType; onChange: (t: Dr
           <ChevronDown size={10} style={{ opacity: 0.7 }} />
         </span>
       </div>
-      {open && rect && createPortal(
-        <div ref={dropRef} style={{ position: "fixed", top: rect.bottom + 5, left: rect.left, zIndex: 9999, backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 10, boxShadow: "0 10px 30px rgba(0,0,0,0.16)", padding: "5px", minWidth: 110, display: "flex", flexDirection: "column", gap: 1 }}>
+      {open && rect && (() => {
+        const { top, left } = menuPosition(rect, 2, 110);
+        return createPortal(
+        <div ref={dropRef} style={{ position: "fixed", top, left, zIndex: 9999, backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 10, boxShadow: "0 10px 30px rgba(0,0,0,0.16)", padding: "5px", minWidth: 110, maxHeight: "calc(100vh - 16px)", overflowY: "auto", display: "flex", flexDirection: "column", gap: 1 }}>
           {(["O/O", "C/D"] as DriverType[]).map((t) => {
             const c = TYPE_CONFIG[t];
             const active = t === value;
@@ -249,7 +255,8 @@ function TypeDropdown({ value, onChange }: { value: DriverType; onChange: (t: Dr
           })}
         </div>,
         document.body
-      )}
+        );
+      })()}
     </>
   );
 }

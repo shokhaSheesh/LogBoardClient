@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { Status, STATUS_CONFIG, ALL_STATUSES } from "../lib/statuses";
 import { api } from "../lib/api";
+import { menuPosition } from "../lib/menuPosition";
 import {
   User, Users, Plus, Pencil, Trash2, MapPin, MessageSquare,
   X, Check, Search, ChevronDown, ChevronLeft, ChevronRight,
@@ -441,12 +442,15 @@ function StatusDropdown({ value, onChange }: { value: Status; onChange: (s: Stat
           <ChevronDown size={10} style={{ opacity: 0.7, marginLeft: 1 }} />
         </span>
       </div>
-      {open && rect && createPortal(
+      {open && rect && (() => {
+        const { top, left } = menuPosition(rect, ALL_STATUSES.length, 168);
+        return createPortal(
         <div ref={dropRef} style={{
-          position: "fixed", top: rect.bottom + 5, left: rect.left, zIndex: 9999,
+          position: "fixed", top, left, zIndex: 9999,
           backgroundColor: "var(--card)", border: "1px solid var(--border)",
           borderRadius: 10, boxShadow: "0 10px 30px rgba(0,0,0,0.16)",
-          padding: "5px", minWidth: 168, display: "flex", flexDirection: "column", gap: 1,
+          padding: "5px", minWidth: 168, maxHeight: "calc(100vh - 16px)", overflowY: "auto",
+          display: "flex", flexDirection: "column", gap: 1,
         }}>
           {ALL_STATUSES.map((s) => {
             const c = STATUS_CONFIG[s];
@@ -472,7 +476,8 @@ function StatusDropdown({ value, onChange }: { value: Status; onChange: (s: Stat
           })}
         </div>,
         document.body
-      )}
+        );
+      })()}
     </>
   );
 }
