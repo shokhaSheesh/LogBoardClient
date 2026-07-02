@@ -122,8 +122,33 @@ async function requestPayouts<T>(
   };
 }
 
+// Multipart upload (e.g. CSV bulk import). Do NOT set Content-Type — the browser
+// adds the multipart boundary itself.
+async function upload<T>(path: string, file: File, field = "file"): Promise<T> {
+  const headers: Record<string, string> = {};
+  const token = getToken();
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  const companyId = getCompanyId();
+  if (companyId) headers["X-Company-ID"] = companyId;
+
+  const fd = new FormData();
+  fd.append(field, file);
+
+  const res = await fetch(`${BASE}${path}`, { method: "POST", headers, body: fd });
+
+  if (res.status === 401) { clearToken(); window.location.href = "/login"; throw new Error("Unauthorized"); }
+
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const msg = json?.error?.message ?? json?.error ?? `HTTP ${res.status}`;
+    throw new Error(msg);
+  }
+  return (json.data ?? json) as T;
+}
+
 export const api = {
   get: <T>(path: string) => request<T>("GET", path),
+  upload,
   post: <T>(path: string, body?: unknown) => request<T>("POST", path, body),
   put: <T>(path: string, body?: unknown) => request<T>("PUT", path, body),
   patch: <T>(path: string, body?: unknown) => request<T>("PATCH", path, body),

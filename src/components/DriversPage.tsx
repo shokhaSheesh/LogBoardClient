@@ -1008,21 +1008,44 @@ function DeleteConfirm({ label, onClose, onConfirm }: { label: string; onClose: 
 
 // ─── Import Modal ─────────────────────────────────────────────────────────────
 
-function ImportModal({ entityLabel, onClose }: { entityLabel: string; onClose: () => void }) {
+interface ImportResult { created: number; failed: number; errors: { row: number; message: string }[] }
+
+function ImportModal({ entityLabel, endpoint, onClose, onImported }: {
+  entityLabel: string; endpoint: string; onClose: () => void; onImported?: () => void;
+}) {
   const [dragging, setDragging] = useState(false);
   const [file, setFile] = useState<File | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [result, setResult] = useState<ImportResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const pickFile = (f: File | undefined | null) => {
+    if (!f) return;
+    if (!/\.csv$/i.test(f.name)) { setError("Only CSV files are supported."); return; }
+    setError(null); setFile(f);
+  };
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setDragging(false);
-    const f = e.dataTransfer.files[0];
-    if (f) setFile(f);
+    pickFile(e.dataTransfer.files[0]);
   };
 
-  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0];
-    if (f) setFile(f);
+  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => pickFile(e.target.files?.[0]);
+
+  const submit = async () => {
+    if (!file) return;
+    setSubmitting(true); setError(null);
+    try {
+      const res = await api.upload<ImportResult>(endpoint, file);
+      setResult(res);
+      if (res.created > 0) onImported?.();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Import failed");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -1058,7 +1081,7 @@ function ImportModal({ entityLabel, onClose }: { entityLabel: string; onClose: (
               cursor: "pointer", transition: "all 0.15s",
             }}
           >
-            <input ref={inputRef} type="file" accept=".csv,.xlsx,.xls,.pdf" onChange={handleFile} style={{ display: "none" }} />
+            <input ref={inputRef} type="file" accept=".csv" onChange={handleFile} style={{ display: "none" }} />
             {file ? (
               <>
                 <div style={{ width: 44, height: 44, borderRadius: 10, backgroundColor: "#D1FAE5", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 12px" }}>
@@ -1078,7 +1101,7 @@ function ImportModal({ entityLabel, onClose }: { entityLabel: string; onClose: (
                   Drag & drop your file here
                 </div>
                 <div style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)", marginTop: 4 }}>
-                  or <span style={{ color: "var(--primary)", fontWeight: 500 }}>browse files</span> — CSV, Excel, PDF
+                  or <span style={{ color: "var(--primary)", fontWeight: 500 }}>browse files</span> — CSV only (max 5 MB)
                 </div>
               </>
             )}
@@ -1099,34 +1122,55 @@ function ImportModal({ entityLabel, onClose }: { entityLabel: string; onClose: (
             </button>
           </div>
 
-          {/* Coming-soon notice */}
-          <div style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 14px", backgroundColor: "#FFF7ED", borderRadius: 8, border: "1px solid #FED7AA" }}>
-            <span style={{ fontSize: 15, lineHeight: 1, marginTop: 1 }}>🚧</span>
-            <div style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "#92400E", lineHeight: 1.5 }}>
-              <strong>Automated parsing is finishing up.</strong> You can upload your file now and our team will process it within 24 h, or add drivers manually in the meantime.
+          {/* Error */}
+          {error && (
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 14px", backgroundColor: "#FEF2F2", borderRadius: 8, border: "1px solid #FECACA" }}>
+              <AlertCircle size={15} color="#DC2626" style={{ flexShrink: 0, marginTop: 1 }} />
+              <div style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "#991B1B", lineHeight: 1.5 }}>{error}</div>
             </div>
-          </div>
+          )}
+
+          {/* Result */}
+          {result && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "12px 14px", backgroundColor: result.failed > 0 ? "#FFFBEB" : "#F0FDF4", borderRadius: 8, border: `1px solid ${result.failed > 0 ? "#FDE68A" : "#BBF7D0"}` }}>
+              <div style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, color: result.failed > 0 ? "#92400E" : "#065F46" }}>
+                Imported {result.created} {entityLabel.toLowerCase()}{result.created !== 1 ? "s" : ""}{result.failed > 0 ? ` · ${result.failed} row${result.failed !== 1 ? "s" : ""} failed` : ""}
+              </div>
+              {result.errors.length > 0 && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 3, maxHeight: 140, overflowY: "auto" }}>
+                  {result.errors.map((er, i) => (
+                    <div key={i} style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "#92400E" }}>
+                      <span style={{ fontFamily: "var(--font-mono)", fontWeight: 700 }}>Row {er.row}:</span> {er.message}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Footer */}
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, padding: "14px 20px", borderTop: "1px solid var(--border)" }}>
           <button onClick={onClose} style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 16px", borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "var(--muted)", color: "var(--foreground)", cursor: "pointer" }}>
-            Cancel
+            {result ? "Done" : "Cancel"}
           </button>
-          <button
-            disabled={!file}
-            style={{
-              fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 16px",
-              borderRadius: 6, border: "none",
-              backgroundColor: file ? "#059669" : "var(--muted)",
-              color: file ? "#fff" : "var(--muted-foreground)",
-              cursor: file ? "pointer" : "not-allowed",
-              display: "flex", alignItems: "center", gap: 6,
-              transition: "background-color 0.15s",
-            }}
-          >
-            <Upload size={14} /> Submit for Import
-          </button>
+          {!result && (
+            <button
+              disabled={!file || submitting}
+              onClick={submit}
+              style={{
+                fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 16px",
+                borderRadius: 6, border: "none",
+                backgroundColor: file && !submitting ? "#059669" : "var(--muted)",
+                color: file && !submitting ? "#fff" : "var(--muted-foreground)",
+                cursor: file && !submitting ? "pointer" : "not-allowed",
+                display: "flex", alignItems: "center", gap: 6,
+                transition: "background-color 0.15s",
+              }}
+            >
+              <Upload size={14} /> {submitting ? "Importing…" : "Submit for Import"}
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -2156,7 +2200,7 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
         <DeleteConfirm label={deleting.name} onClose={() => setDeleting(null)} onConfirm={del} />
       )}
       {importing && (
-        <ImportModal entityLabel="Driver" onClose={() => setImporting(false)} />
+        <ImportModal entityLabel="Driver" endpoint="/drivers/import" onClose={() => setImporting(false)} onImported={() => setFetchKey((k) => k + 1)} />
       )}
       {toast && <Toast type={toast.type} msg={toast.msg} onClose={() => setToast(null)} />}
     </>
@@ -2392,7 +2436,7 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
         <DeleteConfirm label={`${deleting.name1} & ${deleting.name2}`} onClose={() => setDeleting(null)} onConfirm={del} />
       )}
       {importing && (
-        <ImportModal entityLabel="Team" onClose={() => setImporting(false)} />
+        <ImportModal entityLabel="Team" endpoint="/drivers/import" onClose={() => setImporting(false)} onImported={() => setFetchKey((k) => k + 1)} />
       )}
       {toast && <Toast type={toast.type} msg={toast.msg} onClose={() => setToast(null)} />}
     </>
