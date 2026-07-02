@@ -3,6 +3,7 @@ import { Search, Calendar, Check, ChevronDown, ChevronLeft, ChevronRight } from 
 import { createPortal } from "react-dom";
 import { Status, STATUS_CONFIG, ALL_STATUSES } from "../lib/statuses";
 import { api } from "../lib/api";
+import { getWeekStartDay } from "./SettingsPage";
 
 type CellType = Status | "load" | "empty";
 
@@ -67,7 +68,8 @@ function getDatesInRange(from: string, to: string): string[] {
   const end = new Date(to + "T00:00:00");
   const cur = new Date(from + "T00:00:00");
   while (cur <= end) {
-    dates.push(cur.toISOString().split("T")[0]);
+    const y = cur.getFullYear(), m = String(cur.getMonth() + 1).padStart(2, "0"), day = String(cur.getDate()).padStart(2, "0");
+    dates.push(`${y}-${m}-${day}`);
     cur.setDate(cur.getDate() + 1);
   }
   return dates;
@@ -688,20 +690,40 @@ function DateRangePicker({ from, to, onChange }: DateRangePickerProps) {
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export function GrossMatrix() {
+function getWeekRange(startDay: number): { from: Date; to: Date } {
   const today = new Date();
-  const dow = today.getDay();
-  const mondayOffset = dow === 0 ? -6 : 1 - dow;
-  const monday = new Date(today); monday.setDate(today.getDate() + mondayOffset);
-  const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6);
-  const pad = (n: number) => String(n).padStart(2, "0");
+  const dow    = today.getDay();
+  const offset = ((dow - startDay + 7) % 7);
+  const from   = new Date(today); from.setDate(today.getDate() - offset);
+  const to     = new Date(from);  to.setDate(from.getDate() + 6);
+  return { from, to };
+}
+
+export function GrossMatrix() {
+  const pad  = (n: number) => String(n).padStart(2, "0");
   const fmtD = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+
+  const [weekStartDay, setWeekStartDay] = useState(getWeekStartDay);
+  const initialRange = getWeekRange(weekStartDay);
 
   const [rows,     setRows]     = useState<DriverRow[]>([]);
   const [loading,  setLoading]  = useState(true);
   const [search,   setSearch]   = useState("");
-  const [dateFrom, setDateFrom] = useState(fmtD(monday));
-  const [dateTo,   setDateTo]   = useState(fmtD(sunday));
+  const [dateFrom, setDateFrom] = useState(fmtD(initialRange.from));
+  const [dateTo,   setDateTo]   = useState(fmtD(initialRange.to));
+
+  // Re-snap to current week whenever the user changes the week setting
+  useEffect(() => {
+    const handler = () => {
+      const newStart = getWeekStartDay();
+      setWeekStartDay(newStart);
+      const range = getWeekRange(newStart);
+      setDateFrom(fmtD(range.from));
+      setDateTo(fmtD(range.to));
+    };
+    window.addEventListener("week-settings-changed", handler);
+    return () => window.removeEventListener("week-settings-changed", handler);
+  }, []);
 
   // Fetch gross data from backend
   useEffect(() => {
@@ -727,15 +749,14 @@ export function GrossMatrix() {
   }, [dateFrom, dateTo, search]);
 
   function shiftWeek(dir: -1 | 1) {
-    const pad = (n: number) => String(n).padStart(2, "0");
-    const fmt = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
     const d = new Date(dateFrom + "T00:00:00");
-    // Snap to Monday of current week first, then shift — avoids overlap when dateFrom isn't a Monday
-    const dow = d.getDay();
-    d.setDate(d.getDate() + (dow === 0 ? -6 : 1 - dow) + dir * 7);
-    setDateFrom(fmt(d));
+    // Snap to the configured week start day first, then shift by 7
+    const dow    = d.getDay();
+    const offset = ((dow - weekStartDay + 7) % 7);
+    d.setDate(d.getDate() - offset + dir * 7);
+    setDateFrom(fmtD(d));
     d.setDate(d.getDate() + 6);
-    setDateTo(fmt(d));
+    setDateTo(fmtD(d));
   }
 
   // Cell editing

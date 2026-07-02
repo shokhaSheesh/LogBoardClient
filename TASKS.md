@@ -5,7 +5,7 @@
 | # | Task | Status |
 |---|------|--------|
 | 1 | Dashboard — `GET /dashboard?week=` | ✅ Done |
-| 2 | Board — `GET /board` + WebSocket (`ws/boards/:id`) | ⏳ Not started |
+| 2 | Board — `GET /board` + WebSocket (`ws/boards/:id`) | ✅ Done |
 | 3 | Gross Revenue Matrix — `GET /gross` + `PATCH /gross` | ✅ Done |
 | 4 | Payouts — `GET /payouts` + `PATCH /payouts/:id` | ✅ Done |
 | 5 | Billing reads — plans, billing, invoices | ✅ Done |
@@ -19,11 +19,11 @@
 | 7 | Teams Settings tab — full CRUD | ✅ Done |
 | 8 | Notifications bell — `GET /notifications`, `PATCH /:id`, `POST /read-all` | ✅ Done |
 | 9 | Comments — `GET/POST /board/comments` per entity | ⏳ Not started |
-| 11 | Per-team board — `GET /board?team_id=` (filter snapshot rows client-side) | 🔒 Blocked by #2 |
-| 16 | Board history panel — `GET /board/history` (company-wide, live badge) | ⏳ Not started |
-| 17 | Per-entity change log — `GET /board/history?entity_type=&entity_id=` (load + driver detail) | ⏳ Not started |
-| 18 | History revert — `POST /board/history/:id/revert` then `PUT` entity | 🔒 Blocked by #17 |
-| 19 | Edit locks — `GET/POST/DELETE /board/locks` + presence indicators | 🔒 Blocked by #2 |
+| 11 | Per-team board — `GET /board?team_id=` (filter snapshot rows client-side) | ⏳ Not started |
+| 16 | Board history panel — `GET /board/history` (company-wide, live badge) | ✅ Done |
+| 17 | Per-entity change log — `GET /board/history?entity_type=&entity_id=` (load + driver detail) | ✅ Done |
+| 18 | History revert — `POST /board/history/:id/revert` then `PUT` entity | ⏳ Not started |
+| 19 | Edit locks — `GET/POST/DELETE /board/locks` + presence indicators | ✅ Done |
 
 ## Already done / confirmed wired
 
@@ -45,4 +45,4 @@
 | DriversPage edit — truck/trailer missing from PUT payload | ✅ Fixed |
 | BillingPage invoices — wrong field names (date/plan/amount vs plan_name/amount_paid) | ✅ Fixed |
 
-## Remaining: 2, 6, 8, 9, 10, 16 (then 11, 17, 18, 19 unblock)
+## Remaining: 6, 9, 10, 11, 18

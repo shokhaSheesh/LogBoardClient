@@ -4,7 +4,6 @@ export type Status =
   | "covered"
   | "dispatched"
   | "enroute"
-  | "delivered"
   | "completed"
   | "reserved"
   | "rest"
@@ -23,7 +22,6 @@ export const STATUS_CONFIG: Record<Status, StatusConfig> = {
   covered:    { label: "Covered",    bg: "#8B5CF6", color: "#ffffff" },
   dispatched: { label: "Dispatched", bg: "#F59E0B", color: "#111827" },
   enroute:    { label: "Enroute",    bg: "#3B82F6", color: "#ffffff" },
-  delivered:  { label: "Delivered",  bg: "#06B6D4", color: "#ffffff" },
   completed:  { label: "Completed",  bg: "#22C55E", color: "#111827" },
   reserved:   { label: "Reserved",   bg: "#6366F1", color: "#ffffff" },
   rest:       { label: "Rest",       bg: "#D1D5DB", color: "#374151" },

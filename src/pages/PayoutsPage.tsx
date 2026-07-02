@@ -85,7 +85,12 @@ function startOfWeek(d: Date): Date {
 }
 
 function toApiRange(mode: DateMode, anchor: Date): { from: string; to: string } {
-  const fmt = (d: Date) => d.toISOString().slice(0, 10);
+  const fmt = (d: Date) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  };
   if (mode === "day") return { from: fmt(anchor), to: fmt(anchor) };
   if (mode === "week") {
     const mon = startOfWeek(anchor);

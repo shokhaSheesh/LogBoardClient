@@ -59,7 +59,7 @@ interface BackendLoad {
 
 interface SelectOpt { value: string; label: string; dot?: string }
 
-const LOADS_STATUSES: Status[] = ["re_update", "reserved", "dispatched", "enroute", "delivered", "completed"];
+const LOADS_STATUSES: Status[] = ["re_update", "reserved", "dispatched", "enroute", "completed"];
 
 const STATUS_FILTER_OPTS: SelectOpt[] = [
   { value: "All", label: "All Statuses" },

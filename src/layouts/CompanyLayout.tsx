@@ -597,7 +597,7 @@ function NotificationBell() {
 
   useEffect(() => {
     fetchNotifs();
-    const id = setInterval(fetchNotifs, 30_000);
+    const id = setInterval(fetchNotifs, 2 * 60_000);
     return () => clearInterval(id);
   }, []);
 
@@ -820,9 +820,14 @@ export function CompanyLayout() {
     }
   }, [user]);
 
+  const [switching, setSwitching] = useState(false);
+
   const switchAccount = (id: string) => {
+    if (id === activeAccountId) return;
+    setSwitching(true);
     setActiveAccountId(id);
     setCompanyId(id);
+    setTimeout(() => setSwitching(false), 800);
   };
 
   const addAccount = (name: string) => {
@@ -852,12 +857,26 @@ export function CompanyLayout() {
         <TopHeader onToggleSidebar={() => setSidebarCollapsed((v) => !v)} />
 
         <main
+          key={activeAccountId}
           className="flex-1 overflow-y-auto"
           style={{ backgroundColor: "#F9FAFB" }}
         >
           <Outlet />
         </main>
       </div>
+
+      {switching && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 99999, backgroundColor: "rgba(0,0,0,0.45)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ backgroundColor: "var(--card)", borderRadius: 16, padding: "28px 36px", display: "flex", flexDirection: "column", alignItems: "center", gap: 14, boxShadow: "0 24px 48px rgba(0,0,0,0.2)" }}>
+            <div style={{ width: 36, height: 36, borderRadius: "50%", border: "3px solid var(--border)", borderTopColor: "var(--primary)", animation: "spin 0.7s linear infinite" }} />
+            <span style={{ fontFamily: "var(--font-sans)", fontSize: 14, fontWeight: 600, color: "var(--foreground)" }}>
+              Switching account…
+            </span>
+          </div>
+        </div>
+      )}
+
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 }

@@ -1,8 +1,23 @@
 import { useState, useRef, useEffect } from "react";
 import {
   Users, UsersRound, ShieldCheck, Plus, Pencil, Trash2, X, Check,
-  Eye, EyeOff, ToggleLeft, ToggleRight, Search, ChevronDown, ChevronLeft, ChevronRight,
+  Eye, EyeOff, ToggleLeft, ToggleRight, Search, ChevronDown, ChevronLeft, ChevronRight, CalendarDays,
 } from "lucide-react";
+
+// ─── Week settings helpers ────────────────────────────────────────────────────
+
+export const WEEK_DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
+
+export function getWeekStartDay(): number {
+  const stored = localStorage.getItem("week_start_day");
+  const n = stored !== null ? parseInt(stored, 10) : 1; // default Mon
+  return isNaN(n) ? 1 : n;
+}
+
+export function setWeekStartDay(day: number): void {
+  localStorage.setItem("week_start_day", String(day));
+  window.dispatchEvent(new Event("week-settings-changed"));
+}
 import { api, getCompanyId } from "../lib/api";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -1594,7 +1609,81 @@ function RolesTab({ onRolesChange }: { onRolesChange: (roles: Role[]) => void })
 
 // ─── Page shell ───────────────────────────────────────────────────────────────
 
-type TabId = "users" | "teams" | "roles";
+// ─── Week tab ─────────────────────────────────────────────────────────────────
+
+function WeekTab() {
+  const [startDay, setStartDayState] = useState(getWeekStartDay);
+
+  const endDay = (startDay + 6) % 7;
+
+  const select = (day: number) => {
+    setStartDayState(day);
+    setWeekStartDay(day);
+  };
+
+  return (
+    <div style={{ padding: "32px 28px", display: "flex", flexDirection: "column", gap: 32, maxWidth: 520 }}>
+      {/* Header */}
+      <div>
+        <div style={{ fontFamily: "var(--font-sans)", fontSize: 16, fontWeight: 700, color: "var(--foreground)", marginBottom: 6 }}>Work Week</div>
+        <div style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)", lineHeight: 1.6 }}>
+          Choose which day your work week starts on. The Gross page will use this to calculate weekly ranges.
+        </div>
+      </div>
+
+      {/* Day picker */}
+      <div>
+        <div style={{ fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600, color: "var(--muted-foreground)", letterSpacing: "0.07em", textTransform: "uppercase", marginBottom: 12 }}>
+          Week starts on
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {WEEK_DAYS.map((label, idx) => {
+            const isStart = idx === startDay;
+            const isEnd   = idx === endDay;
+            const inRange = (() => {
+              if (startDay <= endDay) return idx >= startDay && idx <= endDay;
+              return idx >= startDay || idx <= endDay;
+            })();
+
+            return (
+              <button
+                key={label}
+                onClick={() => select(idx)}
+                style={{
+                  width: 64, height: 64, borderRadius: 12, border: "none", cursor: "pointer",
+                  display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 4,
+                  fontFamily: "var(--font-sans)",
+                  backgroundColor: isStart ? "var(--primary)" : inRange ? "rgba(59,130,246,0.08)" : "var(--muted)",
+                  transition: "all 0.15s",
+                  outline: isStart ? "3px solid rgba(59,130,246,0.3)" : isEnd ? "2px solid rgba(59,130,246,0.25)" : "none",
+                  outlineOffset: 2,
+                }}
+                onMouseEnter={(e) => { if (!isStart) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "rgba(59,130,246,0.12)"; }}
+                onMouseLeave={(e) => { if (!isStart) (e.currentTarget as HTMLButtonElement).style.backgroundColor = inRange ? "rgba(59,130,246,0.08)" : "var(--muted)"; }}
+              >
+                <span style={{ fontSize: 13, fontWeight: isStart || isEnd ? 700 : 500, color: isStart ? "#fff" : inRange ? "var(--primary)" : "var(--muted-foreground)" }}>
+                  {label}
+                </span>
+                {isStart && <span style={{ fontSize: 9, fontWeight: 700, color: "rgba(255,255,255,0.8)", letterSpacing: "0.05em", textTransform: "uppercase" }}>Start</span>}
+                {isEnd   && <span style={{ fontSize: 9, fontWeight: 700, color: "var(--primary)", letterSpacing: "0.05em", textTransform: "uppercase" }}>End</span>}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Summary */}
+      <div style={{ backgroundColor: "rgba(59,130,246,0.06)", border: "1px solid rgba(59,130,246,0.15)", borderRadius: 10, padding: "14px 18px", display: "flex", alignItems: "center", gap: 12 }}>
+        <CalendarDays size={18} style={{ color: "var(--primary)", flexShrink: 0 }} />
+        <span style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--foreground)" }}>
+          Your work week runs <strong>{WEEK_DAYS[startDay]}</strong> → <strong>{WEEK_DAYS[endDay]}</strong>
+        </span>
+      </div>
+    </div>
+  );
+}
+
+type TabId = "users" | "teams" | "roles" | "week";
 
 export function SettingsPage() {
   const [tab, setTab] = useState<TabId>("users");
@@ -1612,9 +1701,10 @@ export function SettingsPage() {
   }, []);
 
   const tabs: { id: TabId; label: string; icon: React.ReactNode; color: string; bg: string }[] = [
-    { id: "users",  label: "Users",              icon: <Users      size={15} />, color: "#1D4ED8", bg: "#DBEAFE" },
-    { id: "teams",  label: "Teams",              icon: <UsersRound size={15} />, color: "#5B21B6", bg: "#EDE9FE" },
-    { id: "roles",  label: "Roles & Permissions",icon: <ShieldCheck size={15} />, color: "#065F46", bg: "#D1FAE5" },
+    { id: "users",  label: "Users",              icon: <Users        size={15} />, color: "#1D4ED8", bg: "#DBEAFE" },
+    { id: "teams",  label: "Teams",              icon: <UsersRound   size={15} />, color: "#5B21B6", bg: "#EDE9FE" },
+    { id: "roles",  label: "Roles & Permissions",icon: <ShieldCheck  size={15} />, color: "#065F46", bg: "#D1FAE5" },
+    { id: "week",   label: "Work Week",          icon: <CalendarDays size={15} />, color: "#0369A1", bg: "#E0F2FE" },
   ];
 
   return (
@@ -1644,6 +1734,7 @@ export function SettingsPage() {
           {tab === "users" && <UsersTab roles={roles} teams={teams} />}
           {tab === "teams" && <TeamsTab users={[]} />}
           {tab === "roles" && <RolesTab onRolesChange={setRoles} />}
+          {tab === "week"  && <WeekTab />}
         </div>
       </div>
     </div>

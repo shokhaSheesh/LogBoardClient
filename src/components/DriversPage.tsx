@@ -617,7 +617,7 @@ function SoloModal({ driver, onClose, onSave, truckOpts, trailerOpts, saving }: 
     api.getList<any>("/loads", { driver_id: driver.id, page_size: 100 })
       .then(({ items }) => {
         const opts = (items ?? [])
-          .filter((l: any) => l.status !== "completed" && l.status !== "delivered" && l.id !== driver.currentLoadId)
+          .filter((l: any) => l.status !== "completed" && l.id !== driver.currentLoadId)
           .map((l: any) => ({ value: l.id, label: l.load_id ?? l.id }));
         setLoadOpts([{ value: "", label: "— None —" }, ...opts]);
       })
@@ -747,7 +747,7 @@ function TeamModal({ driver, onClose, onSave, truckOpts, trailerOpts, saving }: 
     api.getList<any>("/loads", { driver_id: driver.id, page_size: 100 })
       .then(({ items }) => {
         const opts = (items ?? [])
-          .filter((l: any) => l.status !== "completed" && l.status !== "delivered" && l.id !== driver.currentLoadId)
+          .filter((l: any) => l.status !== "completed" && l.id !== driver.currentLoadId)
           .map((l: any) => ({ value: l.id, label: l.load_id ?? l.id }));
         setLoadOpts([{ value: "", label: "— None —" }, ...opts]);
       })
