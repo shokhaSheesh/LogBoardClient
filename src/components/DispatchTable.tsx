@@ -14,13 +14,17 @@ interface Stop { city: string; done: boolean; appt?: string; }
 interface BoardRow {
   driver_id: string;
   load_id: string;
+  load_uuid?: string;      // actual UUID for PUT /loads/:id
   name: string;
   phone: string;
   unit: string;
   type: string;
   status: string;
   origin: string;
+  origin_done?: boolean;
   destination: string;
+  destination_done?: boolean;
+  stops?: Stop[];
   pickup_appt: string;
   drop_appt: string;
   location: string;
@@ -32,8 +36,9 @@ interface BoardRow {
 
 // UI row (superset of backend — keep all fields so UI never loses columns)
 interface Driver {
-  driverId: string;      // UUID — used as key for API calls
+  driverId: string;      // UUID — used as key for driver API calls
   loadId: string;        // display ref like "LD-00481"
+  loadUuid?: string;     // actual UUID for PUT /loads/:id
   name: string;
   phone: string;
   unit: string;
@@ -42,6 +47,7 @@ interface Driver {
   origin: string;
   originDone?: boolean;
   destination: string;
+  destinationDone?: boolean;
   stops?: Stop[];
   pickupAppt: string;
   dropAppt: string;
@@ -114,13 +120,17 @@ function fromBoardRow(r: BoardRow): Driver {
   return {
     driverId:    r.driver_id,
     loadId:      r.load_id      || "—",
+    loadUuid:    r.load_uuid,
     name:        r.name         || "—",
     phone:       r.phone        || "—",
     unit:        r.unit         || "—",
     type:        (r.type as DriverType) || "O/O",
     status:      (r.status as Status)   || "ready",
-    origin:      r.origin       || "—",
-    destination: r.destination  || "—",
+    origin:          r.origin            || "—",
+    originDone:      r.origin_done       ?? false,
+    destination:     r.destination       || "—",
+    destinationDone: r.destination_done  ?? false,
+    stops:           r.stops,
     pickupAppt:  r.pickup_appt  || "—",
     dropAppt:    r.drop_appt    || "—",
     location:    r.location     || "—",
@@ -268,10 +278,36 @@ function InlineCell({ value, onCommit, mono, fontSize = 12, color = "var(--foreg
 
 // ─── Stop list display ────────────────────────────────────────────────────────
 
-function StopList({ origin, originDone, destination, stops, onToggleStop, onEditStop, onToggleOrigin, onEditOrigin }: {
-  origin: string; originDone?: boolean; destination: string; stops?: Stop[];
-  onToggleStop?: (idx: number) => void; onEditStop?: (idx: number, city: string) => void;
-  onToggleOrigin?: () => void; onEditOrigin?: (city: string) => void;
+function TickBtn({ done, isCurrent, onToggle }: { done: boolean; isCurrent: boolean; onToggle?: () => void }) {
+  return (
+    <button
+      onClick={() => onToggle?.()}
+      title={done ? "Mark incomplete" : "Mark complete"}
+      style={{ width: 16, height: 16, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, border: "none", background: "none", cursor: onToggle ? "pointer" : "default", padding: 0 }}
+    >
+      {done ? (
+        <span style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 16, height: 16, borderRadius: "50%", backgroundColor: "#D1FAE5" }}>
+          <Check size={9} style={{ color: "#10B981" }} />
+        </span>
+      ) : isCurrent ? (
+        <span style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 16, height: 16, borderRadius: "50%", backgroundColor: "var(--secondary)" }}>
+          <ArrowRight size={9} style={{ color: "var(--primary)" }} />
+        </span>
+      ) : (
+        <span style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: "var(--border)", display: "inline-block" }} />
+      )}
+    </button>
+  );
+}
+
+function StopList({ origin, originDone, destination, destinationDone, stops, onToggleOrigin, onToggleDestination, onToggleStop, onEditStop, onEditOrigin }: {
+  origin: string; originDone?: boolean;
+  destination: string; destinationDone?: boolean;
+  stops?: Stop[];
+  onToggleOrigin?: () => void; onToggleDestination?: () => void;
+  onToggleStop?: (idx: number) => void;
+  onEditStop?: (idx: number, city: string) => void;
+  onEditOrigin?: (city: string) => void;
 }) {
   const [editingStop, setEditingStop] = useState<number | null>(null);
   const [editingOrigin, setEditingOrigin] = useState(false);
@@ -283,72 +319,58 @@ function StopList({ origin, originDone, destination, stops, onToggleStop, onEdit
     textTransform: "uppercase", flexShrink: 0, width: 30,
   };
 
-  if (!stops || stops.length === 0) {
-    return (
-      <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-          <span style={labelStyle}>#1</span>
-          <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--foreground)" }}>{origin}</span>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-          <span style={labelStyle}>#2</span>
-          <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: destination === "—" ? "var(--muted-foreground)" : "var(--foreground)" }}>{destination}</span>
-        </div>
-      </div>
-    );
-  }
+  const textStyle = (done: boolean, isCurrent = true): React.CSSProperties => ({
+    fontFamily: "var(--font-sans)", fontSize: 12,
+    color: done ? "var(--muted-foreground)" : isCurrent ? "var(--foreground)" : "var(--muted-foreground)",
+    textDecoration: done ? "line-through" : "none",
+    fontWeight: isCurrent && !done ? 500 : 400,
+  });
+
+  // All stops as a flat list: origin, ...intermediates, destination
+  const allStops = [
+    { city: origin,      done: originDone ?? false,      onToggle: onToggleOrigin,      isOrigin: true  },
+    ...(stops ?? []).map((s, i) => ({ city: s.city, done: s.done, onToggle: () => onToggleStop?.(i), isOrigin: false })),
+    { city: destination, done: destinationDone ?? false, onToggle: onToggleDestination, isOrigin: false },
+  ];
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-        <span style={labelStyle}>#1</span>
-        <button onClick={() => onToggleOrigin?.()} title={originDone ? "Mark incomplete" : "Mark complete"}
-          style={{ width: 16, height: 16, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, border: "none", background: "none", cursor: onToggleOrigin ? "pointer" : "default", padding: 0 }}>
-          {originDone
-            ? <span style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 16, height: 16, borderRadius: "50%", backgroundColor: "#D1FAE5" }}><Check size={9} style={{ color: "#10B981" }} /></span>
-            : <span style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 16, height: 16, borderRadius: "50%", backgroundColor: "var(--secondary)" }}><ArrowRight size={9} style={{ color: "var(--primary)" }} /></span>
-          }
-        </button>
-        {editingOrigin
-          ? <input autoFocus value={draft} onChange={(e) => setDraft(e.target.value)}
-              onBlur={() => { onEditOrigin?.(draft); setEditingOrigin(false); }}
-              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); onEditOrigin?.(draft); setEditingOrigin(false); } if (e.key === "Escape") setEditingOrigin(false); }}
-              style={{ border: "none", outline: "none", background: "transparent", fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--foreground)", padding: 0, flex: 1, borderBottom: "1.5px solid var(--primary)" }} />
-          : <span onClick={() => { setDraft(origin); setEditingOrigin(true); }}
-              style={{ fontFamily: "var(--font-sans)", fontSize: 12, cursor: "text", color: originDone ? "var(--muted-foreground)" : "var(--foreground)", textDecoration: originDone ? "line-through" : "none" }}>
-              {origin}
-            </span>
-        }
-      </div>
-      {stops.map((stop, idx) => {
-        const prevDone = idx === 0 || stops[idx - 1].done;
+    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      {allStops.map((stop, idx) => {
+        const prevDone  = idx === 0 || allStops[idx - 1].done;
         const isCurrent = !stop.done && prevDone;
-        const isEditingThis = editingStop === idx;
+        const isEditingThis = stop.isOrigin && editingOrigin;
+
         return (
           <div key={idx} style={{ display: "flex", alignItems: "center", gap: 5 }}>
-            <span style={{ ...labelStyle }}>#{idx + 2}</span>
-            <button onClick={() => onToggleStop?.(idx)} title={stop.done ? "Mark incomplete" : "Mark complete"}
-              style={{ width: 16, height: 16, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, border: "none", background: "none", cursor: onToggleStop ? "pointer" : "default", padding: 0 }}>
-              {stop.done
-                ? <span style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 16, height: 16, borderRadius: "50%", backgroundColor: "#D1FAE5" }}><Check size={9} style={{ color: "#10B981" }} /></span>
-                : isCurrent
-                  ? <span style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 16, height: 16, borderRadius: "50%", backgroundColor: "var(--secondary)" }}><ArrowRight size={9} style={{ color: "var(--primary)" }} /></span>
-                  : <span style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: "var(--border)", display: "inline-block" }} />
-              }
-            </button>
-            {isEditingThis
-              ? <input autoFocus value={draft} onChange={(e) => setDraft(e.target.value)}
-                  onBlur={() => { onEditStop?.(idx, draft); setEditingStop(null); }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") { e.preventDefault(); onEditStop?.(idx, draft); setEditingStop(null); }
-                    if (e.key === "Escape") setEditingStop(null);
-                  }}
-                  style={{ border: "none", outline: "none", background: "transparent", fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--foreground)", padding: 0, flex: 1, borderBottom: "1.5px solid var(--primary)" }} />
-              : <span onClick={() => { setDraft(stop.city); setEditingStop(idx); }}
-                  style={{ fontFamily: "var(--font-sans)", fontSize: 12, cursor: "text", color: stop.done ? "var(--muted-foreground)" : isCurrent ? "var(--foreground)" : "var(--muted-foreground)", textDecoration: stop.done ? "line-through" : "none", fontWeight: isCurrent ? 500 : 400 }}>
-                  {stop.city}
-                </span>
-            }
+            <span style={labelStyle}>#{idx + 1}</span>
+            <TickBtn done={stop.done} isCurrent={isCurrent} onToggle={stop.onToggle} />
+            {isEditingThis ? (
+              <input autoFocus value={draft} onChange={(e) => setDraft(e.target.value)}
+                onBlur={() => { onEditOrigin?.(draft); setEditingOrigin(false); }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") { e.preventDefault(); onEditOrigin?.(draft); setEditingOrigin(false); }
+                  if (e.key === "Escape") setEditingOrigin(false);
+                }}
+                style={{ border: "none", outline: "none", background: "transparent", fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--foreground)", padding: 0, flex: 1, borderBottom: "1.5px solid var(--primary)" }} />
+            ) : editingStop === idx - 1 && !stop.isOrigin && idx > 0 && idx < allStops.length - 1 ? (
+              <input autoFocus value={draft} onChange={(e) => setDraft(e.target.value)}
+                onBlur={() => { onEditStop?.(idx - 1, draft); setEditingStop(null); }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") { e.preventDefault(); onEditStop?.(idx - 1, draft); setEditingStop(null); }
+                  if (e.key === "Escape") setEditingStop(null);
+                }}
+                style={{ border: "none", outline: "none", background: "transparent", fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--foreground)", padding: 0, flex: 1, borderBottom: "1.5px solid var(--primary)" }} />
+            ) : (
+              <span
+                onClick={() => {
+                  if (stop.isOrigin) { setDraft(stop.city); setEditingOrigin(true); }
+                  else if (idx > 0 && idx < allStops.length - 1) { setDraft(stop.city); setEditingStop(idx - 1); }
+                }}
+                style={{ ...textStyle(stop.done, isCurrent), cursor: idx < allStops.length - 1 || stop.isOrigin ? "text" : "default" }}
+              >
+                {stop.city || "—"}
+              </span>
+            )}
           </div>
         );
       })}
@@ -459,6 +481,8 @@ export function DispatchTable() {
   const filterRef     = useRef<HTMLDivElement>(null);
   // Cache of full driver records (for PUT body construction)
   const driverCache   = useRef<Record<string, Record<string, unknown>>>({});
+  // Cache of full load records (for PUT /loads/:id when toggling stops)
+  const loadCache     = useRef<Record<string, Record<string, unknown>>>({});
   // Heartbeat intervals per driverId
   const heartbeats    = useRef<Record<string, ReturnType<typeof setInterval>>>({});
 
@@ -593,7 +617,7 @@ export function DispatchTable() {
   const releaseLock = async (driverId: string) => {
     clearInterval(heartbeats.current[driverId]);
     delete heartbeats.current[driverId];
-    try { await api.delete(`/board/locks?entity_type=driver&entity_id=${driverId}`); } catch { /* ignore */ }
+    try { await api.delete("/board/locks", { entity_type: "driver", entity_id: driverId }); } catch { /* ignore */ }
   };
 
   // ── Patch (optimistic + API call) ──────────────────────────────────────────
@@ -628,6 +652,59 @@ export function DispatchTable() {
     } catch {
       // Roll back optimistic update on failure
       setRows((prev) => prev.map((d) => d.driverId === driverId ? driver : d));
+    }
+  };
+
+  // ── Patch load (stop done toggles) ────────────────────────────────────────
+
+  const patchLoad = async (driverId: string, updatedStops: Stop[], updatedOriginDone: boolean, updatedDestinationDone: boolean) => {
+    const driver = rows.find((d) => d.driverId === driverId);
+    if (!driver) return;
+
+    // Optimistic update first — UI always responds immediately regardless of whether API succeeds
+    setRows((prev) => prev.map((d) => d.driverId === driverId
+      ? { ...d, stops: updatedStops, originDone: updatedOriginDone, destinationDone: updatedDestinationDone }
+      : d
+    ));
+
+    const rollback = () => setRows((prev) => prev.map((d) => d.driverId === driverId ? driver : d));
+
+    // Get current_load_id from driver cache (fetch driver if not cached yet)
+    if (!driverCache.current[driverId]) {
+      try {
+        const data = await api.get<Record<string, unknown>>(`/drivers/${driverId}`);
+        driverCache.current[driverId] = data ?? {};
+      } catch { rollback(); return; }
+    }
+
+    const loadUuid = driverCache.current[driverId]?.current_load_id as string | undefined;
+    if (!loadUuid) { rollback(); return; } // driver has no active load to persist against
+
+    // Fetch full load for PUT body
+    if (!loadCache.current[loadUuid]) {
+      try {
+        const data = await api.get<Record<string, unknown>>(`/loads/${loadUuid}`);
+        loadCache.current[loadUuid] = data ?? {};
+      } catch { rollback(); return; }
+    }
+
+    const cached = loadCache.current[loadUuid];
+
+    // Build ONE stops array: origin (first) → intermediates → destination (last),
+    // each carrying its done flag. Origin/destination are just stops too.
+    const fullStops: Stop[] = [
+      { city: (cached.origin as string) ?? driver.origin, appt: (cached.pickup_appt as string) ?? driver.pickupAppt, done: updatedOriginDone },
+      ...updatedStops,
+      { city: (cached.destination as string) ?? driver.destination, appt: (cached.drop_appt as string) ?? driver.dropAppt, done: updatedDestinationDone },
+    ];
+
+    const body = { ...cached, stops: fullStops };
+
+    try {
+      await api.put(`/loads/${loadUuid}`, body);
+      loadCache.current[loadUuid] = { ...cached, stops: fullStops };
+    } catch {
+      rollback();
     }
   };
 
@@ -834,15 +911,17 @@ export function DispatchTable() {
                         origin={driver.origin}
                         originDone={driver.originDone}
                         destination={driver.destination}
+                        destinationDone={driver.destinationDone}
                         stops={driver.stops}
-                        onToggleOrigin={() => patch(driver.driverId, { originDone: !driver.originDone })}
+                        onToggleOrigin={() => patchLoad(driver.driverId, driver.stops ?? [], !driver.originDone, driver.destinationDone ?? false)}
+                        onToggleDestination={() => patchLoad(driver.driverId, driver.stops ?? [], driver.originDone ?? false, !driver.destinationDone)}
                         onEditOrigin={(city) => patch(driver.driverId, { origin: city })}
                         onToggleStop={(idx) => {
-                          const updated = driver.stops!.map((s, i) => i === idx ? { ...s, done: !s.done } : s);
-                          patch(driver.driverId, { stops: updated });
+                          const updated = (driver.stops ?? []).map((s, i) => i === idx ? { ...s, done: !s.done } : s);
+                          patchLoad(driver.driverId, updated, driver.originDone ?? false, driver.destinationDone ?? false);
                         }}
                         onEditStop={(idx, city) => {
-                          const updated = driver.stops!.map((s, i) => i === idx ? { ...s, city } : s);
+                          const updated = (driver.stops ?? []).map((s, i) => i === idx ? { ...s, city } : s);
                           patch(driver.driverId, { stops: updated });
                         }}
                       />

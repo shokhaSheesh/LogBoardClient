@@ -84,25 +84,30 @@ function toLoad(b: BackendLoad, drivers: { id: string; name: string }[]): Load {
     destination: b.destination ?? "",
     payout: b.payout ?? 0,
     totalMiles: b.miles ?? 0,
-    stops: b.stops,
+    stops: b.stops ?? [],   // render exactly what the backend sends
     dispatcher: b.dispatcher ?? "",
     dispatcher_id: b.dispatcher_id ?? "",
   };
 }
 
 function toBackend(l: Partial<Load>): Partial<BackendLoad> {
+  // stops is the source of truth. origin/destination/*_appt are mirrored from the
+  // first/last stop only because the board read model still reads those fields.
+  const route = l.stops ?? [];
+  const first = route[0];
+  const last  = route[route.length - 1];
   return {
     load_id: l.loadId,
     driver_id: l.driver_id ?? "",
-    origin: l.origin,
-    destination: l.destination,
-    pickup_appt: l.pickupAppt,
-    drop_appt: l.dropAppt,
+    origin: first?.city ?? "",
+    destination: last?.city ?? "",
+    pickup_appt: first?.appt ?? "",
+    drop_appt: last?.appt ?? "",
     status: l.status,
     payout: l.payout ?? 0,
     miles: l.totalMiles ?? 0,
     broker: l.broker,
-    stops: l.stops,
+    stops: route,
     dispatcher_id: l.dispatcher_id || undefined,
   };
 }
@@ -777,21 +782,14 @@ function LoadModal({ load, onClose, onSave, driverOpts = [], dispatcherOpts = []
   const set = <K extends keyof Load>(k: K, v: Load[K]) => setForm((f) => ({ ...f, [k]: v }));
   const isNew = !load.id;
 
-  // All locations in one unified array: [stop1 (origin), stop2, ..., stopN (destination)]
+  // All locations in one unified array: [stop1 (origin), stop2, ..., stopN (destination)].
+  // load.stops is already the normalized full route (see unifyStops); a new load starts
+  // with two blank stops (origin + destination placeholders).
   const [stops, setStops] = useState<Stop[]>(() => {
-    if (load.stops && load.stops.length > 0) {
-      const intermediate = load.stops.map((s) => ({ ...s }));
-      // Destination may have been incorrectly stored as last intermediate stop in old data
-      const lastIsDestination = intermediate[intermediate.length - 1]?.city === load.destination && !!load.destination;
-      return [
-        { city: load.origin ?? "", done: false, appt: load.pickupAppt ?? "" },
-        ...intermediate,
-        ...(lastIsDestination ? [] : [{ city: load.destination ?? "", done: false, appt: load.dropAppt ?? "" }]),
-      ];
-    }
+    if (load.stops && load.stops.length > 0) return load.stops.map((s) => ({ ...s }));
     return [
-      { city: load.origin ?? "",      done: false, appt: load.pickupAppt ?? "" },
-      { city: load.destination ?? "", done: false, appt: load.dropAppt ?? "" },
+      { city: "", done: false, appt: "" },
+      { city: "", done: false, appt: "" },
     ];
   });
 
@@ -819,18 +817,9 @@ function LoadModal({ load, onClose, onSave, driverOpts = [], dispatcherOpts = []
   };
 
   const handleSave = () => {
+    // Send the full route as one stops array (stops[0] = origin … last = destination).
     const filled = stops.filter((s) => s.city.trim());
-    const first  = filled[0];
-    const middle = filled.slice(1, -1); // intermediate stops only (not origin, not destination)
-    const last   = filled[filled.length - 1];
-    onSave({
-      ...form,
-      origin:      first?.city      ?? "",
-      pickupAppt:  first?.appt      ?? "",
-      destination: last?.city       ?? first?.city ?? "",
-      dropAppt:    last?.appt       ?? first?.appt ?? "",
-      stops:       middle.length > 0 ? middle : undefined,
-    } as Load);
+    onSave({ ...form, stops: filled } as Load);
   };
 
   const inputStyle: React.CSSProperties = {
@@ -1198,11 +1187,7 @@ function LoadDetail({ load, onBack }: { load: Load; onBack: () => void }) {
 
               {/* Route card */}
               {(() => {
-                const waypoints = [
-                  { city: load.origin,      appt: load.pickupAppt, done: false },
-                  ...(load.stops ?? []).map((s) => ({ city: s.city, appt: s.appt, done: s.done ?? false })),
-                  { city: load.destination, appt: load.dropAppt,   done: false },
-                ];
+                const waypoints = (load.stops ?? []).map((s) => ({ city: s.city, appt: s.appt, done: s.done ?? false }));
                 const isLast = (i: number) => i === waypoints.length - 1;
                 return (
                   <div style={{ backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 12, padding: "20px 24px" }}>
@@ -1533,75 +1518,43 @@ export function LoadsPage() {
                     </td>
                     <td style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", verticalAlign: "middle" }}>
                       <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                        {/* PU row — always shown; strikethrough if first stop is done */}
-                        {(() => {
-                          const pickupDone = l.stops ? l.stops[0]?.done === true : false;
-                          return (
-                            <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                              <span style={{ fontFamily: "var(--font-mono)", fontSize: 9, fontWeight: 700, color: "var(--muted-foreground)", flexShrink: 0 }}>#1</span>
-                              <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: pickupDone ? "var(--muted-foreground)" : "var(--foreground)", textDecoration: pickupDone ? "line-through" : "none" }}>{l.pickupAppt}</span>
-                            </div>
-                          );
-                        })()}
-                        {/* Per-stop rows if stops exist, otherwise DR row */}
-                        {l.stops ? l.stops.map((stop, si) => {
-                          const prevDone = si === 0 ? true : l.stops![si - 1].done;
+                        {/* One row per stop's appointment (#1 = origin … #N = destination) */}
+                        {(l.stops ?? []).map((stop, si) => {
+                          const prevDone  = si === 0 || l.stops![si - 1].done;
                           const isCurrent = !stop.done && prevDone;
-                          const isDone = stop.done;
+                          const isDone    = stop.done;
                           return (
                             <div key={si} style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                              <span style={{ fontFamily: "var(--font-mono)", fontSize: 9, fontWeight: 700, color: "var(--muted-foreground)", flexShrink: 0 }}>#{si + 2}</span>
+                              <span style={{ fontFamily: "var(--font-mono)", fontSize: 9, fontWeight: 700, color: "var(--muted-foreground)", flexShrink: 0 }}>#{si + 1}</span>
                               <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: isDone ? "var(--muted-foreground)" : isCurrent ? "#2563EB" : "var(--foreground)", textDecoration: isDone ? "line-through" : "none" }}>
-                                {stop.appt ?? stop.city}
+                                {stop.appt || "—"}
                               </span>
                             </div>
                           );
-                        }) : (
-                          <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                            <span style={{ fontFamily: "var(--font-mono)", fontSize: 9, fontWeight: 700, color: "var(--muted-foreground)", flexShrink: 0 }}>#2</span>
-                            <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--foreground)" }}>{l.dropAppt}</span>
-                          </div>
-                        )}
+                        })}
                       </div>
                     </td>
                     {/* Route — origin + stops */}
                     <td style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", verticalAlign: "top", paddingTop: 12, paddingBottom: 12 }}>
                       {(() => {
                         const labelSt: React.CSSProperties = { fontFamily: "var(--font-mono)", fontSize: 9, fontWeight: 700, color: "var(--muted-foreground)", letterSpacing: "0.06em", textTransform: "uppercase", flexShrink: 0, width: 30 };
-                        if (!l.stops || l.stops.length === 0) {
-                          return (
-                            <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-                              <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                                <span style={labelSt}>#1</span>
-                                <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--foreground)" }}>{l.origin}</span>
-                              </div>
-                              <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                                <span style={labelSt}>#2</span>
-                                <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: l.destination === "—" ? "var(--muted-foreground)" : "var(--foreground)" }}>{l.destination}</span>
-                              </div>
-                            </div>
-                          );
-                        }
+                        const route = l.stops ?? [];
                         return (
                           <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                              <span style={labelSt}>#1</span>
-                              <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--foreground)" }}>{l.origin}</span>
-                            </div>
-                            {l.stops.map((stop, si) => {
+                            {route.map((stop, si) => {
                               const isDone    = stop.done;
-                              const prevDone  = si === 0 || l.stops![si - 1].done;
+                              const prevDone  = si === 0 || route[si - 1].done;
                               const isCurrent = !stop.done && prevDone;
                               return (
                                 <div key={si} style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                                  <span style={{ ...labelSt, color: "var(--muted-foreground)" }}>#{si + 2}</span>
+                                  <span style={labelSt}>#{si + 1}</span>
                                   <span style={{
                                     fontFamily: "var(--font-sans)", fontSize: 12,
                                     color: isDone ? "var(--muted-foreground)" : isCurrent ? "var(--foreground)" : "var(--muted-foreground)",
                                     textDecoration: isDone ? "line-through" : "none",
                                     fontWeight: isCurrent ? 500 : 400,
                                   }}>
-                                    {stop.city}
+                                    {stop.city || "—"}
                                   </span>
                                 </div>
                               );

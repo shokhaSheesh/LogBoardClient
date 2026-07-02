@@ -7,13 +7,16 @@ import {
   X, Check, Search, ChevronDown, ChevronLeft, ChevronRight,
   ClipboardList, FileSpreadsheet, Radio, Upload, FileText,
   ArrowLeft, Phone, Truck, DollarSign, Route, Package, TrendingUp,
-  AlertCircle,
+  AlertCircle, GripVertical,
 } from "lucide-react";
 
 type DriverStatus = Status;
 type DriverType   = "O/O" | "C/D";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
+
+// One entry in the driver's ordered upcoming-load queue (next_loads[])
+interface QueueLoad { id: string; loadId: string }
 
 interface SoloDriver {
   id: string; name: string; phone: string; type: DriverType;
@@ -23,6 +26,7 @@ interface SoloDriver {
   currentLoadId?: string;
   nextLoad?: string;
   nextLoadId?: string;
+  nextLoads?: QueueLoad[];
 }
 
 interface TeamDriver {
@@ -33,6 +37,7 @@ interface TeamDriver {
   currentLoadId?: string;
   nextLoad?: string;
   nextLoadId?: string;
+  nextLoads?: QueueLoad[];
 }
 
 // ─── API ↔ local shape mappers ───────────────────────────────────────────────
@@ -54,6 +59,7 @@ function toSolo(d: any): SoloDriver {
     currentLoadId: d.current_load_id || undefined,
     nextLoad:      d.next_load       || undefined,
     nextLoadId:    d.next_load_id    || undefined,
+    nextLoads:     (d.next_loads ?? []).map((l: any) => ({ id: l.id, loadId: l.load_id ?? l.id })),
   };
 }
 
@@ -75,6 +81,7 @@ function toTeam(d: any): TeamDriver {
     currentLoadId: d.current_load_id || undefined,
     nextLoad:      d.next_load       || undefined,
     nextLoadId:    d.next_load_id    || undefined,
+    nextLoads:     (d.next_loads ?? []).map((l: any) => ({ id: l.id, loadId: l.load_id ?? l.id })),
   };
 }
 
@@ -599,6 +606,94 @@ const FieldInput = ({ value, onChange, onBlur, placeholder, error, disabled }: {
   />
 );
 
+// ─── Load queue reorder (drag & drop) ──────────────────────────────────────────
+
+// Drag the driver's upcoming loads into any order. Persists immediately via
+// PUT /drivers/:id/queue (send the full ordered id array; new head = next load).
+function QueueReorder({ driverId, queue, onReorder }: {
+  driverId: string;
+  queue: QueueLoad[];
+  onReorder: (next: QueueLoad[]) => void;
+}) {
+  const [items,   setItems]   = useState<QueueLoad[]>(queue);
+  const [dragIdx, setDragIdx] = useState<number | null>(null);
+  const [overIdx, setOverIdx] = useState<number | null>(null);
+  const [saving,  setSaving]  = useState(false);
+  const [error,   setError]   = useState(false);
+
+  useEffect(() => { setItems(queue); }, [queue]);
+
+  const persist = async (next: QueueLoad[]) => {
+    const prev = items;
+    setItems(next);
+    onReorder(next);
+    setSaving(true); setError(false);
+    try {
+      await api.put(`/drivers/${driverId}/queue`, { load_ids: next.map((q) => q.id) });
+    } catch {
+      setItems(prev); onReorder(prev); setError(true);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDrop = (dropIdx: number) => {
+    const from = dragIdx;
+    setDragIdx(null); setOverIdx(null);
+    if (from === null || from === dropIdx) return;
+    const next = [...items];
+    const [moved] = next.splice(from, 1);
+    next.splice(dropIdx, 0, moved);
+    persist(next);
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      {items.map((q, idx) => {
+        const isDragging = dragIdx === idx;
+        const isOver     = overIdx === idx && dragIdx !== idx;
+        const isNext     = idx === 0;
+        return (
+          <div
+            key={q.id}
+            draggable
+            onDragStart={() => setDragIdx(idx)}
+            onDragEnd={() => { setDragIdx(null); setOverIdx(null); }}
+            onDragOver={(e) => { e.preventDefault(); setOverIdx(idx); }}
+            onDrop={() => handleDrop(idx)}
+            style={{
+              display: "flex", alignItems: "center", gap: 8,
+              padding: "8px 10px", borderRadius: 6,
+              border: `1px solid ${isOver ? "var(--primary)" : "var(--border)"}`,
+              borderTop: isOver ? "2px solid var(--primary)" : undefined,
+              backgroundColor: isDragging ? "var(--muted)" : "var(--input-background)",
+              opacity: isDragging ? 0.5 : 1,
+              cursor: "grab", transition: "border-color 0.12s, opacity 0.12s",
+            }}
+          >
+            <GripVertical size={14} style={{ color: "var(--muted-foreground)", flexShrink: 0 }} />
+            <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, fontWeight: 700, color: isNext ? "var(--primary)" : "var(--muted-foreground)", minWidth: 20 }}>
+              #{idx + 1}
+            </span>
+            <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--foreground)", flex: 1 }}>
+              {q.loadId}
+            </span>
+            {isNext && (
+              <span style={{ fontFamily: "var(--font-sans)", fontSize: 9, fontWeight: 700, color: "var(--primary)", backgroundColor: "var(--secondary)", borderRadius: 4, padding: "2px 6px", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                Next
+              </span>
+            )}
+          </div>
+        );
+      })}
+      <div style={{ minHeight: 14, fontFamily: "var(--font-sans)", fontSize: 11 }}>
+        {saving && <span style={{ color: "var(--muted-foreground)" }}>Saving order…</span>}
+        {error  && <span style={{ color: "#EF4444" }}>Couldn't save order — reverted.</span>}
+      </div>
+    </div>
+  );
+}
+
 // ─── Modals ───────────────────────────────────────────────────────────────────
 
 function SoloModal({ driver, onClose, onSave, truckOpts, trailerOpts, saving }: {
@@ -708,6 +803,17 @@ function SoloModal({ driver, onClose, onSave, truckOpts, trailerOpts, saving }: 
               <FieldLabel>Next Load</FieldLabel>
               <CustomSelect value={form.nextLoadId ?? ""} options={loadOpts} onChange={(v) => set("nextLoadId", v)} searchable />
             </label>
+          )}
+
+          {!isNew && (form.nextLoads?.length ?? 0) >= 2 && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 5, gridColumn: "1 / -1" }}>
+              <FieldLabel>Load Queue — drag to reorder</FieldLabel>
+              <QueueReorder
+                driverId={form.id!}
+                queue={form.nextLoads ?? []}
+                onReorder={(next) => setForm((f) => ({ ...f, nextLoads: next, nextLoadId: next[0]?.id }))}
+              />
+            </div>
           )}
 
           <label style={{ display: "flex", flexDirection: "column", gap: 5, gridColumn: "1 / -1" }}>
@@ -848,6 +954,17 @@ function TeamModal({ driver, onClose, onSave, truckOpts, trailerOpts, saving }: 
               <FieldLabel>Next Load</FieldLabel>
               <CustomSelect value={form.nextLoadId ?? ""} options={loadOpts} onChange={(v) => set("nextLoadId", v)} searchable />
             </label>
+          )}
+
+          {!isNew && (form.nextLoads?.length ?? 0) >= 2 && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 5, gridColumn: "1 / -1" }}>
+              <FieldLabel>Load Queue — drag to reorder</FieldLabel>
+              <QueueReorder
+                driverId={form.id!}
+                queue={form.nextLoads ?? []}
+                onReorder={(next) => setForm((f) => ({ ...f, nextLoads: next, nextLoadId: next[0]?.id }))}
+              />
+            </div>
           )}
 
           <label style={{ display: "flex", flexDirection: "column", gap: 5, gridColumn: "1 / -1" }}>
@@ -1446,19 +1563,30 @@ function parseAppt(raw: string): Date | null {
   return new Date(year, Number(m[1]) - 1, Number(m[2]), Number(m[3]), Number(m[4]));
 }
 
+// The route lives in the stops array: stops[0] = origin, stops[last] = destination.
+// Read straight from stops — no reconstruction.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function loadRoute(l: any): { origin: string; destination: string; pickupAppt: string } {
+  const raw = l.stops ?? [];
+  const first = raw[0];
+  const last  = raw[raw.length - 1];
+  return { origin: first?.city ?? "", destination: last?.city ?? "", pickupAppt: first?.appt ?? "" };
+}
+
 function fetchWeekLoads(driverId: string, offset: number): Promise<WeekLoad[]> {
   const { start, end } = getWeekBounds(offset);
   return api.getList<any>("/loads", { driver_id: driverId, page_size: 200 }).then(({ items }) =>
     (items ?? [])
-      .filter((l: any) => {
-        const d = parseAppt(l.pickup_appt ?? "");
+      .map((l: any) => ({ raw: l, route: loadRoute(l) }))
+      .filter(({ route }: any) => {
+        const d = parseAppt(route.pickupAppt);
         return d !== null && d >= start && d <= end;
       })
-      .map((l: any) => ({
+      .map(({ raw: l, route }: any) => ({
         id: l.id, loadId: l.load_id ?? "",
-        origin: l.origin ?? "", destination: l.destination ?? "",
+        origin: route.origin, destination: route.destination,
         miles: l.miles ?? 0, payout: l.payout ?? 0,
-        pickupAppt: l.pickup_appt ?? "", status: l.status ?? "",
+        pickupAppt: route.pickupAppt, status: l.status ?? "",
       }))
   );
 }
