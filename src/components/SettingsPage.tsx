@@ -19,6 +19,7 @@ export function setWeekStartDay(day: number): void {
   window.dispatchEvent(new Event("week-settings-changed"));
 }
 import { api, getCompanyId } from "../lib/api";
+import { driverDisplayName } from "../lib/driverName";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -1052,8 +1053,8 @@ function _MultiSelectSearch<T>({
   );
 }
 
-function TeamModal({ team, users, allDriverNames, saving, onClose, onSave }: {
-  team: Partial<Team>; users: User[]; allDriverNames: string[];
+function TeamModal({ team, users, allDriverNames, driverLabels, saving, onClose, onSave }: {
+  team: Partial<Team>; users: User[]; allDriverNames: string[]; driverLabels: Record<string, string>;
   saving?: boolean; onClose: () => void; onSave: (t: Team) => void;
 }) {
   const [form, setForm] = useState<Partial<Team>>(team);
@@ -1110,7 +1111,7 @@ function TeamModal({ team, users, allDriverNames, saving, onClose, onSave }: {
             selected={selectedDrivers}
             options={driverOptions}
             getKey={(d) => d.name}
-            getLabel={(d) => d.name}
+            getLabel={(d) => driverLabels[d.name] ?? d.name}
             onToggle={toggleDriver}
             placeholder="Select drivers…"
             chipColor="#374151"
@@ -1132,6 +1133,10 @@ function TeamsTab({ users: _users }: { users: User[] }) {
   const [teams, setTeams]       = useState<Team[]>([]);
   const [users, setUsers]       = useState<User[]>([]);
   const [driverNames, setDriverNames] = useState<string[]>([]);
+  // name -> display label ("Name 1 & Name 2" for team drivers). The dispatch-pod
+  // Teams API resolves members by the raw driver `name`, so that stays the
+  // identity key everywhere — this map only affects what's shown on screen.
+  const [driverLabels, setDriverLabels] = useState<Record<string, string>>({});
   const [loading, setLoading]   = useState(true);
   const [fetchKey, setFetchKey] = useState(0);
   const [saving, setSaving]     = useState(false);
@@ -1154,7 +1159,9 @@ function TeamsTab({ users: _users }: { users: User[] }) {
       .then(([teamsData, usersData, driversResp]) => {
         setTeams((teamsData ?? []).map(toTeam));
         setUsers((usersData ?? []).map(toUser));
-        setDriverNames((driversResp.items ?? []).map((d: any) => d.name ?? "").filter(Boolean));
+        const driverList: any[] = driversResp.items ?? [];
+        setDriverNames(driverList.map((d) => d.name ?? "").filter(Boolean));
+        setDriverLabels(Object.fromEntries(driverList.filter((d) => d.name).map((d) => [d.name, driverDisplayName(d)])));
       })
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -1271,7 +1278,7 @@ function TeamsTab({ users: _users }: { users: User[] }) {
                       {t.driverNames.length === 0
                         ? <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)", fontStyle: "italic" }}>No drivers</span>
                         : t.driverNames.map((d) => (
-                          <span key={d} style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "#374151", backgroundColor: "var(--muted)", border: "1px solid var(--border)", borderRadius: 4, padding: "2px 8px" }}>{d}</span>
+                          <span key={d} style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "#374151", backgroundColor: "var(--muted)", border: "1px solid var(--border)", borderRadius: 4, padding: "2px 8px" }}>{driverLabels[d] ?? d}</span>
                         ))}
                     </div>
                   </td>
@@ -1316,7 +1323,7 @@ function TeamsTab({ users: _users }: { users: User[] }) {
       )}
 
       {(modal === "create" || modal === "edit") && (
-        <TeamModal team={editing} users={users} allDriverNames={allDriverNames} saving={saving} onClose={() => setModal(null)} onSave={(t) => { void save(t); }} />
+        <TeamModal team={editing} users={users} allDriverNames={allDriverNames} driverLabels={driverLabels} saving={saving} onClose={() => setModal(null)} onSave={(t) => { void save(t); }} />
       )}
       {deleting && <DeleteConfirm label={deleting.name} onClose={() => setDeleting(null)} onConfirm={() => { void confirmDelete(deleting); }} />}
     </>

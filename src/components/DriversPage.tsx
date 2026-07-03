@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { Status, STATUS_CONFIG, ALL_STATUSES } from "../lib/statuses";
-import { api } from "../lib/api";
+import { api, ApiError } from "../lib/api";
 import { menuPosition } from "../lib/menuPosition";
 import {
   User, Users, Plus, Pencil, Trash2, MapPin, MessageSquare,
@@ -22,6 +22,8 @@ interface QueueLoad { id: string; loadId: string }
 interface SoloDriver {
   id: string; name: string; phone: string; type: DriverType;
   status: DriverStatus; truck: string; trailer: string; location: string; comment: string;
+  truckId?: string;    // assigned truck's id — settable (tri-state: "" unassigns)
+  trailerId?: string;  // assigned trailer's id — settable (tri-state: "" unassigns)
   weeklyGrossTarget?: number;
   currentLoad?: string;
   currentLoadId?: string;
@@ -33,6 +35,8 @@ interface SoloDriver {
 interface TeamDriver {
   id: string; name1: string; name2: string; phone1: string; phone2: string;
   type: DriverType; status: DriverStatus; truck: string; trailer: string; comment: string;
+  truckId?: string;
+  trailerId?: string;
   weeklyGrossTarget?: number;
   currentLoad?: string;
   currentLoadId?: string;
@@ -53,6 +57,8 @@ function toSolo(d: any): SoloDriver {
     status: (d.status as DriverStatus) ?? "ready",
     truck: d.truck ?? "",
     trailer: d.trailer ?? "",
+    truckId: d.truck_id ?? "",
+    trailerId: d.trailer_id ?? "",
     location: d.location ?? "",
     comment: d.comment ?? "",
     weeklyGrossTarget: d.weekly_gross_target || undefined,
@@ -76,6 +82,8 @@ function toTeam(d: any): TeamDriver {
     status: (d.status as DriverStatus) ?? "ready",
     truck: d.truck ?? "",
     trailer: d.trailer ?? "",
+    truckId: d.truck_id ?? "",
+    trailerId: d.trailer_id ?? "",
     comment: d.comment ?? "",
     weeklyGrossTarget: d.weekly_gross_target || undefined,
     currentLoad:   d.current_load    || undefined,
@@ -93,8 +101,12 @@ function fromSolo(d: Partial<SoloDriver>) {
     type: d.type ?? "O/O",
     team: false,
     status: d.status ?? "ready",
-    truck: d.truck ?? "",
-    trailer: d.trailer ?? "",
+    // truck/trailer are read-only derived fields now — assign via id instead.
+    // Tri-state, but the modal is a full-form save, so always send a concrete
+    // value: "" unassigns, a uuid assigns (never omitted/null, which would mean
+    // "leave unchanged" — the form's current value IS the desired end state).
+    truck_id: d.truckId ?? "",
+    trailer_id: d.trailerId ?? "",
     location: d.location ?? "",
     comment: d.comment ?? "",
     weekly_gross_target: d.weeklyGrossTarget ?? 0,
@@ -111,12 +123,21 @@ function fromTeam(d: Partial<TeamDriver>) {
     type: d.type ?? "C/D",
     team: true,
     status: d.status ?? "ready",
-    truck: d.truck ?? "",
-    trailer: d.trailer ?? "",
+    truck_id: d.truckId ?? "",
+    trailer_id: d.trailerId ?? "",
     comment: d.comment ?? "",
     weekly_gross_target: d.weeklyGrossTarget ?? 0,
     next_load_id: d.nextLoadId || null,
   };
+}
+
+// Maps a truck/trailer assignment error to the offending equipment field, so the
+// modal can show it inline instead of (or in addition to) a generic toast.
+function equipmentFieldError(e: unknown): { truck?: string; trailer?: string } | null {
+  if (!(e instanceof ApiError)) return null;
+  if (e.code === "invalid_truck" || e.code === "truck_assigned") return { truck: e.message };
+  if (e.code === "invalid_trailer" || e.code === "trailer_assigned") return { trailer: e.message };
+  return null;
 }
 
 // ─── Custom Select ────────────────────────────────────────────────────────────
@@ -124,7 +145,7 @@ function fromTeam(d: Partial<TeamDriver>) {
 interface SelectOpt { value: string; label: string; dot?: string }
 
 function CustomSelect({
-  value, options, onChange, width, compact = false, dropUp = false, searchable = false, disabled = false,
+  value, options, onChange, width, compact = false, dropUp = false, searchable = false, disabled = false, error = false,
 }: {
   value: string;
   options: SelectOpt[];
@@ -134,6 +155,7 @@ function CustomSelect({
   dropUp?: boolean;
   searchable?: boolean;
   disabled?: boolean;
+  error?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -163,12 +185,12 @@ function CustomSelect({
           display: "flex", alignItems: "center", gap: 8, width: "100%",
           height: h, paddingLeft: 10, paddingRight: 8,
           fontFamily: "var(--font-sans)", fontSize: compact ? 12 : 13,
-          backgroundColor: disabled ? "var(--muted)" : "var(--input-background)",
-          border: `1px solid ${open ? "var(--primary)" : "var(--border)"}`,
+          backgroundColor: disabled ? "var(--muted)" : error ? "rgba(239,68,68,0.04)" : "var(--input-background)",
+          border: `1px solid ${error ? "#EF4444" : open ? "var(--primary)" : "var(--border)"}`,
           borderRadius: 7, color: disabled ? "var(--muted-foreground)" : "var(--foreground)",
           cursor: disabled ? "not-allowed" : "pointer",
           opacity: disabled ? 0.55 : 1,
-          boxShadow: open ? "0 0 0 3px rgba(59,130,246,0.12)" : "none",
+          boxShadow: error ? "0 0 0 3px rgba(239,68,68,0.10)" : open ? "0 0 0 3px rgba(59,130,246,0.12)" : "none",
           transition: "border-color 0.15s, box-shadow 0.15s",
           outline: "none",
         }}
@@ -527,7 +549,17 @@ const TYPE_OPTS: SelectOpt[] = [
   { value: "C/D", label: "C/D — Company Driver"  },
 ];
 
-// Truck/trailer options are fetched per-tab from /trucks and /trailers
+// Truck/trailer options are fetched per-tab from /trucks and /trailers.
+// Select value is the unit's id (what we send as truck_id/trailer_id); label is
+// the unit name. Selecting "— None —" sends "" to unassign.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function toEquipmentOpts(units: any[]): SelectOpt[] {
+  return [
+    { value: "", label: "— None —" },
+    ...(units ?? []).map((u) => ({ value: u.id, label: u.unit ?? u.id })),
+  ];
+}
+
 const EMPTY_OPTS: SelectOpt[] = [];
 
 // ─── Toast ────────────────────────────────────────────────────────────────────
@@ -700,9 +732,10 @@ function QueueReorder({ driverId, queue, onReorder }: {
 
 // ─── Modals ───────────────────────────────────────────────────────────────────
 
-function SoloModal({ driver, onClose, onSave, truckOpts, trailerOpts, saving }: {
+function SoloModal({ driver, onClose, onSave, truckOpts, trailerOpts, saving, fieldErrors }: {
   driver: Partial<SoloDriver>; onClose: () => void; onSave: (d: SoloDriver) => void;
   truckOpts: SelectOpt[]; trailerOpts: SelectOpt[]; saving?: boolean;
+  fieldErrors?: { truck?: string; trailer?: string };
 }) {
   const [form, setForm] = useState<Partial<SoloDriver>>(driver);
   const [touched, setTouched] = useState<Partial<Record<keyof SoloDriver, boolean>>>({});
@@ -746,13 +779,15 @@ function SoloModal({ driver, onClose, onSave, truckOpts, trailerOpts, saving }: 
           </label>
 
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-            <FieldLabel>Truck Unit</FieldLabel>
-            <CustomSelect value={form.truck ?? ""} options={truckOpts} onChange={(v) => set("truck", v)} searchable />
+            <FieldLabel error={!!fieldErrors?.truck}>Truck Unit</FieldLabel>
+            <CustomSelect value={form.truckId ?? ""} options={truckOpts} onChange={(v) => set("truckId", v)} searchable error={!!fieldErrors?.truck} />
+            {fieldErrors?.truck && <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "#EF4444" }}>{fieldErrors.truck}</span>}
           </label>
 
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-            <FieldLabel>Trailer Unit</FieldLabel>
-            <CustomSelect value={form.trailer ?? ""} options={trailerOpts} onChange={(v) => set("trailer", v)} searchable />
+            <FieldLabel error={!!fieldErrors?.trailer}>Trailer Unit</FieldLabel>
+            <CustomSelect value={form.trailerId ?? ""} options={trailerOpts} onChange={(v) => set("trailerId", v)} searchable error={!!fieldErrors?.trailer} />
+            {fieldErrors?.trailer && <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "#EF4444" }}>{fieldErrors.trailer}</span>}
           </label>
 
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
@@ -820,9 +855,10 @@ function SoloModal({ driver, onClose, onSave, truckOpts, trailerOpts, saving }: 
   );
 }
 
-function TeamModal({ driver, onClose, onSave, truckOpts, trailerOpts, saving }: {
+function TeamModal({ driver, onClose, onSave, truckOpts, trailerOpts, saving, fieldErrors }: {
   driver: Partial<TeamDriver>; onClose: () => void; onSave: (d: TeamDriver) => void;
   truckOpts: SelectOpt[]; trailerOpts: SelectOpt[]; saving?: boolean;
+  fieldErrors?: { truck?: string; trailer?: string };
 }) {
   const [form, setForm] = useState<Partial<TeamDriver>>(driver);
   const [touched, setTouched] = useState<Partial<Record<keyof TeamDriver, boolean>>>({});
@@ -876,13 +912,15 @@ function TeamModal({ driver, onClose, onSave, truckOpts, trailerOpts, saving }: 
           </label>
 
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-            <FieldLabel>Truck Unit</FieldLabel>
-            <CustomSelect value={form.truck ?? ""} options={truckOpts} onChange={(v) => set("truck", v)} searchable />
+            <FieldLabel error={!!fieldErrors?.truck}>Truck Unit</FieldLabel>
+            <CustomSelect value={form.truckId ?? ""} options={truckOpts} onChange={(v) => set("truckId", v)} searchable error={!!fieldErrors?.truck} />
+            {fieldErrors?.truck && <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "#EF4444" }}>{fieldErrors.truck}</span>}
           </label>
 
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-            <FieldLabel>Trailer Unit</FieldLabel>
-            <CustomSelect value={form.trailer ?? ""} options={trailerOpts} onChange={(v) => set("trailer", v)} searchable />
+            <FieldLabel error={!!fieldErrors?.trailer}>Trailer Unit</FieldLabel>
+            <CustomSelect value={form.trailerId ?? ""} options={trailerOpts} onChange={(v) => set("trailerId", v)} searchable error={!!fieldErrors?.trailer} />
+            {fieldErrors?.trailer && <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "#EF4444" }}>{fieldErrors.trailer}</span>}
           </label>
 
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
@@ -1952,6 +1990,7 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
   const [importing, setImporting]             = useState(false);
   const [toast, setToast]                     = useState<{ type: "success" | "error"; msg: string } | null>(null);
   const [fetchKey, setFetchKey]               = useState(0);
+  const [fieldErrors, setFieldErrors]         = useState<{ truck?: string; trailer?: string }>({});
 
   useEffect(() => {
     const t = setTimeout(() => { setDebouncedSearch(search); setPage(1); }, 250);
@@ -1963,8 +2002,8 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
   useEffect(() => {
     Promise.all([api.get<any[]>("/trucks"), api.get<any[]>("/trailers")])
       .then(([trucks, trailers]) => {
-        setTruckOpts((trucks ?? []).map((tr) => ({ value: tr.unit ?? tr.id, label: tr.unit ?? tr.id })));
-        setTrailerOpts((trailers ?? []).map((tr) => ({ value: tr.unit ?? tr.id, label: tr.unit ?? tr.id })));
+        setTruckOpts(toEquipmentOpts(trucks));
+        setTrailerOpts(toEquipmentOpts(trailers));
       }).catch(() => {});
   }, []);
 
@@ -1998,10 +2037,11 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
     }
   };
 
-  const openCreate = () => { setEditing({}); setModal("create"); };
-  const openEdit   = (d: SoloDriver) => { setEditing(d); setModal("edit"); };
+  const openCreate = () => { setEditing({}); setFieldErrors({}); setModal("create"); };
+  const openEdit   = (d: SoloDriver) => { setEditing(d); setFieldErrors({}); setModal("edit"); };
   const save = async (d: SoloDriver) => {
     setSaving(true);
+    setFieldErrors({});
     try {
       if (modal === "create") {
         await api.post<any>("/drivers", fromSolo(d));
@@ -2013,7 +2053,13 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
       setModal(null);
       setFetchKey((k) => k + 1);
     } catch (e) {
-      setToast({ type: "error", msg: e instanceof Error ? e.message : "Save failed" });
+      const fieldErr = equipmentFieldError(e);
+      if (fieldErr) {
+        // Keep the modal open so the user can fix the truck/trailer select
+        setFieldErrors(fieldErr);
+      } else {
+        setToast({ type: "error", msg: e instanceof Error ? e.message : "Save failed" });
+      }
     } finally {
       setSaving(false);
     }
@@ -2162,7 +2208,7 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
       />
 
       {(modal === "create" || modal === "edit") && (
-        <SoloModal driver={editing} onClose={() => setModal(null)} onSave={save} truckOpts={truckOpts} trailerOpts={trailerOpts} saving={saving} />
+        <SoloModal driver={editing} onClose={() => setModal(null)} onSave={save} truckOpts={truckOpts} trailerOpts={trailerOpts} saving={saving} fieldErrors={fieldErrors} />
       )}
       {deleting && (
         <DeleteConfirm label={deleting.name} onClose={() => setDeleting(null)} onConfirm={del} />
@@ -2195,6 +2241,7 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
   const [importing, setImporting]             = useState(false);
   const [toast, setToast]                     = useState<{ type: "success" | "error"; msg: string } | null>(null);
   const [fetchKey, setFetchKey]               = useState(0);
+  const [fieldErrors, setFieldErrors]         = useState<{ truck?: string; trailer?: string }>({});
 
   useEffect(() => {
     const t = setTimeout(() => { setDebouncedSearch(search); setPage(1); }, 250);
@@ -2206,8 +2253,8 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
   useEffect(() => {
     Promise.all([api.get<any[]>("/trucks"), api.get<any[]>("/trailers")])
       .then(([trucks, trailers]) => {
-        setTruckOpts((trucks ?? []).map((tr) => ({ value: tr.unit ?? tr.id, label: tr.unit ?? tr.id })));
-        setTrailerOpts((trailers ?? []).map((tr) => ({ value: tr.unit ?? tr.id, label: tr.unit ?? tr.id })));
+        setTruckOpts(toEquipmentOpts(trucks));
+        setTrailerOpts(toEquipmentOpts(trailers));
       }).catch(() => {});
   }, []);
 
@@ -2241,10 +2288,11 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
     }
   };
 
-  const openCreate = () => { setEditing({}); setModal("create"); };
-  const openEdit   = (d: TeamDriver) => { setEditing(d); setModal("edit"); };
+  const openCreate = () => { setEditing({}); setFieldErrors({}); setModal("create"); };
+  const openEdit   = (d: TeamDriver) => { setEditing(d); setFieldErrors({}); setModal("edit"); };
   const save = async (d: TeamDriver) => {
     setSaving(true);
+    setFieldErrors({});
     try {
       if (modal === "create") {
         await api.post<any>("/drivers", fromTeam(d));
@@ -2256,7 +2304,12 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
       setModal(null);
       setFetchKey((k) => k + 1);
     } catch (e) {
-      setToast({ type: "error", msg: e instanceof Error ? e.message : "Save failed" });
+      const fieldErr = equipmentFieldError(e);
+      if (fieldErr) {
+        setFieldErrors(fieldErr);
+      } else {
+        setToast({ type: "error", msg: e instanceof Error ? e.message : "Save failed" });
+      }
     } finally {
       setSaving(false);
     }
@@ -2403,7 +2456,7 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
       />
 
       {(modal === "create" || modal === "edit") && (
-        <TeamModal driver={editing} onClose={() => setModal(null)} onSave={save} truckOpts={truckOpts} trailerOpts={trailerOpts} saving={saving} />
+        <TeamModal driver={editing} onClose={() => setModal(null)} onSave={save} truckOpts={truckOpts} trailerOpts={trailerOpts} saving={saving} fieldErrors={fieldErrors} />
       )}
       {deleting && (
         <DeleteConfirm label={`${deleting.name1} & ${deleting.name2}`} onClose={() => setDeleting(null)} onConfirm={del} />

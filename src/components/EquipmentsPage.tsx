@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { Truck, Container, Plus, Pencil, Trash2, X, Check, Search, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, FileSpreadsheet, Upload, FileText, AlertCircle } from "lucide-react";
 import { api } from "../lib/api";
+import { driverDisplayName } from "../lib/driverName";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -716,10 +717,12 @@ function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
   const [fetchKey, setFetchKey]   = useState(0);
   const [toast, setToast]         = useState<{ type: "success" | "error"; msg: string } | null>(null);
   const [driverOpts, setDriverOpts] = useState<SelectOpt[]>([]);
+  const [driverNameMap, setDriverNameMap] = useState<Record<string, string>>({});
 
   useEffect(() => {
     api.get<any[]>("/drivers").then((drivers) => {
-      setDriverOpts((drivers ?? []).map((d) => ({ value: d.id, label: d.name ?? d.name1 ?? d.id })));
+      setDriverOpts((drivers ?? []).map((d) => ({ value: d.id, label: driverDisplayName(d) })));
+      setDriverNameMap(Object.fromEntries((drivers ?? []).map((d) => [d.id, driverDisplayName(d)])));
     }).catch(() => {});
   }, []);
 
@@ -842,7 +845,7 @@ function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
                     {r.unit}
                   </span>
                 </td>
-                <TD>{r.driver || <span style={{ color: "var(--muted-foreground)", fontStyle: "italic" }}>Unassigned</span>}</TD>
+                <TD>{(driverNameMap[r.driver_id] || r.driver) || <span style={{ color: "var(--muted-foreground)", fontStyle: "italic" }}>Unassigned</span>}</TD>
                 <TD>{r.make}</TD>
                 <TD>{r.model}</TD>
                 <TD mono>{r.vin}</TD>
@@ -897,10 +900,12 @@ function TrailersTab({ onCountChange }: { onCountChange: (n: number) => void }) 
   const [fetchKey, setFetchKey]   = useState(0);
   const [toast, setToast]         = useState<{ type: "success" | "error"; msg: string } | null>(null);
   const [driverOpts, setDriverOpts] = useState<SelectOpt[]>([]);
+  const [driverNameMap, setDriverNameMap] = useState<Record<string, string>>({});
 
   useEffect(() => {
     api.get<any[]>("/drivers").then((drivers) => {
-      setDriverOpts((drivers ?? []).map((d) => ({ value: d.id, label: d.name ?? d.name1 ?? d.id })));
+      setDriverOpts((drivers ?? []).map((d) => ({ value: d.id, label: driverDisplayName(d) })));
+      setDriverNameMap(Object.fromEntries((drivers ?? []).map((d) => [d.id, driverDisplayName(d)])));
     }).catch(() => {});
   }, []);
 
@@ -1023,7 +1028,7 @@ function TrailersTab({ onCountChange }: { onCountChange: (n: number) => void }) 
                     {r.unit}
                   </span>
                 </td>
-                <TD>{r.driver || <span style={{ color: "var(--muted-foreground)", fontStyle: "italic" }}>Unassigned</span>}</TD>
+                <TD>{(driverNameMap[r.driver_id] || r.driver) || <span style={{ color: "var(--muted-foreground)", fontStyle: "italic" }}>Unassigned</span>}</TD>
                 <TD>{r.make}</TD>
                 <TD>{r.model}</TD>
                 <TD mono>{r.vin}</TD>

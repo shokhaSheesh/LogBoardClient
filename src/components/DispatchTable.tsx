@@ -9,25 +9,34 @@ import { menuPosition } from "../lib/menuPosition";
 
 type DriverType = "O/O" | "C/D";
 
-interface Stop { city: string; done: boolean; appt?: string; }
+interface Stop { city: string; done: boolean; appt?: string; location?: { lat: number; lng: number }; }
+
+// The full current load carried on each board row (same shape as GET /loads)
+interface BoardLoad {
+  id: string;
+  stops?: Stop[];
+  broker?: string;
+  payout?: number;
+  miles?: number;
+  dispatcher?: string;
+  [k: string]: unknown; // passed back verbatim on PUT /loads/:id
+}
 
 // What the backend returns for GET /board
 interface BoardRow {
   driver_id: string;
   load_id: string;
-  load_uuid?: string;      // actual UUID for PUT /loads/:id
   name: string;
   phone: string;
   unit: string;
+  trailer?: string;
   type: string;
   status: string;
-  origin: string;
-  origin_done?: boolean;
-  destination: string;
-  destination_done?: boolean;
-  stops?: Stop[];
-  pickup_appt: string;
-  drop_appt: string;
+  origin: string;         // derived: current load's first stop
+  destination: string;    // derived: current load's last stop
+  pickup_appt: string;    // derived: first stop's appt
+  drop_appt: string;      // derived: last stop's appt
+  load?: BoardLoad | null; // full current load (null when idle) — holds the ordered stops
   location: string;
   eta_km: number | null;
   speed_mph: number | null;
@@ -40,16 +49,18 @@ interface Driver {
   driverId: string;      // UUID — used as key for driver API calls
   loadId: string;        // display ref like "LD-00481"
   loadUuid?: string;     // actual UUID for PUT /loads/:id
+  loadRaw?: BoardLoad;   // full load object — PUT base for stop toggles (no refetch)
   name: string;
   phone: string;
   unit: string;
+  trailer?: string;
   type: DriverType;
   status: Status;
   origin: string;
   originDone?: boolean;
   destination: string;
   destinationDone?: boolean;
-  stops?: Stop[];
+  stops?: Stop[];        // INTERMEDIATE stops only (between origin and destination)
   pickupAppt: string;
   dropAppt: string;
   location: string;
@@ -118,20 +129,27 @@ function timeAgo(iso: string): string {
 }
 
 function fromBoardRow(r: BoardRow): Driver {
+  // The route lives in load.stops (full, ordered). Split it for the StopList:
+  // stops[0] = origin, stops[last] = destination, the middle = intermediate stops.
+  const route = r.load?.stops ?? [];
+  const first = route[0];
+  const last  = route.length > 1 ? route[route.length - 1] : undefined;
   return {
     driverId:    r.driver_id,
     loadId:      r.load_id      || "—",
-    loadUuid:    r.load_uuid,
+    loadUuid:    r.load?.id,
+    loadRaw:     r.load ?? undefined,
     name:        r.name         || "—",
     phone:       r.phone        || "—",
     unit:        r.unit         || "—",
+    trailer:     r.trailer      || "—",
     type:        (r.type as DriverType) || "O/O",
     status:      (r.status as Status)   || "ready",
-    origin:          r.origin            || "—",
-    originDone:      r.origin_done       ?? false,
-    destination:     r.destination       || "—",
-    destinationDone: r.destination_done  ?? false,
-    stops:           r.stops,
+    origin:          (first?.city ?? r.origin) || "—",
+    originDone:      first?.done ?? false,
+    destination:     (last?.city ?? r.destination) || "—",
+    destinationDone: last?.done ?? false,
+    stops:           route.slice(1, -1),
     pickupAppt:  r.pickup_appt  || "—",
     dropAppt:    r.drop_appt    || "—",
     location:    r.location     || "—",
@@ -285,12 +303,14 @@ function InlineCell({ value, onCommit, mono, fontSize = 12, color = "var(--foreg
 
 // ─── Stop list display ────────────────────────────────────────────────────────
 
-function TickBtn({ done, isCurrent, onToggle }: { done: boolean; isCurrent: boolean; onToggle?: () => void }) {
+function TickBtn({ done, isCurrent, canToggle, onToggle }: { done: boolean; isCurrent: boolean; canToggle: boolean; onToggle?: () => void }) {
+  const active = canToggle && !!onToggle;
   return (
     <button
-      onClick={() => onToggle?.()}
-      title={done ? "Mark incomplete" : "Mark complete"}
-      style={{ width: 16, height: 16, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, border: "none", background: "none", cursor: onToggle ? "pointer" : "default", padding: 0 }}
+      onClick={() => { if (active) onToggle?.(); }}
+      disabled={!active}
+      title={!canToggle ? "Complete the previous stop first" : done ? "Mark incomplete" : "Mark complete"}
+      style={{ width: 16, height: 16, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, border: "none", background: "none", cursor: active ? "pointer" : "default", padding: 0, opacity: !done && !canToggle ? 0.5 : 1 }}
     >
       {done ? (
         <span style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 16, height: 16, borderRadius: "50%", backgroundColor: "#D1FAE5" }}>
@@ -346,11 +366,13 @@ function StopList({ origin, originDone, destination, destinationDone, stops, onT
         const prevDone  = idx === 0 || allStops[idx - 1].done;
         const isCurrent = !stop.done && prevDone;
         const isEditingThis = stop.isOrigin && editingOrigin;
+        // Can mark done only if every earlier stop is done; can always un-mark a done stop.
+        const canToggle = stop.done || prevDone;
 
         return (
           <div key={idx} style={{ display: "flex", alignItems: "center", gap: 5 }}>
             <span style={labelStyle}>#{idx + 1}</span>
-            <TickBtn done={stop.done} isCurrent={isCurrent} onToggle={stop.onToggle} />
+            <TickBtn done={stop.done} isCurrent={isCurrent} canToggle={canToggle} onToggle={stop.onToggle} />
             {isEditingThis ? (
               <input autoFocus value={draft} onChange={(e) => setDraft(e.target.value)}
                 onBlur={() => { onEditOrigin?.(draft); setEditingOrigin(false); }}
@@ -488,8 +510,6 @@ export function DispatchTable() {
   const filterRef     = useRef<HTMLDivElement>(null);
   // Cache of full driver records (for PUT body construction)
   const driverCache   = useRef<Record<string, Record<string, unknown>>>({});
-  // Cache of full load records (for PUT /loads/:id when toggling stops)
-  const loadCache     = useRef<Record<string, Record<string, unknown>>>({});
   // Heartbeat intervals per driverId
   const heartbeats    = useRef<Record<string, ReturnType<typeof setInterval>>>({});
 
@@ -676,40 +696,22 @@ export function DispatchTable() {
 
     const rollback = () => setRows((prev) => prev.map((d) => d.driverId === driverId ? driver : d));
 
-    // Get current_load_id from driver cache (fetch driver if not cached yet)
-    if (!driverCache.current[driverId]) {
-      try {
-        const data = await api.get<Record<string, unknown>>(`/drivers/${driverId}`);
-        driverCache.current[driverId] = data ?? {};
-      } catch { rollback(); return; }
-    }
+    // The board row already carries the full load — no fetch needed.
+    const load = driver.loadRaw;
+    if (!load?.id) { rollback(); return; } // driver has no active load to persist against
 
-    const loadUuid = driverCache.current[driverId]?.current_load_id as string | undefined;
-    if (!loadUuid) { rollback(); return; } // driver has no active load to persist against
-
-    // Fetch full load for PUT body
-    if (!loadCache.current[loadUuid]) {
-      try {
-        const data = await api.get<Record<string, unknown>>(`/loads/${loadUuid}`);
-        loadCache.current[loadUuid] = data ?? {};
-      } catch { rollback(); return; }
-    }
-
-    const cached = loadCache.current[loadUuid];
-
-    // Build ONE stops array: origin (first) → intermediates → destination (last),
-    // each carrying its done flag. Origin/destination are just stops too.
-    const fullStops: Stop[] = [
-      { city: (cached.origin as string) ?? driver.origin, appt: (cached.pickup_appt as string) ?? driver.pickupAppt, done: updatedOriginDone },
+    // Rebuild the full ordered route from the load's own stops, applying the toggled
+    // done flags (preserves each stop's city/appt/location).
+    const raw = load.stops ?? [];
+    const fullStops: Stop[] = raw.length === 0 ? [] : [
+      { ...raw[0], done: updatedOriginDone },
       ...updatedStops,
-      { city: (cached.destination as string) ?? driver.destination, appt: (cached.drop_appt as string) ?? driver.dropAppt, done: updatedDestinationDone },
+      ...(raw.length > 1 ? [{ ...raw[raw.length - 1], done: updatedDestinationDone }] : []),
     ];
 
-    const body = { ...cached, stops: fullStops };
-
     try {
-      await api.put(`/loads/${loadUuid}`, body);
-      loadCache.current[loadUuid] = { ...cached, stops: fullStops };
+      await api.put(`/loads/${load.id}`, { ...load, stops: fullStops });
+      // WS snapshot pushes the authoritative row (with load.stops) back
     } catch {
       rollback();
     }
@@ -934,46 +936,39 @@ export function DispatchTable() {
                       />
                     </td>
 
-                    {/* Appt. Times */}
+                    {/* Appt. Times — #1 pickup, intermediate stops, then destination */}
                     {(() => {
-                      const stops = driver.stops;
-                      const pickupDone = stops ? stops[0]?.done === true : false;
+                      const stops = driver.stops ?? [];
                       const labelStyle: React.CSSProperties = { fontFamily: "var(--font-mono)", fontSize: 9, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase" as const, flexShrink: 0, width: 30 };
+                      const pickupDone = driver.originDone ?? false;
+                      const destDone   = driver.destinationDone ?? false;
+                      const destNum    = stops.length + 2;
                       return (
                         <td style={td({ borderRight: border, verticalAlign: "top", paddingTop: 12, paddingBottom: 12 })}>
                           <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                            {/* #1 pickup */}
                             <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
                               <span style={{ ...labelStyle, color: "var(--muted-foreground)" }}>#1</span>
-                              {isEdit(driver.driverId, "pickupAppt")
-                                ? <InlineCell value={driver.pickupAppt} mono onCommit={(v) => { patch(driver.driverId, { pickupAppt: v }); stopEdit(driver.driverId); }} />
-                                : <span onClick={() => startEdit(driver.driverId, "pickupAppt")} style={{ cursor: "text", fontFamily: "var(--font-mono)", fontSize: 11, color: driver.pickupAppt === "—" || pickupDone ? "var(--muted-foreground)" : "var(--foreground)", textDecoration: pickupDone ? "line-through" : "none" }}>{driver.pickupAppt}</span>
-                              }
+                              <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: driver.pickupAppt === "—" || pickupDone ? "var(--muted-foreground)" : "var(--foreground)", textDecoration: pickupDone ? "line-through" : "none" }}>{driver.pickupAppt}</span>
                             </div>
-                            {stops?.map((stop, idx) => {
-                              const prevDone  = idx === 0 || stops[idx - 1].done;
+                            {/* intermediate stops */}
+                            {stops.map((stop, idx) => {
+                              const prevDone  = idx === 0 ? pickupDone : stops[idx - 1].done;
                               const isCurrent = !stop.done && prevDone;
-                              const fieldKey  = `stopAppt_${idx}`;
                               return (
                                 <div key={idx} style={{ display: "flex", alignItems: "center", gap: 5 }}>
                                   <span style={{ ...labelStyle, color: "var(--muted-foreground)" }}>#{idx + 2}</span>
-                                  {isEdit(driver.driverId, fieldKey)
-                                    ? <InlineCell value={stop.appt ?? ""} mono placeholder="MM/DD · HH:MM"
-                                        onCommit={(v) => { const updated = stops.map((s, i) => i === idx ? { ...s, appt: v } : s); patch(driver.driverId, { stops: updated }); stopEdit(driver.driverId); }} />
-                                    : <span onClick={() => startEdit(driver.driverId, fieldKey)}
-                                        style={{ cursor: "text", fontFamily: "var(--font-mono)", fontSize: 11, color: stop.done || !stop.appt ? "var(--muted-foreground)" : isCurrent ? "var(--foreground)" : "var(--muted-foreground)", textDecoration: stop.done ? "line-through" : "none", fontWeight: isCurrent ? 500 : 400 }}>
-                                        {stop.appt ?? "—"}
-                                      </span>
-                                  }
+                                  <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: stop.done || !stop.appt ? "var(--muted-foreground)" : isCurrent ? "var(--foreground)" : "var(--muted-foreground)", textDecoration: stop.done ? "line-through" : "none", fontWeight: isCurrent ? 500 : 400 }}>
+                                    {stop.appt ?? "—"}
+                                  </span>
                                 </div>
                               );
                             })}
-                            {!stops && (
+                            {/* destination (only when there is a distinct last stop) */}
+                            {driver.dropAppt !== "—" && (
                               <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                                <span style={{ ...labelStyle, color: "var(--muted-foreground)" }}>#2</span>
-                                {isEdit(driver.driverId, "dropAppt")
-                                  ? <InlineCell value={driver.dropAppt} mono onCommit={(v) => { patch(driver.driverId, { dropAppt: v }); stopEdit(driver.driverId); }} />
-                                  : <span onClick={() => startEdit(driver.driverId, "dropAppt")} style={{ cursor: "text", fontFamily: "var(--font-mono)", fontSize: 11, color: driver.dropAppt === "—" ? "var(--muted-foreground)" : "var(--foreground)" }}>{driver.dropAppt}</span>
-                                }
+                                <span style={{ ...labelStyle, color: "var(--muted-foreground)" }}>#{destNum}</span>
+                                <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: destDone ? "var(--muted-foreground)" : "var(--foreground)", textDecoration: destDone ? "line-through" : "none" }}>{driver.dropAppt}</span>
                               </div>
                             )}
                           </div>

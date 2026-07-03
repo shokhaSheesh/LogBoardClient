@@ -9,6 +9,7 @@ import {
 import { Status, STATUS_CONFIG as SHARED_STATUS_CONFIG, ALL_STATUSES as SHARED_ALL_STATUSES } from "../lib/statuses";
 import { api, getCompanyId } from "../lib/api";
 import { menuPosition } from "../lib/menuPosition";
+import { driverDisplayName } from "../lib/driverName";
 import { CityAutocomplete } from "./CityAutocomplete";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -28,11 +29,7 @@ interface Load {
   driver: string;       // display name, derived from driver_id
   driver_id: string;
   status: Status;
-  pickupAppt: string;
-  dropAppt: string;
-  origin: string;
-  destination: string;
-  stops?: Stop[];
+  stops?: Stop[];        // the whole ordered route (stops[0] = pickup, last = delivery)
   payout: number;
   totalMiles: number;
   dispatcher: string;
@@ -43,10 +40,6 @@ interface BackendLoad {
   id: string;
   load_id: string;
   driver_id: string;
-  origin: string;
-  destination: string;
-  pickup_appt: string;
-  drop_appt: string;
   status: Status;
   payout: number;
   miles: number;
@@ -79,10 +72,6 @@ function toLoad(b: BackendLoad, drivers: { id: string; name: string }[]): Load {
     driver: driverName,
     broker: b.broker ?? "",
     status: b.status as Status,
-    pickupAppt: b.pickup_appt ?? "",
-    dropAppt: b.drop_appt ?? "",
-    origin: b.origin ?? "",
-    destination: b.destination ?? "",
     payout: b.payout ?? 0,
     totalMiles: b.miles ?? 0,
     stops: b.stops ?? [],   // render exactly what the backend sends
@@ -92,23 +81,15 @@ function toLoad(b: BackendLoad, drivers: { id: string; name: string }[]): Load {
 }
 
 function toBackend(l: Partial<Load>): Partial<BackendLoad> {
-  // stops is the source of truth. origin/destination/*_appt are mirrored from the
-  // first/last stop only because the board read model still reads those fields.
-  const route = l.stops ?? [];
-  const first = route[0];
-  const last  = route[route.length - 1];
+  // The route rides entirely in stops — no origin/destination/*_appt fields.
   return {
     load_id: l.loadId,
     driver_id: l.driver_id ?? "",
-    origin: first?.city ?? "",
-    destination: last?.city ?? "",
-    pickup_appt: first?.appt ?? "",
-    drop_appt: last?.appt ?? "",
+    stops: l.stops ?? [],
     status: l.status,
     payout: l.payout ?? 0,
     miles: l.totalMiles ?? 0,
     broker: l.broker,
-    stops: route,
     dispatcher_id: l.dispatcher_id || undefined,
   };
 }
@@ -1386,7 +1367,7 @@ export function LoadsPage() {
       api.get<any[]>("/drivers"),
       api.get<any[]>(`/owner/companies/${companyId}/users`).catch(() => []),
     ]).then(([drivers, users]) => {
-      const list = (drivers ?? []).map((d: any) => ({ id: d.id as string, name: (d.name ?? d.name1 ?? d.id) as string }));
+      const list = (drivers ?? []).map((d: any) => ({ id: d.id as string, name: driverDisplayName(d) }));
       setDriverList(list);
       setDriverOpts(list.map((d) => ({ value: d.id, label: d.name })));
       setDispatcherOpts((users ?? []).map((u: any) => ({ value: u.id, label: u.full_name ?? u.login ?? u.id })));

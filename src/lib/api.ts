@@ -1,5 +1,17 @@
 const BASE = (import.meta.env.VITE_API_BASE ?? "http://localhost:8080") + "/api/v1";
 
+// Carries the backend's machine-readable error code (e.g. "invalid_truck",
+// "truck_assigned") alongside the human message, so callers can map specific
+// errors to specific form fields instead of just showing a toast.
+export class ApiError extends Error {
+  code?: string;
+  constructor(message: string, code?: string) {
+    super(message);
+    this.name = "ApiError";
+    this.code = code;
+  }
+}
+
 function getToken(): string | null {
   return localStorage.getItem("auth_token");
 }
@@ -53,7 +65,7 @@ async function request<T>(
 
   if (!res.ok) {
     const msg = json?.error?.message ?? json?.error ?? `HTTP ${res.status}`;
-    throw new Error(msg);
+    throw new ApiError(msg, json?.error?.code);
   }
 
   // All success responses are wrapped: { "data": ... }
