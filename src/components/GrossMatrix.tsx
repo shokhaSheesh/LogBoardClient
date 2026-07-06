@@ -3,7 +3,6 @@ import { Search, Calendar, Check, ChevronDown, ChevronLeft, ChevronRight } from 
 import { createPortal } from "react-dom";
 import { Status, STATUS_CONFIG, ALL_STATUSES } from "../lib/statuses";
 import { api } from "../lib/api";
-import { getWeekStartDay } from "./SettingsPage";
 
 type CellType = Status | "load" | "empty";
 
@@ -703,34 +702,30 @@ export function GrossMatrix() {
   const pad  = (n: number) => String(n).padStart(2, "0");
   const fmtD = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 
-  const [weekStartDay, setWeekStartDay] = useState(getWeekStartDay);
-  const initialRange = getWeekRange(weekStartDay);
+  // weekStartDay is a sane placeholder until the first /gross response echoes the
+  // company's real setting — never persisted or read from localStorage anymore.
+  const [weekStartDay, setWeekStartDay] = useState(1);
 
   const [rows,     setRows]     = useState<DriverRow[]>([]);
   const [loading,  setLoading]  = useState(true);
   const [search,   setSearch]   = useState("");
-  const [dateFrom, setDateFrom] = useState(fmtD(initialRange.from));
-  const [dateTo,   setDateTo]   = useState(fmtD(initialRange.to));
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo,   setDateTo]   = useState("");
 
-  // Re-snap to current week whenever the user changes the week setting
-  useEffect(() => {
-    const handler = () => {
-      const newStart = getWeekStartDay();
-      setWeekStartDay(newStart);
-      const range = getWeekRange(newStart);
-      setDateFrom(fmtD(range.from));
-      setDateTo(fmtD(range.to));
-    };
-    window.addEventListener("week-settings-changed", handler);
-    return () => window.removeEventListener("week-settings-changed", handler);
-  }, []);
-
-  // Fetch gross data from backend
-  useEffect(() => {
-    if (!dateFrom || !dateTo) return;
+  // Fetch gross data. Omit from/to to let the backend pick the default current
+  // week (anchored to the company's week_start_day) — we then sync our state
+  // from whatever range + week_start_day it echoes back, rather than guessing.
+  const loadGross = (from?: string, to?: string, q?: string) => {
     setLoading(true);
-    api.get<any>(`/gross?from=${dateFrom}&to=${dateTo}${search ? `&q=${encodeURIComponent(search)}` : ""}`)
+    const qs = new URLSearchParams();
+    if (from && to) { qs.set("from", from); qs.set("to", to); }
+    if (q) qs.set("q", q);
+    const query = qs.toString();
+    api.get<any>(`/gross${query ? `?${query}` : ""}`)
       .then((data) => {
+        if (typeof data?.week_start_day === "number") setWeekStartDay(data.week_start_day);
+        if (data?.from) setDateFrom(data.from);
+        if (data?.to)   setDateTo(data.to);
         const items: BackendDriverRow[] = data?.drivers ?? [];
         const mapped = items.map(toDriverRow);
         // update miles lookup from fresh load data
@@ -746,17 +741,43 @@ export function GrossMatrix() {
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [dateFrom, dateTo, search]);
+  };
+
+  // Initial load — server picks the default current week
+  useEffect(() => { loadGross(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Re-fetch when the search text changes (once the initial range has loaded)
+  useEffect(() => {
+    if (!dateFrom || !dateTo) return;
+    loadGross(dateFrom, dateTo, search);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search]);
+
+  // Re-snap to the current week whenever the Settings tab saves a new week_start_day
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const newStart = (e as CustomEvent<{ weekStartDay: number }>).detail?.weekStartDay;
+      if (typeof newStart !== "number") return;
+      setWeekStartDay(newStart);
+      const range = getWeekRange(newStart);
+      loadGross(fmtD(range.from), fmtD(range.to), search);
+    };
+    window.addEventListener("week-settings-changed", handler);
+    return () => window.removeEventListener("week-settings-changed", handler);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search]);
 
   function shiftWeek(dir: -1 | 1) {
+    if (!dateFrom) return;
     const d = new Date(dateFrom + "T00:00:00");
     // Snap to the configured week start day first, then shift by 7
     const dow    = d.getDay();
     const offset = ((dow - weekStartDay + 7) % 7);
     d.setDate(d.getDate() - offset + dir * 7);
-    setDateFrom(fmtD(d));
+    const newFrom = fmtD(d);
     d.setDate(d.getDate() + 6);
-    setDateTo(fmtD(d));
+    const newTo = fmtD(d);
+    loadGross(newFrom, newTo, search);
   }
 
   // Cell editing
@@ -874,7 +895,7 @@ export function GrossMatrix() {
             <DateRangePicker
               from={dateFrom}
               to={dateTo}
-              onChange={(f, t) => { setDateFrom(f); setDateTo(t); }}
+              onChange={(f, t) => loadGross(f, t, search)}
             />
 
             <button

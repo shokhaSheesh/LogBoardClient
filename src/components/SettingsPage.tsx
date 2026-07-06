@@ -6,18 +6,8 @@ import {
 
 // ─── Week settings helpers ────────────────────────────────────────────────────
 
-export const WEEK_DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
+const WEEK_DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
 
-export function getWeekStartDay(): number {
-  const stored = localStorage.getItem("week_start_day");
-  const n = stored !== null ? parseInt(stored, 10) : 1; // default Mon
-  return isNaN(n) ? 1 : n;
-}
-
-export function setWeekStartDay(day: number): void {
-  localStorage.setItem("week_start_day", String(day));
-  window.dispatchEvent(new Event("week-settings-changed"));
-}
 import { api, getCompanyId } from "../lib/api";
 import { driverDisplayName } from "../lib/driverName";
 
@@ -1619,14 +1609,59 @@ function RolesTab({ onRolesChange }: { onRolesChange: (roles: Role[]) => void })
 // ─── Week tab ─────────────────────────────────────────────────────────────────
 
 function WeekTab() {
-  const [startDay, setStartDayState] = useState(getWeekStartDay);
+  const companyId = getCompanyId();
+  const [startDay, setStartDay] = useState<number | null>(null); // null = still loading
+  const [saving, setSaving]     = useState(false);
+  const [error, setError]       = useState<string | null>(null);
+  const [loadError, setLoadError] = useState(false);
+  // mc/name/eld are required on the owner company PUT body — fetched once and
+  // echoed back unchanged alongside the new week_start_day.
+  const companyRef = useRef<{ mc: string; name: string; eld?: string } | null>(null);
+
+  useEffect(() => {
+    if (!companyId) { setLoadError(true); return; }
+    api.get<{ mc: string; name: string; eld?: string; week_start_day?: number }>(`/owner/companies/${companyId}`)
+      .then((c) => {
+        companyRef.current = { mc: c.mc, name: c.name, eld: c.eld };
+        setStartDay(typeof c.week_start_day === "number" ? c.week_start_day : 1);
+      })
+      .catch(() => setLoadError(true));
+  }, [companyId]);
+
+  const select = async (day: number) => {
+    if (startDay === null || day === startDay || saving || !companyRef.current) return;
+    const prev = startDay;
+    setStartDay(day); // optimistic
+    setSaving(true);
+    setError(null);
+    try {
+      await api.put(`/owner/companies/${companyId}`, { ...companyRef.current, week_start_day: day });
+      // Let the Gross page snap to the new current week immediately.
+      window.dispatchEvent(new CustomEvent("week-settings-changed", { detail: { weekStartDay: day } }));
+    } catch (e) {
+      setStartDay(prev);
+      setError(e instanceof Error ? e.message : "Failed to save");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loadError) {
+    return (
+      <div style={{ padding: "32px 28px", fontFamily: "var(--font-sans)", fontSize: 13, color: "#EF4444" }}>
+        Couldn't load company settings.
+      </div>
+    );
+  }
+  if (startDay === null) {
+    return (
+      <div style={{ padding: "32px 28px", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
+        Loading…
+      </div>
+    );
+  }
 
   const endDay = (startDay + 6) % 7;
-
-  const select = (day: number) => {
-    setStartDayState(day);
-    setWeekStartDay(day);
-  };
 
   return (
     <div style={{ padding: "32px 28px", display: "flex", flexDirection: "column", gap: 32, maxWidth: 520 }}>
@@ -1634,7 +1669,7 @@ function WeekTab() {
       <div>
         <div style={{ fontFamily: "var(--font-sans)", fontSize: 16, fontWeight: 700, color: "var(--foreground)", marginBottom: 6 }}>Work Week</div>
         <div style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)", lineHeight: 1.6 }}>
-          Choose which day your work week starts on. The Gross page will use this to calculate weekly ranges.
+          Choose which day your work week starts on. The Gross and Dashboard pages use this to calculate weekly ranges.
         </div>
       </div>
 
@@ -1643,7 +1678,7 @@ function WeekTab() {
         <div style={{ fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600, color: "var(--muted-foreground)", letterSpacing: "0.07em", textTransform: "uppercase", marginBottom: 12 }}>
           Week starts on
         </div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", opacity: saving ? 0.6 : 1, pointerEvents: saving ? "none" : "auto" }}>
           {WEEK_DAYS.map((label, idx) => {
             const isStart = idx === startDay;
             const isEnd   = idx === endDay;
@@ -1686,6 +1721,10 @@ function WeekTab() {
           Your work week runs <strong>{WEEK_DAYS[startDay]}</strong> → <strong>{WEEK_DAYS[endDay]}</strong>
         </span>
       </div>
+
+      {error && (
+        <div style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "#EF4444" }}>{error}</div>
+      )}
     </div>
   );
 }
