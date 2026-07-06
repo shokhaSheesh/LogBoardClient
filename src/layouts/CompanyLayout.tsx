@@ -17,7 +17,6 @@ import {
   Bell,
   Menu,
   Check,
-  Plus,
   LogOut,
 } from "lucide-react";
 import { Avatar, AvatarFallback } from "../components/ui/avatar";
@@ -32,38 +31,44 @@ interface Account {
   initials: string;
   color: string;
   plan: string;
+  mc?: string; // motor-carrier number — owner-only (from /owner/companies), absent for dispatcher/updater
 }
 
-function getInitials(name: string): string {
-  return name.trim().split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? "").join("");
-}
+// ─── Account Switcher (top header, right-aligned dropdown) ────────────────────
 
-// ─── Account Switcher ────────────────────────────────────────────────────────
+const sectionLabelStyle: React.CSSProperties = {
+  fontFamily: "var(--font-sans)", fontSize: 10, fontWeight: 700,
+  textTransform: "uppercase", letterSpacing: "0.06em",
+  color: "var(--muted-foreground)", padding: "7px 10px 4px",
+};
 
 function AccountSwitcher({
-  accounts, activeId, onSwitch, onAdd, collapsed,
+  accounts, activeId, onSwitch,
 }: {
   accounts: Account[];
   activeId: string;
   onSwitch: (id: string) => void;
-  onAdd: (name: string) => void;
-  collapsed: boolean;
 }) {
-  const [open, setOpen]         = useState(false);
-  const [adding, setAdding]     = useState(false);
-  const [draft, setDraft]       = useState("");
-  const [rect, setRect]         = useState<DOMRect | null>(null);
+  const { logout } = useAuth();
+  const navigate = useNavigate();
+  const [open, setOpen] = useState(false);
+  const [rect, setRect] = useState<DOMRect | null>(null);
   const anchorRef = useRef<HTMLButtonElement>(null);
   const dropRef   = useRef<HTMLDivElement>(null);
-  const inputRef  = useRef<HTMLInputElement>(null);
 
   const active = accounts.find((a) => a.id === activeId) ?? accounts[0] ?? null;
+  const PANEL_WIDTH = 264;
+
+  const handleLogout = async () => {
+    setOpen(false);
+    await logout();
+    navigate("/login", { replace: true });
+  };
 
   const toggle = () => {
     const r = anchorRef.current?.getBoundingClientRect();
     if (r) setRect(r);
     setOpen((v) => !v);
-    if (open) { setAdding(false); setDraft(""); }
   };
 
   useEffect(() => {
@@ -72,36 +77,18 @@ function AccountSwitcher({
       if (
         !anchorRef.current?.contains(e.target as Node) &&
         !dropRef.current?.contains(e.target as Node)
-      ) { setOpen(false); setAdding(false); setDraft(""); }
+      ) setOpen(false);
     };
     document.addEventListener("mousedown", h);
     return () => document.removeEventListener("mousedown", h);
   }, [open]);
 
-  useEffect(() => {
-    if (adding) inputRef.current?.focus();
-  }, [adding]);
-
   if (!active) return (
-    <div style={{
-      display: "flex", alignItems: "center", gap: 10,
-      padding: collapsed ? "14px 0" : "12px 16px",
-      justifyContent: collapsed ? "center" : "flex-start",
-      borderBottom: "1px solid var(--sidebar-border)",
-    }}>
-      <div style={{ width: 34, height: 34, borderRadius: 10, backgroundColor: "rgba(255,255,255,0.07)", flexShrink: 0 }} />
-      {!collapsed && <div style={{ height: 12, width: 100, borderRadius: 4, backgroundColor: "rgba(255,255,255,0.07)" }} />}
+    <div style={{ display: "flex", alignItems: "center", gap: 8, height: 40, padding: "0 10px" }}>
+      <div style={{ width: 26, height: 26, borderRadius: 8, backgroundColor: "var(--muted)", flexShrink: 0 }} />
+      <div style={{ height: 10, width: 90, borderRadius: 4, backgroundColor: "var(--muted)" }} />
     </div>
   );
-
-  const commitAdd = () => {
-    const name = draft.trim();
-    if (!name) return;
-    onAdd(name);
-    setDraft("");
-    setAdding(false);
-    setOpen(false);
-  };
 
   return (
     <>
@@ -109,35 +96,33 @@ function AccountSwitcher({
         ref={anchorRef}
         onClick={toggle}
         style={{
-          display: "flex", alignItems: "center", gap: 10,
-          width: "100%", padding: collapsed ? "14px 0" : "12px 16px",
-          justifyContent: collapsed ? "center" : "flex-start",
-          border: "none", background: "none", cursor: "pointer",
-          borderBottom: "1px solid var(--sidebar-border)",
+          display: "flex", alignItems: "center", gap: 9,
+          height: 40, padding: "5px 10px 5px 6px",
+          border: "1px solid var(--border)", borderRadius: 9,
+          backgroundColor: open ? "var(--accent)" : "var(--muted)",
+          cursor: "pointer", maxWidth: 220,
         }}
+        onMouseEnter={(e) => { if (!open) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--accent)"; }}
+        onMouseLeave={(e) => { if (!open) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--muted)"; }}
       >
         {/* Company avatar */}
         <div style={{
-          width: 34, height: 34, borderRadius: 10, flexShrink: 0,
+          width: 26, height: 26, borderRadius: 7, flexShrink: 0,
           display: "flex", alignItems: "center", justifyContent: "center",
-          backgroundColor: active.color, fontSize: 12, fontWeight: 700, color: "#fff",
+          backgroundColor: active.color, fontSize: 10, fontWeight: 700, color: "#fff",
         }}>
           {active.initials}
         </div>
 
-        {!collapsed && (
-          <>
-            <div style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
-              <div style={{ fontSize: 13, fontWeight: 600, color: "#F1F5F9", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                {active.name}
-              </div>
-              <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--sidebar-foreground)", opacity: 0.6 }}>
-                {active.plan} Plan
-              </div>
-            </div>
-            <ChevronDown size={14} style={{ color: "var(--sidebar-foreground)", opacity: 0.5, flexShrink: 0 }} />
-          </>
-        )}
+        <div style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
+          <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--foreground)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+            {active.name}
+          </div>
+          <div style={{ fontFamily: "var(--font-mono)", fontSize: 9.5, color: "var(--muted-foreground)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+            {active.mc ? `${active.mc} · ` : ""}{active.plan || "No"} Plan
+          </div>
+        </div>
+        <ChevronDown size={13} style={{ color: "var(--muted-foreground)", flexShrink: 0 }} />
       </button>
 
       {open && rect && createPortal(
@@ -146,17 +131,22 @@ function AccountSwitcher({
           style={{
             position: "fixed",
             top: rect.bottom + 6,
-            left: rect.left,
-            width: Math.max(rect.width, 240),
+            left: Math.max(8, rect.right - PANEL_WIDTH),
+            width: PANEL_WIDTH,
+            boxSizing: "border-box",
             zIndex: 9999,
             backgroundColor: "var(--card)",
             border: "1px solid var(--border)",
             borderRadius: 12,
             boxShadow: "0 12px 32px rgba(0,0,0,0.18)",
             padding: "5px",
-            overflow: "hidden",
+            maxHeight: "calc(100vh - 90px)",
+            overflowY: "auto",
+            overflowX: "hidden",
           }}
         >
+          <div style={sectionLabelStyle}>Companies</div>
+
           {/* Account list */}
           {accounts.map((acc) => {
             const isActive = acc.id === activeId;
@@ -166,7 +156,7 @@ function AccountSwitcher({
                 onMouseDown={(e) => { e.preventDefault(); onSwitch(acc.id); setOpen(false); }}
                 style={{
                   display: "flex", alignItems: "center", gap: 10,
-                  width: "100%", padding: "8px 10px", border: "none", borderRadius: 8,
+                  width: "100%", boxSizing: "border-box", padding: "8px 10px", border: "none", borderRadius: 8,
                   backgroundColor: isActive ? "var(--secondary)" : "transparent",
                   cursor: "pointer", textAlign: "left",
                 }}
@@ -184,8 +174,8 @@ function AccountSwitcher({
                   <div style={{ fontSize: 13, fontWeight: isActive ? 600 : 400, color: "var(--foreground)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                     {acc.name}
                   </div>
-                  <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--muted-foreground)" }}>
-                    {acc.plan} Plan
+                  <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--muted-foreground)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                    {acc.mc ? `${acc.mc} · ` : ""}{acc.plan || "No"} Plan
                   </div>
                 </div>
                 {isActive && <Check size={13} style={{ color: "var(--primary)", flexShrink: 0 }} />}
@@ -196,65 +186,79 @@ function AccountSwitcher({
           {/* Divider */}
           <div style={{ height: 1, backgroundColor: "var(--border)", margin: "4px 0" }} />
 
-          {/* Add new account */}
-          {adding ? (
-            <div style={{ padding: "8px 10px", display: "flex", gap: 6 }}>
-              <input
-                ref={inputRef}
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") { e.preventDefault(); commitAdd(); }
-                  if (e.key === "Escape") { setAdding(false); setDraft(""); }
-                }}
-                placeholder="Company name…"
-                style={{
-                  flex: 1, border: "1px solid var(--border)", borderRadius: 6,
-                  padding: "5px 8px", fontFamily: "var(--font-sans)", fontSize: 12,
-                  color: "var(--foreground)", backgroundColor: "var(--muted)", outline: "none",
-                }}
-              />
-              <button
-                onMouseDown={(e) => { e.preventDefault(); commitAdd(); }}
-                disabled={!draft.trim()}
-                style={{
-                  padding: "5px 10px", border: "none", borderRadius: 6,
-                  backgroundColor: draft.trim() ? "var(--primary)" : "var(--muted)",
-                  color: draft.trim() ? "#fff" : "var(--muted-foreground)",
-                  fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: 600,
-                  cursor: draft.trim() ? "pointer" : "default",
-                }}
-              >
-                Add
-              </button>
-            </div>
-          ) : (
-            <button
-              onMouseDown={(e) => { e.preventDefault(); setAdding(true); }}
-              style={{
-                display: "flex", alignItems: "center", gap: 8,
-                width: "100%", padding: "8px 10px", border: "none", borderRadius: 8,
-                backgroundColor: "transparent", cursor: "pointer", textAlign: "left",
-              }}
-              onMouseEnter={(e) => (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--muted)"}
-              onMouseLeave={(e) => (e.currentTarget as HTMLButtonElement).style.backgroundColor = "transparent"}
+          <div style={sectionLabelStyle}>Account</div>
+
+          {USER_MENU_ITEMS.map(({ icon: Icon, label, path }) => (
+            <NavLink
+              key={path}
+              to={path}
+              onClick={() => setOpen(false)}
+              style={({ isActive }) => ({
+                display: "flex", alignItems: "center", gap: 10,
+                padding: "8px 10px", borderRadius: 8, textDecoration: "none",
+                fontFamily: "var(--font-sans)", fontSize: 13,
+                color: isActive ? "var(--primary)" : "var(--foreground)",
+                backgroundColor: isActive ? "var(--secondary)" : "transparent",
+              })}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLAnchorElement).style.backgroundColor = "var(--muted)"; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLAnchorElement).style.backgroundColor = ""; }}
             >
-              <div style={{
-                width: 30, height: 30, borderRadius: 8, flexShrink: 0,
-                display: "flex", alignItems: "center", justifyContent: "center",
-                border: "1.5px dashed var(--border)",
-              }}>
-                <Plus size={13} style={{ color: "var(--muted-foreground)" }} />
-              </div>
-              <span style={{ fontSize: 13, color: "var(--muted-foreground)", fontFamily: "var(--font-sans)" }}>
-                Add new account
-              </span>
-            </button>
-          )}
+              <Icon size={14} style={{ flexShrink: 0, color: "var(--muted-foreground)" }} />
+              {label}
+            </NavLink>
+          ))}
+
+          {/* Divider */}
+          <div style={{ height: 1, backgroundColor: "var(--border)", margin: "4px 0" }} />
+
+          <button
+            onClick={handleLogout}
+            style={{
+              display: "flex", alignItems: "center", gap: 10,
+              width: "100%", boxSizing: "border-box", padding: "8px 10px", border: "none", borderRadius: 8,
+              backgroundColor: "transparent", cursor: "pointer", textAlign: "left",
+              fontFamily: "var(--font-sans)", fontSize: 13, color: "#EF4444",
+            }}
+            onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = "rgba(239,68,68,0.07)"; }}
+            onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = "transparent"; }}
+          >
+            <LogOut size={14} style={{ flexShrink: 0 }} />
+            Sign out
+          </button>
         </div>,
         document.body
       )}
     </>
+  );
+}
+
+// ─── Logo (placeholder — swap for a real mark whenever one exists) ────────────
+
+function Logo({ collapsed }: { collapsed: boolean }) {
+  return (
+    <NavLink
+      to="/workspace/dashboard"
+      style={{
+        display: "flex", alignItems: "center", gap: 10,
+        padding: collapsed ? "14px 0" : "14px 16px",
+        justifyContent: collapsed ? "center" : "flex-start",
+        borderBottom: "1px solid var(--sidebar-border)",
+        textDecoration: "none",
+      }}
+    >
+      <div style={{
+        width: 34, height: 34, borderRadius: 10, flexShrink: 0,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        backgroundColor: "var(--sidebar-primary)", fontSize: 14, fontWeight: 800, color: "#fff",
+      }}>
+        LB
+      </div>
+      {!collapsed && (
+        <span style={{ fontSize: 15, fontWeight: 700, color: "#F1F5F9", letterSpacing: "-0.01em" }}>
+          Log Board
+        </span>
+      )}
+    </NavLink>
   );
 }
 
@@ -278,133 +282,46 @@ const activeUsers = [
   { initials: "JR", color: "#10B981", name: "Jake R." },
 ];
 
-// ─── User menu ───────────────────────────────────────────────────────────────
+// ─── User menu (sidebar bottom) ───────────────────────────────────────────────
 
 const USER_MENU_ITEMS: { icon: React.ElementType; label: string; path: string }[] = [
   { icon: CreditCard, label: "Billing",  path: "/workspace/billing"  },
   { icon: Settings,   label: "Settings", path: "/workspace/settings" },
 ];
 
-function UserMenu({ collapsed }: { collapsed: boolean }) {
-  const { user, logout } = useAuth();
-  const navigate = useNavigate();
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  const popupRef = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState({ bottom: 0, left: 0, width: 0 });
+// Static — just shows who's signed in. Billing/Settings/Sign out live in the
+// account switcher (top-right) instead of a second menu down here.
+function UserCard({ collapsed }: { collapsed: boolean }) {
+  const { user } = useAuth();
 
   const initials = user?.full_name
     ? user.full_name.trim().split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? "").join("")
     : "??";
 
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      const t = e.target as Node;
-      if (
-        ref.current && !ref.current.contains(t) &&
-        popupRef.current && !popupRef.current.contains(t)
-      ) setOpen(false);
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, []);
-
-  const handleOpen = () => {
-    if (ref.current) {
-      const r = ref.current.getBoundingClientRect();
-      setPos({ bottom: window.innerHeight - r.top + 6, left: r.left, width: r.width });
-    }
-    setOpen((v) => !v);
-  };
-
-  const handleLogout = async () => {
-    setOpen(false);
-    await logout();
-    navigate("/login", { replace: true });
-  };
-
   return (
-    <div ref={ref} className="mx-2 mb-3">
-      <button
-        onClick={handleOpen}
-        style={{
-          width: "100%", display: "flex", alignItems: "center", gap: 10,
-          backgroundColor: open ? "var(--sidebar-primary)" : "var(--sidebar-accent)",
-          border: "none", borderRadius: 12, cursor: "pointer", textAlign: "left",
-          padding: collapsed ? "10px 0" : "12px",
-          justifyContent: collapsed ? "center" : "flex-start",
-          transition: "background-color 0.15s",
-        }}
-        onMouseEnter={(e) => { if (!open) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--sidebar-accent-hover, rgba(255,255,255,0.06))"; }}
-        onMouseLeave={(e) => { if (!open) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--sidebar-accent)"; }}
-      >
-        <div style={{ width: 34, height: 34, borderRadius: "50%", background: "linear-gradient(135deg, #3B82F6, #6366F1)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 600, color: "#fff", flexShrink: 0 }}>
-          {initials}
+    <div
+      className="mx-2 mb-3"
+      style={{
+        display: "flex", alignItems: "center", gap: 10,
+        backgroundColor: "var(--sidebar-accent)",
+        borderRadius: 12,
+        padding: collapsed ? "10px 0" : "12px",
+        justifyContent: collapsed ? "center" : "flex-start",
+      }}
+    >
+      <div style={{ width: 34, height: 34, borderRadius: "50%", background: "linear-gradient(135deg, #3B82F6, #6366F1)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 600, color: "#fff", flexShrink: 0 }}>
+        {initials}
+      </div>
+      {!collapsed && (
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 13, fontWeight: 500, color: "#F1F5F9", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {user?.full_name ?? "—"}
+          </div>
+          <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--sidebar-foreground)", opacity: 0.65, display: "flex", alignItems: "center", gap: 5 }}>
+            <span style={{ width: 6, height: 6, borderRadius: "50%", backgroundColor: "#10B981", flexShrink: 0 }} />
+            {user?.role ?? "—"} · Online
+          </div>
         </div>
-        {!collapsed && (
-          <>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 13, fontWeight: 500, color: "#F1F5F9", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {user?.full_name ?? "—"}
-              </div>
-              <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--sidebar-foreground)", opacity: 0.65 }}>
-                {user?.role ?? "—"} · Online
-              </div>
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
-              <div style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: "#10B981" }} />
-              <ChevronDown size={13} style={{ color: "var(--sidebar-foreground)", opacity: 0.5, transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s" }} />
-            </div>
-          </>
-        )}
-      </button>
-
-      {open && createPortal(
-        <div ref={popupRef} style={{
-          position: "fixed", bottom: pos.bottom, left: pos.left,
-          width: Math.max(pos.width, 180),
-          backgroundColor: "var(--card)", border: "1px solid var(--border)",
-          borderRadius: 10, boxShadow: "0 8px 24px rgba(0,0,0,0.14)",
-          zIndex: 500, overflow: "hidden", padding: "4px 0",
-        }}>
-          {USER_MENU_ITEMS.map(({ icon: Icon, label, path }) => (
-            <NavLink
-              key={path}
-              to={path}
-              onClick={() => setOpen(false)}
-              style={({ isActive }) => ({
-                display: "flex", alignItems: "center", gap: 10,
-                padding: "9px 14px", textDecoration: "none",
-                fontFamily: "var(--font-sans)", fontSize: 13,
-                color: isActive ? "var(--primary)" : "var(--foreground)",
-                backgroundColor: isActive ? "var(--secondary)" : "transparent",
-              })}
-              onMouseEnter={(e) => { (e.currentTarget as HTMLAnchorElement).style.backgroundColor = "var(--muted)"; }}
-              onMouseLeave={(e) => { (e.currentTarget as HTMLAnchorElement).style.backgroundColor = ""; }}
-            >
-              <Icon size={14} style={{ flexShrink: 0 }} />
-              {label}
-            </NavLink>
-          ))}
-
-          <div style={{ height: 1, backgroundColor: "var(--border)", margin: "4px 0" }} />
-
-          <button
-            onClick={handleLogout}
-            style={{
-              display: "flex", alignItems: "center", gap: 10,
-              width: "100%", padding: "9px 14px", border: "none", borderRadius: 0,
-              backgroundColor: "transparent", cursor: "pointer", textAlign: "left",
-              fontFamily: "var(--font-sans)", fontSize: 13, color: "#EF4444",
-            }}
-            onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = "rgba(239,68,68,0.07)"; }}
-            onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = "transparent"; }}
-          >
-            <LogOut size={14} style={{ flexShrink: 0 }} />
-            Sign out
-          </button>
-        </div>,
-        document.body
       )}
     </div>
   );
@@ -412,13 +329,9 @@ function UserMenu({ collapsed }: { collapsed: boolean }) {
 
 // ─── Sidebar ────────────────────────────────────────────────────────────────
 
-function Sidebar({ collapsed, onToggle, accounts, activeAccountId, onSwitch, onAddAccount }: {
+function Sidebar({ collapsed, onToggle }: {
   collapsed: boolean;
   onToggle: () => void;
-  accounts: Account[];
-  activeAccountId: string;
-  onSwitch: (id: string) => void;
-  onAddAccount: (name: string) => void;
 }) {
   const location = useLocation();
 
@@ -434,14 +347,7 @@ function Sidebar({ collapsed, onToggle, accounts, activeAccountId, onSwitch, onA
       className="h-full flex flex-col overflow-hidden"
       aria-label="Main navigation"
     >
-      {/* Account Switcher */}
-      <AccountSwitcher
-        accounts={accounts}
-        activeId={activeAccountId}
-        onSwitch={onSwitch}
-        onAdd={onAddAccount}
-        collapsed={collapsed}
-      />
+      <Logo collapsed={collapsed} />
 
       {/* Nav section label */}
       {!collapsed && (
@@ -519,7 +425,7 @@ function Sidebar({ collapsed, onToggle, accounts, activeAccountId, onSwitch, onA
       </nav>
 
       {/* User profile card */}
-      <UserMenu collapsed={collapsed} />
+      <UserCard collapsed={collapsed} />
     </aside>
   );
 }
@@ -734,7 +640,12 @@ function NotificationBell() {
 
 // ─── Top Header ──────────────────────────────────────────────────────────────
 
-function TopHeader({ onToggleSidebar }: { onToggleSidebar: () => void }) {
+function TopHeader({ onToggleSidebar, accounts, activeAccountId, onSwitch }: {
+  onToggleSidebar: () => void;
+  accounts: Account[];
+  activeAccountId: string;
+  onSwitch: (id: string) => void;
+}) {
   const location = useLocation();
   const segments = location.pathname.replace("/workspace/", "").split("/");
   const pageLabel =
@@ -781,11 +692,19 @@ function TopHeader({ onToggleSidebar }: { onToggleSidebar: () => void }) {
 
       <div className="flex-1" />
 
-      {/* Right: active users + bell */}
+      {/* Right: active users + bell + account switcher */}
       <div className="flex items-center gap-4">
         <ActiveUsers />
 
         <NotificationBell />
+
+        <div style={{ width: 1, height: 24, backgroundColor: "var(--border)" }} />
+
+        <AccountSwitcher
+          accounts={accounts}
+          activeId={activeAccountId}
+          onSwitch={onSwitch}
+        />
       </div>
     </header>
   );
@@ -802,12 +721,19 @@ export function CompanyLayout() {
   // Fetch real accounts for owners; dispatcher/updater have a fixed company_id from login
   useEffect(() => {
     if (user?.role === "owner") {
-      api.get<Account[]>("/owner/accounts")
-        .then((data) => {
-          setAccounts(data);
+      Promise.all([
+        api.get<Account[]>("/owner/accounts"),
+        // MC number isn't on /owner/accounts — pull it from the full company
+        // records and merge by id. Best-effort: an owner with no company access
+        // just won't see MC, which is fine.
+        api.get<{ id: string; mc?: string }[]>("/owner/companies").catch(() => []),
+      ]).then(([data, companies]) => {
+          const mcById = new Map(companies.map((c) => [c.id, c.mc]));
+          const merged = data.map((a) => ({ ...a, mc: mcById.get(a.id) }));
+          setAccounts(merged);
           // Auto-select: prefer the one already in localStorage, else first
           const saved = getCompanyId();
-          const match = data.find((a) => a.id === saved) ?? data[0];
+          const match = merged.find((a) => a.id === saved) ?? merged[0];
           if (match) {
             setActiveAccountId(match.id);
             setCompanyId(match.id);
@@ -830,15 +756,6 @@ export function CompanyLayout() {
     setTimeout(() => setSwitching(false), 800);
   };
 
-  const addAccount = (name: string) => {
-    const initials = getInitials(name) || "??";
-    const colors   = ["#8B5CF6", "#EC4899", "#06B6D4", "#84CC16", "#F97316"];
-    const color    = colors[accounts.length % colors.length];
-    const newAcc: Account = { id: `acc-${Date.now()}`, name, initials, color, plan: "Starter" };
-    setAccounts((prev) => [...prev, newAcc]);
-    switchAccount(newAcc.id);
-  };
-
   return (
     <div
       className="flex h-screen overflow-hidden"
@@ -847,14 +764,15 @@ export function CompanyLayout() {
       <Sidebar
         collapsed={sidebarCollapsed}
         onToggle={() => setSidebarCollapsed((v) => !v)}
-        accounts={accounts}
-        activeAccountId={activeAccountId}
-        onSwitch={switchAccount}
-        onAddAccount={addAccount}
       />
 
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        <TopHeader onToggleSidebar={() => setSidebarCollapsed((v) => !v)} />
+        <TopHeader
+          onToggleSidebar={() => setSidebarCollapsed((v) => !v)}
+          accounts={accounts}
+          activeAccountId={activeAccountId}
+          onSwitch={switchAccount}
+        />
 
         <main
           key={activeAccountId}
