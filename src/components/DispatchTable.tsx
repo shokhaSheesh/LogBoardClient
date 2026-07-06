@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
-import { MapPin, Lock, MessageSquare, ChevronDown, Search, Navigation, Check, ArrowRight, History, X, AlertCircle } from "lucide-react";
+import { MapPin, Lock, MessageSquare, ChevronDown, Search, Navigation, Check, ArrowRight, History, X, AlertCircle, RotateCcw, Users } from "lucide-react";
 import { Status, STATUS_CONFIG, ALL_STATUSES } from "../lib/statuses";
 import { api, getCompanyId } from "../lib/api";
 import { menuPosition } from "../lib/menuPosition";
@@ -409,7 +409,14 @@ function StopList({ origin, originDone, destination, destinationDone, stops, onT
 
 // ─── History panel ────────────────────────────────────────────────────────────
 
-function HistoryPanel({ events, loading, onClose }: { events: HistoryEvent[]; loading: boolean; onClose: () => void }) {
+function HistoryPanel({ events, loading, onClose, onRevert }: {
+  events: HistoryEvent[]; loading: boolean; onClose: () => void;
+  onRevert: (ev: HistoryEvent) => Promise<void>;
+}) {
+  const [confirm, setConfirm]     = useState<HistoryEvent | null>(null);
+  const [reverting, setReverting] = useState(false);
+  const [revertErr, setRevertErr] = useState<string | null>(null);
+
   const fmtTime = (iso: string) => {
     const d = Date.now() - new Date(iso).getTime();
     if (d < 60000)     return "just now";
@@ -426,6 +433,38 @@ function HistoryPanel({ events, loading, onClose }: { events: HistoryEvent[]; lo
     if (t === "load")   return { color: "#7C3AED", bg: "#EDE9FE" };
     if (t === "driver") return { color: "#0369A1", bg: "#E0F2FE" };
     return { color: "#374151", bg: "var(--muted)" };
+  };
+
+  const revertable = (ev: HistoryEvent) => ev.action === "update" && !!ev.changes && ev.changes.length > 0;
+
+  // For each field the event changed, find the NEWEST later event (same entity) that
+  // touched the same field — reverting will overwrite that newer value, so warn.
+  const laterOverrides = (ev: HistoryEvent): { field: string; discarded: string }[] => {
+    const idx = events.findIndex((e) => e.id === ev.id);
+    const out: { field: string; discarded: string }[] = [];
+    for (const c of ev.changes ?? []) {
+      // Scan from the newest end down to ev; first hit is the current (to be discarded) value.
+      for (let j = 0; j < idx; j++) { // events[0..idx-1] are newer (list is newest-first)
+        const e2 = events[j];
+        if (e2.entity_id !== ev.entity_id) continue;
+        const hit = (e2.changes ?? []).find((x) => x.field === c.field);
+        if (hit) { out.push({ field: c.field, discarded: String(hit.to ?? "—") }); break; }
+      }
+    }
+    return out;
+  };
+
+  const doRevert = async () => {
+    if (!confirm) return;
+    setReverting(true); setRevertErr(null);
+    try {
+      await onRevert(confirm);
+      setConfirm(null);
+    } catch (e) {
+      setRevertErr(e instanceof Error ? e.message : "Revert failed");
+    } finally {
+      setReverting(false);
+    }
   };
 
   return createPortal(
@@ -474,6 +513,15 @@ function HistoryPanel({ events, loading, onClose }: { events: HistoryEvent[]; lo
                         ))}
                       </div>
                     )}
+                    {/* Revert */}
+                    {revertable(ev) && (
+                      <button onClick={() => { setRevertErr(null); setConfirm(ev); }}
+                        style={{ alignSelf: "flex-start", display: "inline-flex", alignItems: "center", gap: 5, marginTop: 2, padding: "3px 9px", borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "transparent", cursor: "pointer", fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600, color: "var(--muted-foreground)" }}
+                        onMouseEnter={(e) => { const b = e.currentTarget as HTMLButtonElement; b.style.borderColor = "var(--primary)"; b.style.color = "var(--primary)"; }}
+                        onMouseLeave={(e) => { const b = e.currentTarget as HTMLButtonElement; b.style.borderColor = "var(--border)"; b.style.color = "var(--muted-foreground)"; }}>
+                        <RotateCcw size={11} /> Revert
+                      </button>
+                    )}
                   </div>
                 );
               })}
@@ -481,6 +529,70 @@ function HistoryPanel({ events, loading, onClose }: { events: HistoryEvent[]; lo
           )}
         </div>
       </div>
+
+      {/* Revert confirm */}
+      {confirm && (() => {
+        const overrides = laterOverrides(confirm);
+        return (
+          <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: 9500, display: "flex", alignItems: "center", justifyContent: "center" }}
+            onClick={(e) => { if (e.target === e.currentTarget && !reverting) setConfirm(null); }}>
+            <div style={{ backgroundColor: "var(--card)", borderRadius: 12, width: 400, boxShadow: "0 20px 60px rgba(0,0,0,0.25)", overflow: "hidden" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "16px 20px", borderBottom: "1px solid var(--border)" }}>
+                <div style={{ width: 30, height: 30, borderRadius: 8, backgroundColor: "var(--secondary)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <RotateCcw size={15} style={{ color: "var(--primary)" }} />
+                </div>
+                <span style={{ fontFamily: "var(--font-sans)", fontSize: 14, fontWeight: 600, color: "var(--foreground)" }}>
+                  Revert this change?
+                </span>
+              </div>
+              <div style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: 12 }}>
+                <div style={{ fontFamily: "var(--font-sans)", fontSize: 12.5, color: "var(--muted-foreground)", lineHeight: 1.5 }}>
+                  On <strong style={{ color: "var(--foreground)" }}>{confirm.entity_ref || confirm.entity_type}</strong> this will restore:
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                  {(confirm.changes ?? []).map((c, i) => (
+                    <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, fontFamily: "var(--font-sans)", fontSize: 12 }}>
+                      <span style={{ color: "var(--muted-foreground)", minWidth: 74, textTransform: "capitalize", fontSize: 11 }}>{c.field.replace(/_/g, " ")}</span>
+                      <span style={{ color: "var(--muted-foreground)", fontSize: 10 }}>→</span>
+                      <span style={{ color: "#10B981", backgroundColor: "#D1FAE5", borderRadius: 3, padding: "1px 6px", fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 600 }}>{String(c.from ?? "—")}</span>
+                    </div>
+                  ))}
+                </div>
+                {overrides.length > 0 && (
+                  <div style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "9px 12px", backgroundColor: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 8 }}>
+                    <AlertCircle size={14} color="#D97706" style={{ flexShrink: 0, marginTop: 1 }} />
+                    <div style={{ fontFamily: "var(--font-sans)", fontSize: 11.5, color: "#92400E", lineHeight: 1.5 }}>
+                      This also discards {overrides.length === 1 ? "a later change" : "later changes"} to{" "}
+                      {overrides.map((o, i) => (
+                        <span key={o.field}>
+                          {i > 0 && ", "}
+                          <strong style={{ textTransform: "capitalize" }}>{o.field.replace(/_/g, " ")}</strong> (now <strong>{o.discarded}</strong>)
+                        </span>
+                      ))}.
+                    </div>
+                  </div>
+                )}
+                {revertErr && (
+                  <div style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "9px 12px", backgroundColor: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 8 }}>
+                    <AlertCircle size={14} color="#DC2626" style={{ flexShrink: 0, marginTop: 1 }} />
+                    <div style={{ fontFamily: "var(--font-sans)", fontSize: 11.5, color: "#991B1B", lineHeight: 1.5 }}>{revertErr}</div>
+                  </div>
+                )}
+              </div>
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, padding: "14px 20px", borderTop: "1px solid var(--border)" }}>
+                <button onClick={() => setConfirm(null)} disabled={reverting}
+                  style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 16px", borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "var(--muted)", color: "var(--foreground)", cursor: reverting ? "default" : "pointer" }}>
+                  Cancel
+                </button>
+                <button onClick={doRevert} disabled={reverting}
+                  style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 16px", borderRadius: 6, border: "none", backgroundColor: reverting ? "var(--muted)" : "var(--primary)", color: reverting ? "var(--muted-foreground)" : "#fff", cursor: reverting ? "default" : "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+                  <RotateCcw size={13} /> {reverting ? "Reverting…" : "Revert"}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>,
     document.body
   );
@@ -497,6 +609,9 @@ export function DispatchTable() {
   const [search,         setSearch]         = useState("");
   const [statusFilter,   setStatusFilter]   = useState<Status | "all">("all");
   const [filterOpen,     setFilterOpen]     = useState(false);
+  const [teams,          setTeams]          = useState<{ id: string; name: string; driverIds: Set<string> }[]>([]);
+  const [teamFilter,     setTeamFilter]     = useState<string>("all"); // team id or "all"
+  const [teamOpen,       setTeamOpen]       = useState(false);
   const [editCell,       setEditCell]       = useState<{ driverId: string; field: string } | null>(null);
   const [historyEvents,  setHistoryEvents]  = useState<HistoryEvent[]>([]);
   const [historyBadge,   setHistoryBadge]   = useState(0);
@@ -508,6 +623,7 @@ export function DispatchTable() {
   const reconnectRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
   const wsBackoff     = useRef(2000);
   const filterRef     = useRef<HTMLDivElement>(null);
+  const teamRef       = useRef<HTMLDivElement>(null);
   // Cache of full driver records (for PUT body construction)
   const driverCache   = useRef<Record<string, Record<string, unknown>>>({});
   // Heartbeat intervals per driverId
@@ -539,6 +655,25 @@ export function DispatchTable() {
     finally { setHistoryLoading(false); }
   };
 
+  // ── Revert a history event ─────────────────────────────────────────────────
+  // The endpoint only RETURNS the prior field values (no server-side write); we
+  // re-apply them by merging into the entity's current record and PUTting it —
+  // which the board picks up via a board.snapshot push. Throws on failure so the
+  // panel can surface 409 locked / 400 not_revertable inline.
+  const revertEvent = async (ev: HistoryEvent) => {
+    const res = await api.post<{ entity_type: string; entity_id: string; fields: Record<string, unknown> }>(
+      `/board/history/${ev.id}/revert`
+    );
+    const fields = { ...(res.fields ?? {}) };
+    delete fields.route; // legacy label on old events — not applyable; stops carries the real route
+    if (Object.keys(fields).length === 0) return; // nothing to re-apply
+
+    const path = `/${res.entity_type}s/${res.entity_id}`;
+    const current = await api.get<Record<string, unknown>>(path);
+    await api.put(path, { ...current, ...fields });
+    fetchHistory(); // pull in the fresh "revert" audit entry
+  };
+
   // ── Fetch locks ────────────────────────────────────────────────────────────
 
   const fetchLocks = async () => {
@@ -548,6 +683,18 @@ export function DispatchTable() {
       (data ?? []).forEach((l) => { map[l.entity_id] = l; });
       setLocks(map);
     } catch { /* silently ignore */ }
+  };
+
+  // ── Fetch teams (dispatch pods) for the board filter ───────────────────────
+  // Realtime board.snapshot is still whole-company, so we filter rows to the team's
+  // drivers client-side. Teams live under /owner/* — non-owners get 403, which just
+  // means no team filter is shown.
+  const fetchTeams = async () => {
+    if (!companyId) return;
+    try {
+      const data = await api.get<{ id: string; name: string; driver_ids?: string[] }[]>(`/owner/companies/${companyId}/teams`);
+      setTeams((data ?? []).map((t) => ({ id: t.id, name: t.name, driverIds: new Set(t.driver_ids ?? []) })));
+    } catch { setTeams([]); }
   };
 
   // ── WebSocket ──────────────────────────────────────────────────────────────
@@ -611,6 +758,7 @@ export function DispatchTable() {
 
   useEffect(() => {
     fetchBoard().then(() => { connectWs(); fetchLocks(); });
+    fetchTeams();
     return () => {
       if (wsRef.current) { wsRef.current.close(); wsRef.current = null; }
       if (reconnectRef.current) clearTimeout(reconnectRef.current);
@@ -626,6 +774,12 @@ export function DispatchTable() {
     if (filterOpen) document.addEventListener("mousedown", h);
     return () => document.removeEventListener("mousedown", h);
   }, [filterOpen]);
+
+  useEffect(() => {
+    const h = (e: MouseEvent) => { if (teamRef.current && !teamRef.current.contains(e.target as Node)) setTeamOpen(false); };
+    if (teamOpen) document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [teamOpen]);
 
   // ── Claim / release lock ───────────────────────────────────────────────────
 
@@ -744,10 +898,13 @@ export function DispatchTable() {
   // ── Filtered rows ──────────────────────────────────────────────────────────
 
   const q = search.trim().toLowerCase();
+  // Team scoping is filtered client-side (the realtime snapshot is whole-company).
+  const activeTeam = teamFilter === "all" ? null : teams.find((t) => t.id === teamFilter) ?? null;
   const visible = rows.filter((d) => {
     const ms = statusFilter === "all" || d.status === statusFilter;
     const mq = !q || d.name.toLowerCase().includes(q) || d.loadId.toLowerCase().includes(q) || d.unit.toLowerCase().includes(q) || d.location.toLowerCase().includes(q);
-    return ms && mq;
+    const mt = !activeTeam || activeTeam.driverIds.has(d.driverId);
+    return ms && mq && mt;
   });
 
   // ── Render ─────────────────────────────────────────────────────────────────
@@ -759,6 +916,7 @@ export function DispatchTable() {
           events={historyEvents}
           loading={historyLoading}
           onClose={() => setHistoryOpen(false)}
+          onRevert={revertEvent}
         />
       )}
 
@@ -802,6 +960,37 @@ export function DispatchTable() {
               </div>
             )}
           </div>
+
+          {/* Team filter (only shown when the company has dispatch pods) */}
+          {teams.length > 0 && (
+            <div ref={teamRef} style={{ position: "relative" }}>
+              <button onClick={() => setTeamOpen((p) => !p)}
+                style={{ display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "var(--font-sans)", fontSize: 12, color: activeTeam ? "var(--primary)" : "var(--muted-foreground)", backgroundColor: activeTeam ? "var(--secondary)" : "var(--muted)", border: "1px solid var(--border)", borderRadius: 7, padding: "5px 10px", cursor: "pointer", whiteSpace: "nowrap" }}>
+                <Users size={12} />
+                {activeTeam ? activeTeam.name : "All Teams"}
+                <ChevronDown size={11} />
+              </button>
+              {teamOpen && (
+                <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 100, backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 8, boxShadow: "0 8px 24px rgba(0,0,0,0.12)", minWidth: 180, padding: "4px 0", maxHeight: 320, overflowY: "auto" }}>
+                  <button onClick={() => { setTeamFilter("all"); setTeamOpen(false); }} style={{ width: "100%", textAlign: "left", padding: "7px 12px", fontFamily: "var(--font-sans)", fontSize: 12, color: teamFilter === "all" ? "var(--primary)" : "var(--foreground)", backgroundColor: teamFilter === "all" ? "var(--secondary)" : "transparent", border: "none", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span>All Teams</span>
+                    <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--muted-foreground)" }}>{rows.length}</span>
+                  </button>
+                  <div style={{ height: 1, backgroundColor: "var(--border)", margin: "3px 0" }} />
+                  {teams.map((t) => {
+                    const active = teamFilter === t.id;
+                    return (
+                      <button key={t.id} onClick={() => { setTeamFilter(t.id); setTeamOpen(false); }}
+                        style={{ width: "100%", textAlign: "left", padding: "7px 12px", fontFamily: "var(--font-sans)", fontSize: 12, color: active ? "var(--primary)" : "var(--foreground)", backgroundColor: active ? "var(--secondary)" : "transparent", border: "none", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</span>
+                        <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--muted-foreground)" }}>{rows.filter((d) => t.driverIds.has(d.driverId)).length}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
 
           <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--muted-foreground)" }}>{visible.length} / {rows.length}</span>
         </div>
