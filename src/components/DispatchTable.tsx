@@ -212,16 +212,25 @@ function useDropdown() {
 
 // ─── Status dropdown ──────────────────────────────────────────────────────────
 
-function StatusDropdown({ value, onChange }: { value: Status; onChange: (s: Status) => void }) {
+function StatusDropdown({ value, onChange }: { value: Status; onChange: (s: Status) => void | Promise<void> }) {
   const { open, setOpen, rect, anchorRef, dropRef, toggle } = useDropdown();
+  const [busy, setBusy] = useState(false);
   const cfg = STATUS_CONFIG[value];
+
+  const select = (s: Status) => {
+    setOpen(false);
+    setBusy(true);
+    Promise.resolve(onChange(s)).catch(() => {}).finally(() => setBusy(false));
+  };
 
   return (
     <>
-      <div ref={anchorRef} onClick={toggle} style={{ cursor: "pointer", display: "inline-flex" }}>
+      <div ref={anchorRef} onClick={busy ? undefined : toggle} style={{ cursor: busy ? "default" : "pointer", display: "inline-flex" }}>
         <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600, color: cfg.color, backgroundColor: cfg.bg, borderRadius: 4, padding: "3px 8px", whiteSpace: "nowrap", userSelect: "none" }}>
           {cfg.label}
-          <ChevronDown size={10} style={{ opacity: 0.7, marginLeft: 1 }} />
+          {busy
+            ? <span style={{ width: 9, height: 9, borderRadius: "50%", border: `1.5px solid ${cfg.color}55`, borderTopColor: cfg.color, animation: "spin 0.7s linear infinite", display: "inline-block", marginLeft: 1 }} />
+            : <ChevronDown size={10} style={{ opacity: 0.7, marginLeft: 1 }} />}
         </span>
       </div>
       {open && rect && (() => {
@@ -232,7 +241,7 @@ function StatusDropdown({ value, onChange }: { value: Status; onChange: (s: Stat
             const c = STATUS_CONFIG[s];
             const active = s === value;
             return (
-              <button key={s} onMouseDown={(e) => { e.preventDefault(); onChange(s); setOpen(false); }}
+              <button key={s} onMouseDown={(e) => { e.preventDefault(); select(s); }}
                 style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 8px", border: "none", borderRadius: 6, backgroundColor: active ? c.bg : "transparent", cursor: "pointer", width: "100%", textAlign: "left" }}
                 onMouseEnter={(e) => { if (!active) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--muted)"; }}
                 onMouseLeave={(e) => { if (!active) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "transparent"; }}>
@@ -252,16 +261,25 @@ function StatusDropdown({ value, onChange }: { value: Status; onChange: (s: Stat
 
 // ─── Type dropdown ────────────────────────────────────────────────────────────
 
-function TypeDropdown({ value, onChange }: { value: DriverType; onChange: (t: DriverType) => void }) {
+function TypeDropdown({ value, onChange }: { value: DriverType; onChange: (t: DriverType) => void | Promise<void> }) {
   const { open, setOpen, rect, anchorRef, dropRef, toggle } = useDropdown();
+  const [busy, setBusy] = useState(false);
   const cfg = TYPE_CONFIG[value];
+
+  const select = (t: DriverType) => {
+    setOpen(false);
+    setBusy(true);
+    Promise.resolve(onChange(t)).catch(() => {}).finally(() => setBusy(false));
+  };
 
   return (
     <>
-      <div ref={anchorRef} onClick={toggle} style={{ cursor: "pointer", display: "inline-flex" }}>
+      <div ref={anchorRef} onClick={busy ? undefined : toggle} style={{ cursor: busy ? "default" : "pointer", display: "inline-flex" }}>
         <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 600, color: cfg.color, backgroundColor: cfg.bg, borderRadius: 4, padding: "3px 7px", whiteSpace: "nowrap", userSelect: "none" }}>
           {value}
-          <ChevronDown size={10} style={{ opacity: 0.7 }} />
+          {busy
+            ? <span style={{ width: 9, height: 9, borderRadius: "50%", border: `1.5px solid ${cfg.color}55`, borderTopColor: cfg.color, animation: "spin 0.7s linear infinite", display: "inline-block" }} />
+            : <ChevronDown size={10} style={{ opacity: 0.7 }} />}
         </span>
       </div>
       {open && rect && (() => {
@@ -272,7 +290,7 @@ function TypeDropdown({ value, onChange }: { value: DriverType; onChange: (t: Dr
             const c = TYPE_CONFIG[t];
             const active = t === value;
             return (
-              <button key={t} onMouseDown={(e) => { e.preventDefault(); onChange(t); setOpen(false); }}
+              <button key={t} onMouseDown={(e) => { e.preventDefault(); select(t); }}
                 style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 8px", border: "none", borderRadius: 6, backgroundColor: active ? c.bg : "transparent", cursor: "pointer", width: "100%", textAlign: "left" }}
                 onMouseEnter={(e) => { if (!active) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--muted)"; }}
                 onMouseLeave={(e) => { if (!active) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "transparent"; }}>
@@ -628,6 +646,7 @@ export function DispatchTable() {
   const [historyOpen,    setHistoryOpen]    = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [locks,          setLocks]          = useState<Record<string, BoardLock>>({}); // keyed by driver_id
+  const [toast,          setToast]          = useState<string | null>(null); // transient error banner
 
   const wsRef         = useRef<WebSocket | null>(null);
   const reconnectRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -638,6 +657,13 @@ export function DispatchTable() {
   const driverCache   = useRef<Record<string, Record<string, unknown>>>({});
   // Heartbeat intervals per driverId
   const heartbeats    = useRef<Record<string, ReturnType<typeof setInterval>>>({});
+
+  // Auto-dismiss the error banner.
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 3500);
+    return () => clearTimeout(t);
+  }, [toast]);
 
   // ── Fetch board ────────────────────────────────────────────────────────────
 
@@ -840,9 +866,10 @@ export function DispatchTable() {
     try {
       await api.put(`/drivers/${driverId}`, body);
       // WS snapshot will push the authoritative state back
-    } catch {
-      // Roll back optimistic update on failure
+    } catch (e) {
+      // Roll back optimistic update on failure and tell the user (the revert is otherwise silent)
       setRows((prev) => prev.map((d) => d.driverId === driverId ? driver : d));
+      setToast(e instanceof Error ? e.message : "Couldn't save the change — reverted.");
     }
   };
 
@@ -921,6 +948,12 @@ export function DispatchTable() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+      {toast && (
+        <div style={{ position: "fixed", top: 20, right: 20, zIndex: 10000, display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", borderRadius: 8, backgroundColor: "var(--card)", border: "1px solid #EF4444", boxShadow: "0 10px 30px rgba(0,0,0,0.16)", maxWidth: 360 }}>
+          <AlertCircle size={15} style={{ color: "#EF4444", flexShrink: 0 }} />
+          <span style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--foreground)" }}>{toast}</span>
+        </div>
+      )}
       {historyOpen && (
         <HistoryPanel
           events={historyEvents}
