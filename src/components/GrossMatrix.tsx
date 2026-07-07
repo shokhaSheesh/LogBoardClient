@@ -997,8 +997,9 @@ export function GrossMatrix() {
                       return s + (cell?.type === "load" && cell.loadId ? getLoadMiles(cell.loadId) : 0);
                     }, 0);
                     const driverRpm = driverMiles > 0 && total > 0 ? total / driverMiles : null;
-                    const targetPct = driver.weeklyTarget ? Math.min(100, Math.round((total / driver.weeklyTarget) * 100)) : null;
-                    const barColor  = targetPct === null ? "#3B82F6" : targetPct >= 100 ? "#10B981" : targetPct >= 70 ? "#F59E0B" : "#3B82F6";
+                    // Target may be unset (0/undefined) — keep the same layout regardless: $0 / 0% / empty bar.
+                    const targetPct = driver.weeklyTarget ? Math.min(100, Math.round((total / driver.weeklyTarget) * 100)) : 0;
+                    const barColor  = targetPct >= 100 ? "#10B981" : targetPct >= 70 ? "#F59E0B" : "#3B82F6";
 
                     return (
                       <tr key={driver.id}>
@@ -1057,16 +1058,12 @@ export function GrossMatrix() {
                         <td style={{ width: 120, minWidth: 120, padding: "6px 12px", verticalAlign: "middle", borderLeft: "1px solid #E5E7EB", borderBottom: "1px solid #E5E7EB", backgroundColor: isEven ? "#FAFAFA" : "#F3F4F6", position: "sticky", right: R.target, zIndex: 10 }}>
                           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                              <InlineNumberEdit value={driver.weeklyTarget} readOnly />
-                              {targetPct !== null && (
-                                <span style={{ fontFamily: "var(--font-sans)", fontSize: 10, color: targetPct >= 100 ? "#15803D" : "#6B7280", fontWeight: 600 }}>{targetPct}%</span>
-                              )}
+                              <InlineNumberEdit value={driver.weeklyTarget ?? 0} readOnly />
+                              <span style={{ fontFamily: "var(--font-sans)", fontSize: 10, color: targetPct >= 100 ? "#15803D" : "#6B7280", fontWeight: 600 }}>{targetPct}%</span>
                             </div>
-                            {driver.weeklyTarget && (
-                              <div style={{ height: 4, borderRadius: 99, backgroundColor: "#E5E7EB", overflow: "hidden" }}>
-                                <div style={{ height: "100%", borderRadius: 99, width: `${targetPct}%`, backgroundColor: barColor, transition: "width 0.3s ease" }} />
-                              </div>
-                            )}
+                            <div style={{ height: 4, borderRadius: 99, backgroundColor: "#E5E7EB", overflow: "hidden" }}>
+                              <div style={{ height: "100%", borderRadius: 99, width: `${targetPct}%`, backgroundColor: barColor, transition: "width 0.3s ease" }} />
+                            </div>
                           </div>
                         </td>
 
