@@ -10,6 +10,7 @@ import { Status, STATUS_CONFIG as SHARED_STATUS_CONFIG, ALL_STATUSES as SHARED_A
 import { api, getCompanyId } from "../lib/api";
 import { menuPosition } from "../lib/menuPosition";
 import { driverDisplayName } from "../lib/driverName";
+import { geocodeCity, routeMiles } from "../lib/geo";
 import { CityAutocomplete } from "./CityAutocomplete";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -20,6 +21,7 @@ interface Stop {
   appt?: string;
   lat?: number;
   lng?: number;
+  location?: { lat: number; lng: number }; // backend coord shape (round-tripped)
 }
 
 interface Load {
@@ -74,7 +76,13 @@ function toLoad(b: BackendLoad, drivers: { id: string; name: string }[]): Load {
     status: b.status as Status,
     payout: b.payout ?? 0,
     totalMiles: b.miles ?? 0,
-    stops: b.stops ?? [],   // render exactly what the backend sends
+    // Backend keeps coords under `location:{lat,lng}`; flatten to lat/lng for the modal
+    // so existing geocoded stops keep their coordinates (drives the miles recalc).
+    stops: (b.stops ?? []).map((s) => ({
+      city: s.city, done: s.done, appt: s.appt,
+      lat: s.location?.lat ?? s.lat,
+      lng: s.location?.lng ?? s.lng,
+    })),
     dispatcher: b.dispatcher ?? "",
     dispatcher_id: b.dispatcher_id ?? "",
   };
@@ -82,10 +90,16 @@ function toLoad(b: BackendLoad, drivers: { id: string; name: string }[]): Load {
 
 function toBackend(l: Partial<Load>): Partial<BackendLoad> {
   // The route rides entirely in stops — no origin/destination/*_appt fields.
+  // Coords go back as `location:{lat,lng}` (the backend's shape), not flat lat/lng.
   return {
     load_id: l.loadId,
     driver_id: l.driver_id ?? "",
-    stops: l.stops ?? [],
+    stops: (l.stops ?? []).map((s) => ({
+      city: s.city,
+      appt: s.appt,
+      done: s.done,
+      ...(s.lat != null && s.lng != null ? { location: { lat: s.lat, lng: s.lng } } : {}),
+    })),
     status: l.status,
     payout: l.payout ?? 0,
     miles: l.totalMiles ?? 0,
@@ -808,10 +822,12 @@ function LoadModal({ load, onClose, onSave, driverOpts = [], dispatcherOpts = []
     ];
   });
 
-  const [apptError, setApptError] = useState<string | null>(null);
+  const [apptError, setApptError]   = useState<string | null>(null);
+  const [recalcing, setRecalcing]   = useState(false);
+  const [milesNote, setMilesNote]   = useState<string | null>(null);
 
   const addStop    = () => setStops((p) => [...p, { city: "", done: false, appt: "" }]);
-  const removeStop = (idx: number) => setStops((p) => p.filter((_, i) => i !== idx));
+  const removeStop = (idx: number) => { setStops((p) => p.filter((_, i) => i !== idx)); recalcSoon(); };
   const updateCity = (idx: number, val: string) => setStops((p) => p.map((s, i) => i === idx ? { ...s, city: val, lat: undefined, lng: undefined } : s));
   const updateAppt = (idx: number, val: string) => { setApptError(null); setStops((p) => p.map((s, i) => i === idx ? { ...s, appt: val } : s)); };
 
@@ -825,23 +841,86 @@ function LoadModal({ load, onClose, onSave, driverOpts = [], dispatcherOpts = []
     return m;
   };
 
+  // A suggestion pick caches the stop's coords (precise — no need to wait for blur to recalc).
   const updateCoords = (idx: number, lat: number, lng: number) => {
-    setStops((prev) => {
-      const next = prev.map((s, i) => i === idx ? { ...s, lat, lng } : s);
-      const allHaveCoords = next.length >= 2 && next.every((s) => s.lat !== undefined && s.lng !== undefined);
-      if (allHaveCoords) {
-        const coords = next.map((s) => `${s.lng},${s.lat}`).join(";");
-        fetch(`https://router.project-osrm.org/route/v1/driving/${coords}?overview=false`)
-          .then((r) => r.json())
-          .then((data) => {
-            const meters = data.routes?.[0]?.distance;
-            if (meters) set("totalMiles", Math.round(meters / 1609.344));
-          })
-          .catch(() => {});
-      }
-      return next;
-    });
+    setStops((prev) => prev.map((s, i) => i === idx ? { ...s, lat, lng } : s));
+    recalcSoon();
   };
+
+  // Latest stops, so the debounced calc always reads fresh values (no stale closure).
+  const stopsRef = useRef(stops);
+  stopsRef.current = stops;
+
+  // The ordered list of non-empty cities — the only thing a mileage calc depends on.
+  const routeSig = (arr: Stop[]) => arr.filter((s) => s.city.trim()).map((s) => s.city.trim().toLowerCase()).join(" → ");
+
+  // Guards so mileage recalculation is safe to trigger from anywhere:
+  //  · runIdRef — only the newest run is allowed to write state (older runs bail out)
+  //  · abortRef — the newest run cancels the previous one's in-flight requests
+  //  · lastSigRef — skip work entirely when the route hasn't changed since we last computed
+  const runIdRef   = useRef(0);
+  const abortRef   = useRef<AbortController | null>(null);
+  const lastSigRef = useRef(routeSig(stops));
+
+  // Geocode any filled stop missing coords (sequentially — Nominatim throttles bursts),
+  // then route them for the miles total. Fully guarded: always clears the spinner, never
+  // lets a stale run clobber a newer result, and times out instead of hanging.
+  const computeMiles = async () => {
+    const filled = stopsRef.current.filter((s) => s.city.trim());
+    const sig = routeSig(stopsRef.current);
+    if (sig === lastSigRef.current) return;           // route unchanged — nothing to do
+    lastSigRef.current = sig;
+
+    // The route changed, so any run still in flight is now stale — cancel it and claim the turn.
+    const runId = ++runIdRef.current;
+    abortRef.current?.abort();
+    const ctl = abortRef.current = new AbortController();
+    const isStale = () => runId !== runIdRef.current;
+
+    if (filled.length < 2) { setMilesNote(null); setRecalcing(false); return; }
+
+    setRecalcing(true);
+    setMilesNote(null);
+    try {
+      const resolved: Array<{ city: string; lat: number | null; lng: number | null }> = [];
+      for (const s of filled) {
+        if (s.lat != null && s.lng != null) { resolved.push({ city: s.city, lat: s.lat, lng: s.lng }); continue; }
+        const c = await geocodeCity(s.city, ctl.signal);
+        if (isStale()) return;                          // a newer run superseded us
+        resolved.push({ city: s.city, lat: c?.lat ?? null, lng: c?.lng ?? null });
+      }
+
+      // Cache freshly geocoded coords back onto the stops so we don't re-geocode them.
+      setStops((prev) => prev.map((s) => {
+        if (s.lat != null || !s.city.trim()) return s;
+        const hit = resolved.find((r) => r.lat != null && r.city === s.city);
+        return hit ? { ...s, lat: hit.lat!, lng: hit.lng! } : s;
+      }));
+
+      const coords = resolved.filter((r) => r.lat != null).map((r) => ({ lat: r.lat!, lng: r.lng! }));
+      if (coords.length < 2) { setMilesNote("Couldn't locate the stops — enter miles manually."); return; }
+
+      const mi = await routeMiles(coords, ctl.signal);
+      if (isStale()) return;
+      if (mi != null) {
+        set("totalMiles", mi);
+        setMilesNote(coords.length < filled.length ? "Some stops couldn't be located — distance is approximate." : null);
+      } else {
+        setMilesNote("Couldn't calculate distance — enter miles manually.");
+      }
+    } finally {
+      if (!isStale()) setRecalcing(false);              // only the newest run owns the spinner
+    }
+  };
+
+  // Recalc is triggered by discrete events (dropdown pick, blur, stop removed) rather than
+  // every keystroke, so an in-progress, unselected city like "Housto" never gets geocoded.
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const recalcSoon = () => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => { void computeMiles(); }, 300);
+  };
+  useEffect(() => () => { if (debounceRef.current) clearTimeout(debounceRef.current); abortRef.current?.abort(); }, []);
 
   const handleSave = () => {
     // Send the full route as one stops array (stops[0] = origin … last = destination).
@@ -946,7 +1025,13 @@ function LoadModal({ load, onClose, onSave, driverOpts = [], dispatcherOpts = []
             </label>
             <label style={labelStyle}>
               <span style={capStyle}>Miles</span>
-              <input type="number" value={form.totalMiles ?? ""} onChange={(e) => set("totalMiles", e.target.value ? Number(e.target.value) : 0)} style={{ ...inputStyle, fontFamily: "var(--font-mono)" }} placeholder="0" onFocus={focusInput} onBlur={blurInput} />
+              <div style={{ position: "relative" }}>
+                <input type="number" value={form.totalMiles ?? ""} onChange={(e) => set("totalMiles", e.target.value ? Number(e.target.value) : 0)} style={{ ...inputStyle, fontFamily: "var(--font-mono)", paddingRight: recalcing ? 30 : undefined }} placeholder="0" onFocus={focusInput} onBlur={blurInput} />
+                {recalcing && (
+                  <span style={{ position: "absolute", right: 10, top: "50%", marginTop: -7, boxSizing: "border-box", width: 14, height: 14, borderRadius: "50%", border: "2px solid var(--border)", borderTopColor: "var(--muted-foreground)", animation: "spin 0.7s linear infinite", pointerEvents: "none" }} />
+                )}
+              </div>
+              {milesNote && <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "var(--muted-foreground)" }}>{milesNote}</span>}
             </label>
           </div>
 
@@ -984,7 +1069,7 @@ function LoadModal({ load, onClose, onSave, driverOpts = [], dispatcherOpts = []
                           onCoords={(lat, lng) => updateCoords(idx, lat, lng)}
                           style={inputStyle}
                           onFocus={focusInput}
-                          onBlur={blurInput}
+                          onBlur={(e) => { blurInput(e); recalcSoon(); }}
                         />
                       </div>
 
