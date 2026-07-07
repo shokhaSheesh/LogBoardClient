@@ -49,7 +49,8 @@ function toDriverRow(b: BackendDriverRow): DriverRow {
     dateMap[date] = {
       type: (cell.type as CellType) ?? "empty",
       amount: cell.amount,
-      loadId: cell.load_id,
+      // Backend may send load_id as a number; keep it a string for downstream string ops.
+      loadId: cell.load_id != null ? String(cell.load_id) : undefined,
     };
   }
   return {
@@ -88,7 +89,7 @@ function fmt(n: number) { return `$${n.toLocaleString()}`; }
 // miles lookup is now derived from fetched rows — kept as a ref updated after each fetch
 const grossMilesMapRef = new Map<string, number>();
 function getLoadMiles(loadId: string): number {
-  return loadId.split("/").reduce((s, id) => s + (grossMilesMapRef.get(id.trim()) ?? 0), 0);
+  return String(loadId).split("/").reduce((s, id) => s + (grossMilesMapRef.get(id.trim()) ?? 0), 0);
 }
 
 // ─── Cell display styles ──────────────────────────────────────────────────────
