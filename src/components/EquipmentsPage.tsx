@@ -182,9 +182,9 @@ function CustomSelect({
 const PAGE_SIZES = [20, 40, 60, 100];
 
 function Pagination({
-  total, page, pageSize, onPage, onPageSize, totalPending = false,
+  total, page, pageSize, onPage, onPageSize, totalPending = false, loading = false,
 }: {
-  total: number; page: number; pageSize: number; totalPending?: boolean;
+  total: number; page: number; pageSize: number; totalPending?: boolean; loading?: boolean;
   onPage: (p: number) => void; onPageSize: (s: number) => void;
 }) {
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
@@ -232,8 +232,9 @@ function Pagination({
     }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
         <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 6 }}>
-          {total === 0 ? "No results" : `Showing ${from}–${to}`}
-          {totalPending ? (
+          {loading && <span style={{ width: 12, height: 12, borderRadius: "50%", border: "2px solid var(--border)", borderTopColor: "var(--primary)", animation: "spin 0.7s linear infinite", display: "inline-block" }} />}
+          {loading ? "Loading…" : total === 0 ? "No results" : `Showing ${from}–${to}`}
+          {loading ? null : totalPending ? (
             <span style={{ fontSize: 9, fontWeight: 700, color: "#D97706", backgroundColor: "#FEF3C7", border: "1px solid #FDE68A", borderRadius: 4, padding: "1px 5px", letterSpacing: "0.04em", textTransform: "uppercase" }}>
               total pending
             </span>
@@ -255,15 +256,15 @@ function Pagination({
         />
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-        <PBtn disabled={page === 1} onClick={() => onPage(page - 1)}><ChevronLeft size={14} /></PBtn>
+        <PBtn disabled={loading || page === 1} onClick={() => onPage(page - 1)}><ChevronLeft size={14} /></PBtn>
         {pages.map((p, i) =>
           p === "…" ? (
             <span key={`e${i}`} style={{ minWidth: 30, textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>…</span>
           ) : (
-            <PBtn key={p} active={p === page} onClick={() => onPage(p as number)}>{p}</PBtn>
+            <PBtn key={p} active={p === page} disabled={loading && p !== page} onClick={() => onPage(p as number)}>{p}</PBtn>
           )
         )}
-        <PBtn disabled={page === totalPages} onClick={() => onPage(page + 1)}><ChevronRight size={14} /></PBtn>
+        <PBtn disabled={loading || page === totalPages} onClick={() => onPage(page + 1)}><ChevronRight size={14} /></PBtn>
       </div>
     </div>
   );
@@ -826,14 +827,14 @@ function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
         <AddMenu entityLabel="Truck" onManual={openCreate} onImport={() => setImporting(true)} />
       </div>
 
-      {/* Table */}
+      {/* Table — dim existing rows while a page-change refetch is in flight */}
       <div style={{ flex: 1, overflow: "auto", scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent" }}>
-        {loading ? (
+        {loading && rows.length === 0 ? (
           <div style={{ padding: "40px 24px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
             Loading trucks…
           </div>
         ) : (
-        <table style={{ width: "max-content", minWidth: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
+        <table style={{ width: "max-content", minWidth: "100%", borderCollapse: "collapse", tableLayout: "fixed", opacity: loading ? 0.45 : 1, pointerEvents: loading ? "none" : "auto", transition: "opacity 0.15s" }}>
           <thead>
             <tr>
               <TH width={40}>#</TH>
@@ -882,7 +883,7 @@ function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
         )}
       </div>
 
-      <Pagination total={total} page={page} pageSize={pageSize} onPage={setPage} onPageSize={(s) => { setPageSize(s); setPage(1); }} />
+      <Pagination total={total} page={page} pageSize={pageSize} loading={loading} onPage={setPage} onPageSize={(s) => { setPageSize(s); setPage(1); }} />
 
       {(modal === "create" || modal === "edit") && (
         <EquipModal title={modal === "create" ? "Add Truck" : "Edit Truck"} row={editing} onClose={() => setModal(null)} onSave={save} saving={saving} driverOpts={driverOpts} />
@@ -1017,12 +1018,12 @@ function TrailersTab({ onCountChange }: { onCountChange: (n: number) => void }) 
 
       {/* Table */}
       <div style={{ flex: 1, overflow: "auto", scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent" }}>
-        {loading ? (
+        {loading && rows.length === 0 ? (
           <div style={{ padding: "40px 24px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
             Loading trailers…
           </div>
         ) : (
-        <table style={{ width: "max-content", minWidth: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
+        <table style={{ width: "max-content", minWidth: "100%", borderCollapse: "collapse", tableLayout: "fixed", opacity: loading ? 0.45 : 1, pointerEvents: loading ? "none" : "auto", transition: "opacity 0.15s" }}>
           <thead>
             <tr>
               <TH width={40}>#</TH>
@@ -1071,7 +1072,7 @@ function TrailersTab({ onCountChange }: { onCountChange: (n: number) => void }) 
         )}
       </div>
 
-      <Pagination total={total} page={page} pageSize={pageSize} onPage={setPage} onPageSize={(s) => { setPageSize(s); setPage(1); }} />
+      <Pagination total={total} page={page} pageSize={pageSize} loading={loading} onPage={setPage} onPageSize={(s) => { setPageSize(s); setPage(1); }} />
 
       {(modal === "create" || modal === "edit") && (
         <EquipModal title={modal === "create" ? "Add Trailer" : "Edit Trailer"} row={editing} onClose={() => setModal(null)} onSave={save} saving={saving} driverOpts={driverOpts} />

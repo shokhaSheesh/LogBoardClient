@@ -428,11 +428,18 @@ function StatusBadge({ status }: { status: DriverStatus }) {
   );
 }
 
-function StatusDropdown({ value, onChange }: { value: Status; onChange: (s: Status) => void }) {
+function StatusDropdown({ value, onChange }: { value: Status; onChange: (s: Status) => void | Promise<void> }) {
   const [open, setOpen] = useState(false);
   const [rect, setRect] = useState<DOMRect | null>(null);
+  const [busy, setBusy] = useState(false);
   const anchorRef = useRef<HTMLDivElement>(null);
   const dropRef   = useRef<HTMLDivElement>(null);
+
+  const select = (s: Status) => {
+    setOpen(false);
+    setBusy(true);
+    Promise.resolve(onChange(s)).catch(() => {}).finally(() => setBusy(false));
+  };
 
   const toggle = () => {
     const r = anchorRef.current?.getBoundingClientRect();
@@ -453,7 +460,7 @@ function StatusDropdown({ value, onChange }: { value: Status; onChange: (s: Stat
 
   return (
     <>
-      <div ref={anchorRef} onClick={toggle} style={{ cursor: "pointer", display: "inline-flex" }}>
+      <div ref={anchorRef} onClick={busy ? undefined : toggle} style={{ cursor: busy ? "default" : "pointer", display: "inline-flex" }}>
         <span style={{
           display: "inline-flex", alignItems: "center", gap: 5,
           fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600,
@@ -461,7 +468,9 @@ function StatusDropdown({ value, onChange }: { value: Status; onChange: (s: Stat
           borderRadius: 4, padding: "3px 8px", whiteSpace: "nowrap", userSelect: "none",
         }}>
           {cfg.label}
-          <ChevronDown size={10} style={{ opacity: 0.7, marginLeft: 1 }} />
+          {busy
+            ? <span style={{ width: 9, height: 9, borderRadius: "50%", border: `1.5px solid ${cfg.color}55`, borderTopColor: cfg.color, animation: "spin 0.7s linear infinite", display: "inline-block", marginLeft: 1 }} />
+            : <ChevronDown size={10} style={{ opacity: 0.7, marginLeft: 1 }} />}
         </span>
       </div>
       {open && rect && (() => {
@@ -478,7 +487,7 @@ function StatusDropdown({ value, onChange }: { value: Status; onChange: (s: Stat
             const c = STATUS_CONFIG[s];
             const active = s === value;
             return (
-              <button key={s} onMouseDown={(e) => { e.preventDefault(); onChange(s); setOpen(false); }}
+              <button key={s} onMouseDown={(e) => { e.preventDefault(); select(s); }}
                 style={{
                   display: "flex", alignItems: "center", gap: 8, padding: "6px 8px",
                   border: "none", borderRadius: 6,

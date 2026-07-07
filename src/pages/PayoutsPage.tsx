@@ -271,9 +271,9 @@ function CompactSelect({ value, options, onChange }: { value: number; options: n
 
 // ─── Pagination ───────────────────────────────────────────────────────────────
 
-function Pagination({ page, total, pageSize, onPage, onPageSize }: {
+function Pagination({ page, total, pageSize, onPage, onPageSize, loading = false }: {
   page: number; total: number; pageSize: number;
-  onPage: (p: number) => void; onPageSize: (s: number) => void;
+  onPage: (p: number) => void; onPageSize: (s: number) => void; loading?: boolean;
 }) {
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const from = total === 0 ? 0 : (page - 1) * pageSize + 1;
@@ -299,21 +299,22 @@ function Pagination({ page, total, pageSize, onPage, onPageSize }: {
   return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 16px", borderTop: "1px solid var(--border)", backgroundColor: "var(--card)", flexShrink: 0 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)", whiteSpace: "nowrap" }}>
-          {total === 0 ? "No results" : `Showing ${from}–${to} of ${total}`}
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 7, fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)", whiteSpace: "nowrap" }}>
+          {loading && <span style={{ width: 12, height: 12, borderRadius: "50%", border: "2px solid var(--border)", borderTopColor: "var(--primary)", animation: "spin 0.7s linear infinite", display: "inline-block" }} />}
+          {loading ? "Loading…" : total === 0 ? "No results" : `Showing ${from}–${to} of ${total}`}
         </span>
         <span style={{ color: "var(--border)", userSelect: "none" }}>·</span>
         <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)", whiteSpace: "nowrap" }}>Rows per page</span>
         <CompactSelect value={pageSize} options={PAGE_SIZES as unknown as number[]} onChange={(v) => { onPageSize(v); onPage(1); }} />
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-        <PBtn disabled={page <= 1} onClick={() => onPage(page - 1)}><ChevronLeft size={14} /></PBtn>
+        <PBtn disabled={loading || page <= 1} onClick={() => onPage(page - 1)}><ChevronLeft size={14} /></PBtn>
         {pages.map((p, i) =>
           p === "…"
             ? <span key={`e${i}`} style={{ padding: "0 4px", fontSize: 13, color: "var(--muted-foreground)", lineHeight: "30px" }}>…</span>
-            : <PBtn key={p} active={p === page} onClick={() => onPage(p as number)}>{p}</PBtn>
+            : <PBtn key={p} active={p === page} disabled={loading && p !== page} onClick={() => onPage(p as number)}>{p}</PBtn>
         )}
-        <PBtn disabled={page >= totalPages} onClick={() => onPage(page + 1)}><ChevronRight size={14} /></PBtn>
+        <PBtn disabled={loading || page >= totalPages} onClick={() => onPage(page + 1)}><ChevronRight size={14} /></PBtn>
       </div>
     </div>
   );
@@ -497,9 +498,9 @@ export function PayoutsPage() {
         <div style={{ flex: 1 }} />
       </div>
 
-      {/* ── Table ── */}
+      {/* ── Table — dim existing rows while a page-change refetch is in flight ── */}
       <div style={{ flex: 1, overflow: "auto", scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed", opacity: loading && payouts.length > 0 ? 0.45 : 1, pointerEvents: loading ? "none" : "auto", transition: "opacity 0.15s" }}>
           <colgroup>
             <col style={{ width: 150 }} />{/* Dispatcher */}
             <col style={{ width: 170 }} />{/* Driver */}
@@ -531,7 +532,7 @@ export function PayoutsPage() {
             </tr>
           </thead>
           <tbody>
-            {loading && (
+            {loading && payouts.length === 0 && (
               <tr>
                 <td colSpan={12} style={{ padding: "56px 20px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 14, color: "var(--muted-foreground)" }}>
                   Loading…
@@ -545,7 +546,7 @@ export function PayoutsPage() {
                 </td>
               </tr>
             )}
-            {!loading && payouts.map((p, idx) => {
+            {payouts.map((p, idx) => {
               const TD = ({ children, align, noOverflow }: { children: React.ReactNode; align?: string; noOverflow?: boolean }) => (
                 <td style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", verticalAlign: "middle", textAlign: (align as "left" | "right" | "center") ?? "left", ...(noOverflow ? {} : { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }) }}>
                   {children}
@@ -606,7 +607,7 @@ export function PayoutsPage() {
           </tbody>
 
           {/* Totals footer — from server, covers all pages */}
-          {!loading && total > 0 && (
+          {total > 0 && payouts.length > 0 && (
             <tfoot>
               <tr style={{ backgroundColor: "var(--card)" }}>
                 <td colSpan={5} style={{ padding: "10px 14px", borderTop: "2px solid var(--border)", fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: 600, color: "var(--muted-foreground)" }}>
@@ -623,7 +624,7 @@ export function PayoutsPage() {
         </table>
       </div>
 
-      <Pagination page={page} total={total} pageSize={pageSize} onPage={setPage} onPageSize={(s) => setPageSize(s as PageSize)} />
+      <Pagination page={page} total={total} pageSize={pageSize} loading={loading} onPage={setPage} onPageSize={(s) => setPageSize(s as PageSize)} />
 
       </div>
       </div>
