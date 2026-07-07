@@ -113,7 +113,7 @@ const COLUMNS = [
   { label: "Load ID",        width: 110, sticky: true,  left: LOAD_ID_LEFT   },
   { label: "Driver Name",    width: 180, sticky: true,  left: DRIVER_NM_LEFT },
   { label: "Phone",          width: 148, sticky: false                        },
-  { label: "Unit",           width: 116, sticky: false                        },
+  { label: "Unit / Trailer", width: 116, sticky: false                        },
   { label: "Type",           width: 72,  sticky: false                        },
   { label: "Status",         width: 130, sticky: false                        },
   { label: "Origin / Dest.", width: 230, sticky: false                        },
@@ -1144,12 +1144,17 @@ export function DispatchTable() {
                       )}
                     </td>
 
-                    {/* Unit */}
+                    {/* Unit / Trailer */}
                     <td style={td({ borderRight: border })}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                        {isLocked && <Lock size={10} style={{ color: lockColor, flexShrink: 0 }} />}
-                        <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 500, color: isLocked ? lockColor : "var(--foreground)" }}>
-                          {driver.unit}
+                      <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                          {isLocked && <Lock size={10} style={{ color: lockColor, flexShrink: 0 }} />}
+                          <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 500, color: isLocked ? lockColor : "var(--foreground)" }}>
+                            {driver.unit}
+                          </span>
+                        </div>
+                        <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--muted-foreground)", whiteSpace: "nowrap" }}>
+                          {driver.trailer}
                         </span>
                       </div>
                     </td>
