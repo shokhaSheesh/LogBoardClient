@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from "react";
-import { Search, Calendar, Check, ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
+import { Search, Calendar, Check, ChevronDown, ChevronLeft, ChevronRight, AlertCircle } from "lucide-react";
 import { createPortal } from "react-dom";
 import { Status, STATUS_CONFIG, ALL_STATUSES } from "../lib/statuses";
 import { api } from "../lib/api";
@@ -712,15 +712,25 @@ export function GrossMatrix() {
 
   const [rows,     setRows]     = useState<DriverRow[]>([]);
   const [loading,  setLoading]  = useState(true);
+  const [loadErr,  setLoadErr]  = useState<string | null>(null); // fetch failure
+  const [toast,    setToast]    = useState<string | null>(null); // transient save-error banner
   const [search,   setSearch]   = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo,   setDateTo]   = useState("");
+
+  // Auto-dismiss the save-error banner.
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 3500);
+    return () => clearTimeout(t);
+  }, [toast]);
 
   // Fetch gross data. Omit from/to to let the backend pick the default current
   // week (anchored to the company's week_start_day) — we then sync our state
   // from whatever range + week_start_day it echoes back, rather than guessing.
   const loadGross = (from?: string, to?: string, q?: string) => {
     setLoading(true);
+    setLoadErr(null);
     const qs = new URLSearchParams();
     if (from && to) { qs.set("from", from); qs.set("to", to); }
     if (q) qs.set("q", q);
@@ -743,7 +753,7 @@ export function GrossMatrix() {
         }
         setRows(mapped);
       })
-      .catch(() => {})
+      .catch((e) => setLoadErr(e instanceof Error ? e.message : "Couldn't load gross data."))
       .finally(() => setLoading(false));
   };
 
@@ -795,21 +805,32 @@ export function GrossMatrix() {
 
   function commitCellEdit() {
     if (!editState) return;
+    const { driverId, date } = editState;
+    const prevCell = rows.find((d) => d.id === driverId)?.dateMap[date]; // for rollback
     const newCell: DayCell = editState.type === "load"
       ? { type: "load", amount: editState.amount ? Number(editState.amount) : undefined, loadId: editState.loadId || undefined }
       : { type: editState.type };
     // optimistic update
-    setRows((prev) => prev.map((d) => d.id === editState.driverId
-      ? { ...d, dateMap: { ...d.dateMap, [editState.date]: newCell } }
+    setRows((prev) => prev.map((d) => d.id === driverId
+      ? { ...d, dateMap: { ...d.dateMap, [date]: newCell } }
       : d
     ));
     api.patch("/gross", {
-      driver_id: editState.driverId,
-      date:      editState.date,
+      driver_id: driverId,
+      date,
       type:      editState.type,
       amount:    newCell.type === "load" ? newCell.amount : undefined,
       load_id:   newCell.type === "load" ? newCell.loadId : undefined,
-    }).catch(() => {});
+    }).catch((e) => {
+      // Roll the cell back to its previous value and tell the user
+      setRows((prev) => prev.map((d) => {
+        if (d.id !== driverId) return d;
+        const dateMap = { ...d.dateMap };
+        if (prevCell) dateMap[date] = prevCell; else delete dateMap[date];
+        return { ...d, dateMap };
+      }));
+      setToast(e instanceof Error ? e.message : "Couldn't save the change — reverted.");
+    });
     setEditState(null);
   }
 
@@ -817,12 +838,20 @@ export function GrossMatrix() {
 
   // Row-level field saves
   function saveTarget(driverId: string, value: number | undefined) {
-    setRows((prev) => prev.map((d) => d.id === driverId ? { ...d, weeklyTarget: value } : d));
-    api.patch("/gross", { driver_id: driverId, weekly_target: value ?? null }).catch(() => {});
+    const prev = rows.find((d) => d.id === driverId)?.weeklyTarget;
+    setRows((rs) => rs.map((d) => d.id === driverId ? { ...d, weeklyTarget: value } : d));
+    api.patch("/gross", { driver_id: driverId, weekly_target: value ?? null }).catch((e) => {
+      setRows((rs) => rs.map((d) => d.id === driverId ? { ...d, weeklyTarget: prev } : d));
+      setToast(e instanceof Error ? e.message : "Couldn't save the target — reverted.");
+    });
   }
   function saveProfit(driverId: string, value: number | undefined) {
-    setRows((prev) => prev.map((d) => d.id === driverId ? { ...d, companyProfit: value ?? 0 } : d));
-    api.patch("/gross", { driver_id: driverId, company_profit: value ?? 0 }).catch(() => {});
+    const prev = rows.find((d) => d.id === driverId)?.companyProfit;
+    setRows((rs) => rs.map((d) => d.id === driverId ? { ...d, companyProfit: value ?? 0 } : d));
+    api.patch("/gross", { driver_id: driverId, company_profit: value ?? 0 }).catch((e) => {
+      setRows((rs) => rs.map((d) => d.id === driverId ? { ...d, companyProfit: prev ?? 0 } : d));
+      setToast(e instanceof Error ? e.message : "Couldn't save the profit — reverted.");
+    });
   }
 
   // Date columns
@@ -852,6 +881,12 @@ export function GrossMatrix() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", backgroundColor: "var(--background)", overflow: "hidden" }}>
+      {toast && (
+        <div style={{ position: "fixed", top: 20, right: 20, zIndex: 10000, display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", borderRadius: 8, backgroundColor: "var(--card)", border: "1px solid #EF4444", boxShadow: "0 10px 30px rgba(0,0,0,0.16)", maxWidth: 360 }}>
+          <AlertCircle size={15} style={{ color: "#EF4444", flexShrink: 0 }} />
+          <span style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--foreground)" }}>{toast}</span>
+        </div>
+      )}
       {editState && (
         <CellEditPanel
           edit={editState}
@@ -922,6 +957,12 @@ export function GrossMatrix() {
             ) : loading ? (
               <div style={{ padding: "60px 20px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
                 Loading…
+              </div>
+            ) : loadErr ? (
+              <div style={{ padding: "60px 20px", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
+                <AlertCircle size={20} style={{ color: "#EF4444" }} />
+                <span style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "#EF4444" }}>{loadErr}</span>
+                <button onClick={() => loadGross(dateFrom, dateTo, search)} style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--primary)", background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}>Retry</button>
               </div>
             ) : (
               <table style={{ borderCollapse: "separate", borderSpacing: 0, tableLayout: "fixed", minWidth: "100%" }}>

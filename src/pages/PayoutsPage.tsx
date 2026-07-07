@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import {
   X, Search, ChevronDown, DollarSign,
   ChevronLeft, ChevronRight, Pencil, Check,
-  CalendarDays, FileText,
+  CalendarDays, FileText, AlertCircle,
 } from "lucide-react";
 import { api, getCompanyId } from "../lib/api";
 
@@ -126,9 +126,9 @@ function shiftAnchor(mode: DateMode, anchor: Date, dir: -1 | 1): Date {
 
 // ─── Edit modal (add/deduct/notes only) ───────────────────────────────────────
 
-function AdjustModal({ payout, onSave, onClose, saving }: {
+function AdjustModal({ payout, onSave, onClose, saving, error }: {
   payout: Payout; onSave: (added: number, deducted: number, notes: string) => void;
-  onClose: () => void; saving: boolean;
+  onClose: () => void; saving: boolean; error?: string | null;
 }) {
   const [added,    setAdded]    = useState(String(payout.added));
   const [deducted, setDeducted] = useState(String(payout.deducted));
@@ -208,9 +208,10 @@ function AdjustModal({ payout, onSave, onClose, saving }: {
         </div>
 
         {/* Footer */}
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, padding: "14px 20px", borderTop: "1px solid var(--border)", flexShrink: 0 }}>
-          <button onClick={onClose}
-            style={{ padding: "8px 18px", borderRadius: 8, border: "1px solid var(--border)", backgroundColor: "var(--card)", fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 500, color: "var(--foreground)", cursor: "pointer" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8, padding: "14px 20px", borderTop: "1px solid var(--border)", flexShrink: 0 }}>
+          {error && <span style={{ marginRight: "auto", fontFamily: "var(--font-sans)", fontSize: 12, color: "#EF4444" }}>{error}</span>}
+          <button onClick={onClose} disabled={saving}
+            style={{ padding: "8px 18px", borderRadius: 8, border: "1px solid var(--border)", backgroundColor: "var(--card)", fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 500, color: "var(--foreground)", cursor: saving ? "default" : "pointer", opacity: saving ? 0.5 : 1 }}>
             Cancel
           </button>
           <button onClick={() => onSave(Number(added) || 0, Number(deducted) || 0, notes.trim())}
@@ -342,8 +343,10 @@ export function PayoutsPage() {
   const [dateMode, setDateMode]         = useState<DateMode | null>(null);
   const [anchor, setAnchor]             = useState<Date>(today);
 
+  const [loadErr, setLoadErr]           = useState<string | null>(null);
   const [editing, setEditing]           = useState<Payout | null>(null);
   const [saving, setSaving]             = useState(false);
+  const [saveErr, setSaveErr]           = useState<string | null>(null);
 
   const [page, setPage]                 = useState(1);
   const [pageSize, setPageSize]         = useState<PageSize>(20);
@@ -379,6 +382,7 @@ export function PayoutsPage() {
   // Fetch payouts
   useEffect(() => {
     setLoading(true);
+    setLoadErr(null);
     const dateRange = dateMode ? toApiRange(dateMode, anchor) : { from: undefined, to: undefined };
     api.getPayouts<BackendPayout>({
       q:             debouncedSearch || undefined,
@@ -391,19 +395,20 @@ export function PayoutsPage() {
       setPayouts((items ?? []).map(toPayout));
       setTotal(t);
       setTotals(tots);
-    }).catch(() => {}).finally(() => setLoading(false));
+    }).catch((e) => setLoadErr(e instanceof Error ? e.message : "Couldn't load payouts.")).finally(() => setLoading(false));
   }, [fetchKey, debouncedSearch, dispFilter, dateMode, anchor, page, pageSize]);
 
   const handleSave = async (added: number, deducted: number, notes: string) => {
     if (!editing) return;
+    setSaveErr(null);
     setSaving(true);
     try {
       const updated = await api.patch<BackendPayout>(`/payouts/${editing.id}`, { added, deducted, notes });
       setPayouts((prev) => prev.map((p) => p.id === editing.id ? toPayout(updated as BackendPayout) : p));
       setFetchKey((k) => k + 1); // refetch totals
       setEditing(null);
-    } catch {
-      // keep modal open on error
+    } catch (e) {
+      setSaveErr(e instanceof Error ? e.message : "Couldn't save the adjustment."); // keep modal open
     } finally {
       setSaving(false);
     }
@@ -421,8 +426,9 @@ export function PayoutsPage() {
         <AdjustModal
           payout={editing}
           onSave={handleSave}
-          onClose={() => setEditing(null)}
+          onClose={() => { setEditing(null); setSaveErr(null); }}
           saving={saving}
+          error={saveErr}
         />
       )}
 
@@ -539,7 +545,18 @@ export function PayoutsPage() {
                 </td>
               </tr>
             )}
-            {!loading && payouts.length === 0 && (
+            {!loading && loadErr && payouts.length === 0 && (
+              <tr>
+                <td colSpan={12} style={{ padding: "48px 20px" }}>
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
+                    <AlertCircle size={20} style={{ color: "#EF4444" }} />
+                    <span style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "#EF4444" }}>{loadErr}</span>
+                    <button onClick={() => setFetchKey((k) => k + 1)} style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--primary)", background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}>Retry</button>
+                  </div>
+                </td>
+              </tr>
+            )}
+            {!loading && !loadErr && payouts.length === 0 && (
               <tr>
                 <td colSpan={12} style={{ padding: "56px 20px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 14, color: "var(--muted-foreground)" }}>
                   No payouts found.

@@ -455,9 +455,9 @@ function DeleteConfirm({ label, onClose, onConfirm, busy = false, error }: { lab
 
 // ─── USERS TAB ────────────────────────────────────────────────────────────────
 
-function UserModal({ user, roles, teams, saving, onClose, onSave }: {
+function UserModal({ user, roles, teams, saving, error, onClose, onSave }: {
   user: Partial<User>; roles: Role[]; teams: Team[];
-  saving?: boolean; onClose: () => void; onSave: (u: User) => void;
+  saving?: boolean; error?: string | null; onClose: () => void; onSave: (u: User) => void;
 }) {
   const [form, setForm] = useState<Partial<User>>(user);
   const [showPass, setShowPass] = useState(false);
@@ -593,8 +593,9 @@ function UserModal({ user, roles, teams, saving, onClose, onSave }: {
         </div>
 
         {/* Footer */}
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, padding: "14px 20px", borderTop: "1px solid var(--border)", borderRadius: "0 0 12px 12px", flexShrink: 0 }}>
-          <button onClick={onClose} style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 16px", borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "var(--muted)", color: "var(--foreground)", cursor: "pointer" }}>Cancel</button>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 10, padding: "14px 20px", borderTop: "1px solid var(--border)", borderRadius: "0 0 12px 12px", flexShrink: 0 }}>
+          {error && <span style={{ marginRight: "auto", fontFamily: "var(--font-sans)", fontSize: 12, color: "#EF4444" }}>{error}</span>}
+          <button onClick={onClose} disabled={saving} style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 16px", borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "var(--muted)", color: "var(--foreground)", cursor: saving ? "default" : "pointer", opacity: saving ? 0.5 : 1 }}>Cancel</button>
           <button onClick={handleSave} disabled={saving} style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 16px", borderRadius: 6, border: "none", backgroundColor: "var(--primary)", color: "#fff", cursor: saving ? "not-allowed" : "pointer", opacity: saving ? 0.75 : 1, display: "flex", alignItems: "center", gap: 6 }}>
             {saving ? <span style={{ width: 14, height: 14, borderRadius: "50%", border: "2px solid rgba(255,255,255,0.35)", borderTopColor: "#fff", animation: "spin 0.7s linear infinite", display: "inline-block" }} /> : <Check size={14} />}
             {saving ? (isNew ? "Creating…" : "Saving…") : (isNew ? "Create User" : "Save Changes")}
@@ -610,6 +611,7 @@ function UsersTab({ roles, teams }: { roles: Role[]; teams: Team[] }) {
   const [loading, setLoading]   = useState(true);
   const [fetchKey, setFetchKey] = useState(0);
   const [saving, setSaving]     = useState(false);
+  const [saveErr, setSaveErr]   = useState<string | null>(null);
   const [modal, setModal]       = useState<"create" | "edit" | null>(null);
   const [editing, setEditing]   = useState<Partial<User>>({});
   const [deleting, setDeleting] = useState<User | null>(null);
@@ -632,6 +634,7 @@ function UsersTab({ roles, teams }: { roles: Role[]; teams: Team[] }) {
   const save = async (u: User) => {
     const companyId = getCompanyId();
     const isNew = modal === "create";
+    setSaveErr(null);
     setSaving(true);
     try {
       if (isNew) {
@@ -641,8 +644,8 @@ function UsersTab({ roles, teams }: { roles: Role[]; teams: Team[] }) {
       }
       setFetchKey((k) => k + 1);
       setModal(null);
-    } catch {
-      // keep modal open on error
+    } catch (e) {
+      setSaveErr(e instanceof Error ? e.message : "Save failed"); // keep modal open
     } finally {
       setSaving(false);
     }
@@ -793,7 +796,7 @@ function UsersTab({ roles, teams }: { roles: Role[]; teams: Team[] }) {
       />
 
       {(modal === "create" || modal === "edit") && (
-        <UserModal user={editing} roles={roles} teams={teams} saving={saving} onClose={() => setModal(null)} onSave={(u) => { void save(u); }} />
+        <UserModal user={editing} roles={roles} teams={teams} saving={saving} error={saveErr} onClose={() => { setModal(null); setSaveErr(null); }} onSave={(u) => { void save(u); }} />
       )}
       {deleting && <DeleteConfirm label={deleting.name} busy={delBusy} error={delErr} onClose={() => { setDeleting(null); setDelErr(null); }} onConfirm={() => confirmDelete(deleting)} />}
       {saving && <div style={{ position: "fixed", inset: 0, zIndex: 200 }} />}
@@ -1337,8 +1340,8 @@ function TeamsTab({ users: _users }: { users: User[] }) {
 
 // ─── ROLES & PERMISSIONS TAB ─────────────────────────────────────────────────
 
-function RoleModal({ role, entries: catalogEntries, saving, onClose, onSave }: {
-  role: Partial<Role>; entries: { page: string; actions: string[] }[]; saving?: boolean; onClose: () => void; onSave: (r: Role) => void;
+function RoleModal({ role, entries: catalogEntries, saving, error, onClose, onSave }: {
+  role: Partial<Role>; entries: { page: string; actions: string[] }[]; saving?: boolean; error?: string | null; onClose: () => void; onSave: (r: Role) => void;
 }) {
   const allActions = [...new Set(catalogEntries.flatMap((e) => e.actions))].sort(
     (a, b) => (ACTION_ORDER.indexOf(a) + 1 || 99) - (ACTION_ORDER.indexOf(b) + 1 || 99)
@@ -1446,8 +1449,9 @@ function RoleModal({ role, entries: catalogEntries, saving, onClose, onSave }: {
             )}
           </div>
         </div>
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, padding: "14px 20px", borderTop: "1px solid var(--border)", flexShrink: 0 }}>
-          <button onClick={onClose} style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 16px", borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "var(--muted)", color: "var(--foreground)", cursor: "pointer" }}>Cancel</button>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 10, padding: "14px 20px", borderTop: "1px solid var(--border)", flexShrink: 0 }}>
+          {error && <span style={{ marginRight: "auto", fontFamily: "var(--font-sans)", fontSize: 12, color: "#EF4444" }}>{error}</span>}
+          <button onClick={onClose} disabled={saving} style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 16px", borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "var(--muted)", color: "var(--foreground)", cursor: saving ? "default" : "pointer", opacity: saving ? 0.5 : 1 }}>Cancel</button>
           <button onClick={() => onSave(form as Role)} disabled={saving} style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 16px", borderRadius: 6, border: "none", backgroundColor: "var(--primary)", color: "#fff", cursor: saving ? "not-allowed" : "pointer", opacity: saving ? 0.75 : 1, display: "flex", alignItems: "center", gap: 6 }}>
             {saving ? <span style={{ width: 14, height: 14, borderRadius: "50%", border: "2px solid rgba(255,255,255,0.35)", borderTopColor: "#fff", animation: "spin 0.7s linear infinite", display: "inline-block" }} /> : <Check size={14} />}
             {saving ? (isNew ? "Creating…" : "Saving…") : (isNew ? "Create Role" : "Save Changes")}
@@ -1472,6 +1476,7 @@ function RolesTab({ onRolesChange }: { onRolesChange: (roles: Role[]) => void })
   const [loading, setLoading]   = useState(true);
   const [fetchKey, setFetchKey] = useState(0);
   const [saving, setSaving]     = useState(false);
+  const [saveErr, setSaveErr]   = useState<string | null>(null);
   const [modal, setModal]       = useState<"create" | "edit" | null>(null);
   const [editing, setEditing]   = useState<Partial<Role>>({});
   const [deleting, setDeleting] = useState<Role | null>(null);
@@ -1502,6 +1507,7 @@ function RolesTab({ onRolesChange }: { onRolesChange: (roles: Role[]) => void })
   const save = async (r: Role) => {
     const companyId = getCompanyId();
     const isNew = modal === "create";
+    setSaveErr(null);
     setSaving(true);
     try {
       if (isNew) {
@@ -1511,8 +1517,8 @@ function RolesTab({ onRolesChange }: { onRolesChange: (roles: Role[]) => void })
       }
       setFetchKey((k) => k + 1);
       setModal(null);
-    } catch {
-      // keep modal open
+    } catch (e) {
+      setSaveErr(e instanceof Error ? e.message : "Save failed"); // keep modal open
     } finally {
       setSaving(false);
     }
@@ -1618,7 +1624,7 @@ function RolesTab({ onRolesChange }: { onRolesChange: (roles: Role[]) => void })
       </div>
 
       {(modal === "create" || modal === "edit") && (
-        <RoleModal role={editing} entries={effectiveEntries} saving={saving} onClose={() => setModal(null)} onSave={(r) => { void save(r); }} />
+        <RoleModal role={editing} entries={effectiveEntries} saving={saving} error={saveErr} onClose={() => { setModal(null); setSaveErr(null); }} onSave={(r) => { void save(r); }} />
       )}
       {deleting && <DeleteConfirm label={deleting.name} busy={delBusy} error={delErr} onClose={() => { setDeleting(null); setDelErr(null); }} onConfirm={() => confirmDelete(deleting)} />}
       {saving && <div style={{ position: "fixed", inset: 0, zIndex: 200 }} />}
