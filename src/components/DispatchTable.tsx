@@ -4,6 +4,7 @@ import { MapPin, Lock, MessageSquare, ChevronDown, Search, Navigation, Check, Ar
 import { Status, STATUS_CONFIG, ALL_STATUSES } from "../lib/statuses";
 import { api, getCompanyId } from "../lib/api";
 import { menuPosition } from "../lib/menuPosition";
+import { driverDisplayName } from "../lib/driverName";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -28,6 +29,9 @@ interface BoardRow {
   load_id: string;
   name: string;
   phone: string;
+  team?: boolean;   // two-person driver (name2/phone2 carry the second contact)
+  name2?: string;
+  phone2?: string;
   unit: string;
   trailer?: string;
   type: string;
@@ -50,8 +54,11 @@ interface Driver {
   loadId: string;        // display ref like "LD-00481"
   loadUuid?: string;     // actual UUID for PUT /loads/:id
   loadRaw?: BoardLoad;   // full load object — PUT base for stop toggles (no refetch)
-  name: string;
+  name: string;          // raw first-driver name — kept separate for inline editing
   phone: string;
+  team?: boolean;
+  name2?: string;
+  phone2?: string;
   unit: string;
   trailer?: string;
   type: DriverType;
@@ -141,6 +148,9 @@ function fromBoardRow(r: BoardRow): Driver {
     loadRaw:     r.load ?? undefined,
     name:        r.name         || "—",
     phone:       r.phone        || "—",
+    team:        r.team         ?? false,
+    name2:       r.name2        || undefined,
+    phone2:      r.phone2       || undefined,
     unit:        r.unit         || "—",
     trailer:     r.trailer      || "—",
     type:        (r.type as DriverType) || "O/O",
@@ -902,7 +912,7 @@ export function DispatchTable() {
   const activeTeam = teamFilter === "all" ? null : teams.find((t) => t.id === teamFilter) ?? null;
   const visible = rows.filter((d) => {
     const ms = statusFilter === "all" || d.status === statusFilter;
-    const mq = !q || d.name.toLowerCase().includes(q) || d.loadId.toLowerCase().includes(q) || d.unit.toLowerCase().includes(q) || d.location.toLowerCase().includes(q);
+    const mq = !q || d.name.toLowerCase().includes(q) || (d.name2 ?? "").toLowerCase().includes(q) || d.loadId.toLowerCase().includes(q) || d.unit.toLowerCase().includes(q) || d.location.toLowerCase().includes(q);
     const mt = !activeTeam || activeTeam.driverIds.has(d.driverId);
     return ms && mq && mt;
   });
@@ -1073,9 +1083,16 @@ export function DispatchTable() {
                       </span>
                     </td>
 
-                    {/* Driver Name — sticky, editable */}
+                    {/* Driver Name — sticky. Team drivers show "Name1 & Name2" and aren't
+                        inline-editable here (there's no single field to write that back to). */}
                     <td style={td({ position: "sticky", left: DRIVER_NM_LEFT, zIndex: 3, width: 180, minWidth: 180, borderRight: border, boxShadow: "2px 0 5px rgba(0,0,0,0.07)" })}>
-                      {editableText(driver.driverId, "name", driver.name, { style: { fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" } })}
+                      {driver.team ? (
+                        <span style={{ fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", display: "block", fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--foreground)" }}>
+                          {driverDisplayName({ name: driver.name, name2: driver.name2, team: driver.team })}
+                        </span>
+                      ) : (
+                        editableText(driver.driverId, "name", driver.name, { style: { fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" } })
+                      )}
                     </td>
 
                     {/* Phone */}
