@@ -373,11 +373,12 @@ function CellEditPanel({
 
 // ─── Inline number editor (Target / Co.Profit) ────────────────────────────────
 
-function InlineNumberEdit({ value, onSave, prefix = "$", allowNeg = false }: {
+function InlineNumberEdit({ value, onSave, prefix = "$", allowNeg = false, readOnly = false }: {
   value: number | undefined;
-  onSave: (v: number | undefined) => void;
+  onSave?: (v: number | undefined) => void;
   prefix?: string;
   allowNeg?: boolean;
+  readOnly?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
@@ -391,7 +392,7 @@ function InlineNumberEdit({ value, onSave, prefix = "$", allowNeg = false }: {
 
   function commit() {
     const n = draft.trim() === "" ? undefined : Number(draft.replace(/[^0-9.-]/g, ""));
-    onSave(isNaN(n as number) ? undefined : n);
+    onSave?.(isNaN(n as number) ? undefined : n);
     setEditing(false);
   }
 
@@ -417,6 +418,22 @@ function InlineNumberEdit({ value, onSave, prefix = "$", allowNeg = false }: {
     );
   }
 
+  const displayInner = (
+    <>
+      {value !== undefined ? (
+        <span style={{ fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap" }}>
+          {allowNeg && value < 0 ? `-$${Math.abs(value).toLocaleString()}` : fmt(value)}
+        </span>
+      ) : (
+        <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "#9CA3AF" }}>—</span>
+      )}
+    </>
+  );
+
+  if (readOnly) {
+    return <div style={{ display: "inline-flex", alignItems: "center", gap: 2, padding: "1px 3px" }}>{displayInner}</div>;
+  }
+
   return (
     <div
       onClick={open}
@@ -425,13 +442,7 @@ function InlineNumberEdit({ value, onSave, prefix = "$", allowNeg = false }: {
       onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "rgba(59,130,246,0.08)"; }}
       onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "transparent"; }}
     >
-      {value !== undefined ? (
-        <span style={{ fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap" }}>
-          {allowNeg && value < 0 ? `-$${Math.abs(value).toLocaleString()}` : fmt(value)}
-        </span>
-      ) : (
-        <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "#9CA3AF" }}>—</span>
-      )}
+      {displayInner}
     </div>
   );
 }
@@ -837,23 +848,6 @@ export function GrossMatrix() {
   function cancelCellEdit() { setEditState(null); }
 
   // Row-level field saves
-  function saveTarget(driverId: string, value: number | undefined) {
-    const prev = rows.find((d) => d.id === driverId)?.weeklyTarget;
-    setRows((rs) => rs.map((d) => d.id === driverId ? { ...d, weeklyTarget: value } : d));
-    api.patch("/gross", { driver_id: driverId, weekly_target: value ?? null }).catch((e) => {
-      setRows((rs) => rs.map((d) => d.id === driverId ? { ...d, weeklyTarget: prev } : d));
-      setToast(e instanceof Error ? e.message : "Couldn't save the target — reverted.");
-    });
-  }
-  function saveProfit(driverId: string, value: number | undefined) {
-    const prev = rows.find((d) => d.id === driverId)?.companyProfit;
-    setRows((rs) => rs.map((d) => d.id === driverId ? { ...d, companyProfit: value ?? 0 } : d));
-    api.patch("/gross", { driver_id: driverId, company_profit: value ?? 0 }).catch((e) => {
-      setRows((rs) => rs.map((d) => d.id === driverId ? { ...d, companyProfit: prev ?? 0 } : d));
-      setToast(e instanceof Error ? e.message : "Couldn't save the profit — reverted.");
-    });
-  }
-
   // Date columns
   const dates = useMemo(() => {
     if (!dateFrom || !dateTo || dateFrom > dateTo) return [];
@@ -1063,10 +1057,7 @@ export function GrossMatrix() {
                         <td style={{ width: 120, minWidth: 120, padding: "6px 12px", verticalAlign: "middle", borderLeft: "1px solid #E5E7EB", borderBottom: "1px solid #E5E7EB", backgroundColor: isEven ? "#FAFAFA" : "#F3F4F6", position: "sticky", right: R.target, zIndex: 10 }}>
                           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                              <InlineNumberEdit
-                                value={driver.weeklyTarget}
-                                onSave={(v) => saveTarget(driver.id, v)}
-                              />
+                              <InlineNumberEdit value={driver.weeklyTarget} readOnly />
                               {targetPct !== null && (
                                 <span style={{ fontFamily: "var(--font-sans)", fontSize: 10, color: targetPct >= 100 ? "#15803D" : "#6B7280", fontWeight: 600 }}>{targetPct}%</span>
                               )}
@@ -1082,11 +1073,7 @@ export function GrossMatrix() {
                         {/* Co. Profit — inline editable */}
                         <td style={{ width: 120, minWidth: 120, padding: "0 12px", textAlign: "right", verticalAlign: "middle", borderLeft: "1px solid #E5E7EB", borderBottom: "1px solid #E5E7EB", borderRight: "none", backgroundColor: driver.companyProfit >= 0 ? (isEven ? "#F0FDF4" : "#DCFCE7") : (isEven ? "#FFF1F2" : "#FFE4E6"), position: "sticky", right: R.profit, zIndex: 10 }}>
                           <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                            <InlineNumberEdit
-                              value={driver.companyProfit}
-                              onSave={(v) => saveProfit(driver.id, v)}
-                              allowNeg
-                            />
+                            <InlineNumberEdit value={driver.companyProfit} allowNeg readOnly />
                           </div>
                         </td>
                       </tr>
