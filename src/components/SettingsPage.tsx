@@ -430,7 +430,7 @@ const capStyle: React.CSSProperties = {
 };
 const fieldStyle: React.CSSProperties = { display: "flex", flexDirection: "column", gap: 5 };
 
-function DeleteConfirm({ label, onClose, onConfirm }: { label: string; onClose: () => void; onConfirm: () => void }) {
+function DeleteConfirm({ label, onClose, onConfirm, busy = false, error }: { label: string; onClose: () => void; onConfirm: () => void; busy?: boolean; error?: string | null }) {
   return (
     <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div style={{ backgroundColor: "var(--card)", borderRadius: 12, width: 360, padding: 24, boxShadow: "0 20px 60px rgba(0,0,0,0.25)", textAlign: "center" }}>
@@ -438,12 +438,15 @@ function DeleteConfirm({ label, onClose, onConfirm }: { label: string; onClose: 
           <Trash2 size={20} color="#EF4444" />
         </div>
         <div style={{ fontFamily: "var(--font-sans)", fontSize: 15, fontWeight: 600, color: "var(--foreground)", marginBottom: 6 }}>Are you sure?</div>
-        <div style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)", marginBottom: 20 }}>
+        <div style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)", marginBottom: error ? 12 : 20 }}>
           <strong>{label}</strong> will be permanently removed.
         </div>
+        {error && <div style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "#EF4444", marginBottom: 16 }}>{error}</div>}
         <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
-          <button onClick={onClose} style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 20px", borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "var(--muted)", color: "var(--foreground)", cursor: "pointer" }}>Cancel</button>
-          <button onClick={onConfirm} style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 20px", borderRadius: 6, border: "none", backgroundColor: "#EF4444", color: "#fff", cursor: "pointer" }}>Delete</button>
+          <button onClick={onClose} disabled={busy} style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 20px", borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "var(--muted)", color: "var(--foreground)", cursor: busy ? "default" : "pointer", opacity: busy ? 0.5 : 1 }}>Cancel</button>
+          <button onClick={onConfirm} disabled={busy} style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, minWidth: 96, fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 20px", borderRadius: 6, border: "none", backgroundColor: "#EF4444", color: "#fff", cursor: busy ? "default" : "pointer", opacity: busy ? 0.8 : 1 }}>
+            {busy ? <><span style={{ width: 13, height: 13, borderRadius: "50%", border: "2px solid rgba(255,255,255,0.4)", borderTopColor: "#fff", animation: "spin 0.7s linear infinite", display: "inline-block" }} /> Deleting…</> : "Delete"}
+          </button>
         </div>
       </div>
     </div>
@@ -610,6 +613,8 @@ function UsersTab({ roles, teams }: { roles: Role[]; teams: Team[] }) {
   const [modal, setModal]       = useState<"create" | "edit" | null>(null);
   const [editing, setEditing]   = useState<Partial<User>>({});
   const [deleting, setDeleting] = useState<User | null>(null);
+  const [delBusy, setDelBusy]   = useState(false);
+  const [delErr, setDelErr]     = useState<string | null>(null);
   const [search, setSearch]     = useState("");
   const [filterRole, setFilterRole] = useState("All");
   const [page, setPage]         = useState(1);
@@ -645,11 +650,16 @@ function UsersTab({ roles, teams }: { roles: Role[]; teams: Team[] }) {
 
   const confirmDelete = async (u: User) => {
     const companyId = getCompanyId();
+    setDelErr(null);
+    setDelBusy(true);
     try {
       await api.delete(`/owner/companies/${companyId}/users/${u.id}`);
       setFetchKey((k) => k + 1);
-    } catch { /* noop */ } finally {
       setDeleting(null);
+    } catch (e) {
+      setDelErr(e instanceof Error ? e.message : "Delete failed");
+    } finally {
+      setDelBusy(false);
     }
   };
 
@@ -785,7 +795,7 @@ function UsersTab({ roles, teams }: { roles: Role[]; teams: Team[] }) {
       {(modal === "create" || modal === "edit") && (
         <UserModal user={editing} roles={roles} teams={teams} saving={saving} onClose={() => setModal(null)} onSave={(u) => { void save(u); }} />
       )}
-      {deleting && <DeleteConfirm label={deleting.name} onClose={() => setDeleting(null)} onConfirm={() => confirmDelete(deleting)} />}
+      {deleting && <DeleteConfirm label={deleting.name} busy={delBusy} error={delErr} onClose={() => { setDeleting(null); setDelErr(null); }} onConfirm={() => confirmDelete(deleting)} />}
       {saving && <div style={{ position: "fixed", inset: 0, zIndex: 200 }} />}
     </>
   );
@@ -1133,6 +1143,8 @@ function TeamsTab({ users: _users }: { users: User[] }) {
   const [modal, setModal]       = useState<"create" | "edit" | null>(null);
   const [editing, setEditing]   = useState<Partial<Team>>({});
   const [deleting, setDeleting] = useState<Team | null>(null);
+  const [delBusy, setDelBusy]   = useState(false);
+  const [delErr, setDelErr]     = useState<string | null>(null);
   const [search, setSearch]     = useState("");
   const [page, setPage]         = useState(1);
   const [pageSize, setPageSize] = useState(20);
@@ -1185,14 +1197,17 @@ function TeamsTab({ users: _users }: { users: User[] }) {
 
   const confirmDelete = async (t: Team) => {
     const companyId = getCompanyId();
+    setDelErr(null);
+    setDelBusy(true);
     try {
       await api.delete(`/owner/companies/${companyId}/teams/${t.id}`);
       setToast({ type: "success", msg: "Team deleted" });
       setFetchKey((k) => k + 1);
-    } catch (e) {
-      setToast({ type: "error", msg: e instanceof Error ? e.message : "Delete failed" });
-    } finally {
       setDeleting(null);
+    } catch (e) {
+      setDelErr(e instanceof Error ? e.message : "Delete failed");
+    } finally {
+      setDelBusy(false);
     }
   };
 
@@ -1315,7 +1330,7 @@ function TeamsTab({ users: _users }: { users: User[] }) {
       {(modal === "create" || modal === "edit") && (
         <TeamModal team={editing} users={users} allDriverNames={allDriverNames} driverLabels={driverLabels} saving={saving} onClose={() => setModal(null)} onSave={(t) => { void save(t); }} />
       )}
-      {deleting && <DeleteConfirm label={deleting.name} onClose={() => setDeleting(null)} onConfirm={() => { void confirmDelete(deleting); }} />}
+      {deleting && <DeleteConfirm label={deleting.name} busy={delBusy} error={delErr} onClose={() => { setDeleting(null); setDelErr(null); }} onConfirm={() => { void confirmDelete(deleting); }} />}
     </>
   );
 }
@@ -1460,6 +1475,8 @@ function RolesTab({ onRolesChange }: { onRolesChange: (roles: Role[]) => void })
   const [modal, setModal]       = useState<"create" | "edit" | null>(null);
   const [editing, setEditing]   = useState<Partial<Role>>({});
   const [deleting, setDeleting] = useState<Role | null>(null);
+  const [delBusy, setDelBusy]   = useState(false);
+  const [delErr, setDelErr]     = useState<string | null>(null);
   const [catalog, setCatalog]   = useState<string[]>([]);
 
   useEffect(() => {
@@ -1503,11 +1520,16 @@ function RolesTab({ onRolesChange }: { onRolesChange: (roles: Role[]) => void })
 
   const confirmDelete = async (r: Role) => {
     const companyId = getCompanyId();
+    setDelErr(null);
+    setDelBusy(true);
     try {
       await api.delete(`/owner/companies/${companyId}/roles/${r.id}`);
       setFetchKey((k) => k + 1);
-    } catch { /* noop */ } finally {
       setDeleting(null);
+    } catch (e) {
+      setDelErr(e instanceof Error ? e.message : "Delete failed");
+    } finally {
+      setDelBusy(false);
     }
   };
 
@@ -1598,7 +1620,7 @@ function RolesTab({ onRolesChange }: { onRolesChange: (roles: Role[]) => void })
       {(modal === "create" || modal === "edit") && (
         <RoleModal role={editing} entries={effectiveEntries} saving={saving} onClose={() => setModal(null)} onSave={(r) => { void save(r); }} />
       )}
-      {deleting && <DeleteConfirm label={deleting.name} onClose={() => setDeleting(null)} onConfirm={() => confirmDelete(deleting)} />}
+      {deleting && <DeleteConfirm label={deleting.name} busy={delBusy} error={delErr} onClose={() => { setDeleting(null); setDelErr(null); }} onConfirm={() => confirmDelete(deleting)} />}
       {saving && <div style={{ position: "fixed", inset: 0, zIndex: 200 }} />}
     </>
   );

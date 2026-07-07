@@ -1148,7 +1148,7 @@ function LoadModal({ load, onClose, onSave, driverOpts = [], dispatcherOpts = []
   );
 }
 
-function DeleteConfirm({ label, onClose, onConfirm }: { label: string; onClose: () => void; onConfirm: () => void }) {
+function DeleteConfirm({ label, onClose, onConfirm, busy = false, error }: { label: string; onClose: () => void; onConfirm: () => void; busy?: boolean; error?: string | null }) {
   return (
     <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div style={{ backgroundColor: "var(--card)", borderRadius: 12, width: 360, padding: 24, boxShadow: "0 20px 60px rgba(0,0,0,0.25)", textAlign: "center" }}>
@@ -1156,12 +1156,15 @@ function DeleteConfirm({ label, onClose, onConfirm }: { label: string; onClose: 
           <Trash2 size={20} color="#EF4444" />
         </div>
         <div style={{ fontFamily: "var(--font-sans)", fontSize: 15, fontWeight: 600, color: "var(--foreground)", marginBottom: 6 }}>Delete load?</div>
-        <div style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)", marginBottom: 20 }}>
+        <div style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)", marginBottom: error ? 12 : 20 }}>
           Load <strong>{label}</strong> will be permanently removed.
         </div>
+        {error && <div style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "#EF4444", marginBottom: 16 }}>{error}</div>}
         <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
-          <button onClick={onClose} style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 20px", borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "var(--muted)", color: "var(--foreground)", cursor: "pointer" }}>Cancel</button>
-          <button onClick={onConfirm} style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 20px", borderRadius: 6, border: "none", backgroundColor: "#EF4444", color: "#fff", cursor: "pointer" }}>Delete</button>
+          <button onClick={onClose} disabled={busy} style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 20px", borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "var(--muted)", color: "var(--foreground)", cursor: busy ? "default" : "pointer", opacity: busy ? 0.5 : 1 }}>Cancel</button>
+          <button onClick={onConfirm} disabled={busy} style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, minWidth: 96, fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 20px", borderRadius: 6, border: "none", backgroundColor: "#EF4444", color: "#fff", cursor: busy ? "default" : "pointer", opacity: busy ? 0.8 : 1 }}>
+            {busy ? <><span style={{ width: 13, height: 13, borderRadius: "50%", border: "2px solid rgba(255,255,255,0.4)", borderTopColor: "#fff", animation: "spin 0.7s linear infinite", display: "inline-block" }} /> Deleting…</> : "Delete"}
+          </button>
         </div>
       </div>
     </div>
@@ -1425,6 +1428,8 @@ export function LoadsPage() {
   const [saving, setSaving]         = useState(false);
   const [editing, setEditing]       = useState<Partial<Load>>({});
   const [deleting, setDeleting]     = useState<Load | null>(null);
+  const [delBusy, setDelBusy]       = useState(false);
+  const [delErr, setDelErr]         = useState<string | null>(null);
   const [filterStatus, setFilter]   = useState("All");
   const [search, setSearch]         = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -1518,13 +1523,17 @@ export function LoadsPage() {
   const del = async () => {
     if (!deleting) return;
     const label = deleting.loadId;
-    setDeleting(null);
+    setDelErr(null);
+    setDelBusy(true);
     try {
       await api.delete(`/loads/${deleting.id}`);
+      setDeleting(null);
       setToast({ type: "success", msg: `Load ${label} deleted` });
       setFetchKey((k) => k + 1);
     } catch (e) {
-      setToast({ type: "error", msg: String(e) });
+      setDelErr(e instanceof Error ? e.message : "Delete failed");
+    } finally {
+      setDelBusy(false);
     }
   };
 
@@ -1758,7 +1767,7 @@ export function LoadsPage() {
         <LoadModal load={editing} onClose={() => setModal(null)} onSave={save} driverOpts={driverOpts} dispatcherOpts={dispatcherOpts} saving={saving} />
       )}
       {deleting && (
-        <DeleteConfirm label={deleting.loadId} onClose={() => setDeleting(null)} onConfirm={del} />
+        <DeleteConfirm label={deleting.loadId} busy={delBusy} error={delErr} onClose={() => { setDeleting(null); setDelErr(null); }} onConfirm={del} />
       )}
     </div>
   );

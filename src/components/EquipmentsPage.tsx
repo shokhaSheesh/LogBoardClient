@@ -419,7 +419,7 @@ function EquipModal({ title, row, onClose, onSave, saving = false, driverOpts = 
   );
 }
 
-function DeleteConfirm({ label, onClose, onConfirm }: { label: string; onClose: () => void; onConfirm: () => void }) {
+function DeleteConfirm({ label, onClose, onConfirm, busy = false, error }: { label: string; onClose: () => void; onConfirm: () => void; busy?: boolean; error?: string | null }) {
   return (
     <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div style={{ backgroundColor: "var(--card)", borderRadius: 12, width: 360, padding: 24, boxShadow: "0 20px 60px rgba(0,0,0,0.25)", textAlign: "center" }}>
@@ -427,12 +427,15 @@ function DeleteConfirm({ label, onClose, onConfirm }: { label: string; onClose: 
           <Trash2 size={20} color="#EF4444" />
         </div>
         <div style={{ fontFamily: "var(--font-sans)", fontSize: 15, fontWeight: 600, color: "var(--foreground)", marginBottom: 6 }}>Remove equipment?</div>
-        <div style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)", marginBottom: 20 }}>
+        <div style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)", marginBottom: error ? 12 : 20 }}>
           <strong>{label}</strong> will be permanently removed.
         </div>
+        {error && <div style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "#EF4444", marginBottom: 16 }}>{error}</div>}
         <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
-          <button onClick={onClose} style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 20px", borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "var(--muted)", color: "var(--foreground)", cursor: "pointer" }}>Cancel</button>
-          <button onClick={onConfirm} style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 20px", borderRadius: 6, border: "none", backgroundColor: "#EF4444", color: "#fff", cursor: "pointer" }}>Remove</button>
+          <button onClick={onClose} disabled={busy} style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 20px", borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "var(--muted)", color: "var(--foreground)", cursor: busy ? "default" : "pointer", opacity: busy ? 0.5 : 1 }}>Cancel</button>
+          <button onClick={onConfirm} disabled={busy} style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, minWidth: 100, fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 20px", borderRadius: 6, border: "none", backgroundColor: "#EF4444", color: "#fff", cursor: busy ? "default" : "pointer", opacity: busy ? 0.8 : 1 }}>
+            {busy ? <><span style={{ width: 13, height: 13, borderRadius: "50%", border: "2px solid rgba(255,255,255,0.4)", borderTopColor: "#fff", animation: "spin 0.7s linear infinite", display: "inline-block" }} /> Removing…</> : "Remove"}
+          </button>
         </div>
       </div>
     </div>
@@ -712,6 +715,8 @@ function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
   const [modal, setModal]         = useState<"create" | "edit" | null>(null);
   const [editing, setEditing]     = useState<Partial<TruckRow>>({});
   const [deleting, setDeleting]   = useState<TruckRow | null>(null);
+  const [delBusy, setDelBusy]     = useState(false);
+  const [delErr, setDelErr]       = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const [search, setSearch]       = useState("");
   const [debouncedQ, setDebouncedQ] = useState("");
@@ -779,14 +784,18 @@ function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
 
   const del = async () => {
     if (!deleting) return;
+    setDelErr(null);
+    setDelBusy(true);
     try {
       await api.delete(`/trucks/${deleting.id}`);
       setFetchKey((k) => k + 1);
       setToast({ type: "success", msg: `Truck ${deleting.unit} removed` });
+      setDeleting(null);
     } catch (e) {
-      setToast({ type: "error", msg: e instanceof Error ? e.message : "Delete failed" });
+      setDelErr(e instanceof Error ? e.message : "Delete failed");
+    } finally {
+      setDelBusy(false);
     }
-    setDeleting(null);
   };
 
   if (error) return (
@@ -878,7 +887,7 @@ function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
       {(modal === "create" || modal === "edit") && (
         <EquipModal title={modal === "create" ? "Add Truck" : "Edit Truck"} row={editing} onClose={() => setModal(null)} onSave={save} saving={saving} driverOpts={driverOpts} />
       )}
-      {deleting && <DeleteConfirm label={deleting.unit} onClose={() => setDeleting(null)} onConfirm={del} />}
+      {deleting && <DeleteConfirm label={deleting.unit} busy={delBusy} error={delErr} onClose={() => { setDeleting(null); setDelErr(null); }} onConfirm={del} />}
       {importing && <ImportModal entityLabel="Truck" endpoint="/trucks/import" onClose={() => setImporting(false)} onImported={() => setFetchKey((k) => k + 1)} />}
       {toast && <Toast type={toast.type} msg={toast.msg} onClose={() => setToast(null)} />}
     </>
@@ -895,6 +904,8 @@ function TrailersTab({ onCountChange }: { onCountChange: (n: number) => void }) 
   const [modal, setModal]         = useState<"create" | "edit" | null>(null);
   const [editing, setEditing]     = useState<Partial<TrailerRow>>({});
   const [deleting, setDeleting]   = useState<TrailerRow | null>(null);
+  const [delBusy, setDelBusy]     = useState(false);
+  const [delErr, setDelErr]       = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const [search, setSearch]       = useState("");
   const [debouncedQ, setDebouncedQ] = useState("");
@@ -962,14 +973,18 @@ function TrailersTab({ onCountChange }: { onCountChange: (n: number) => void }) 
 
   const del = async () => {
     if (!deleting) return;
+    setDelErr(null);
+    setDelBusy(true);
     try {
       await api.delete(`/trailers/${deleting.id}`);
       setFetchKey((k) => k + 1);
       setToast({ type: "success", msg: `Trailer ${deleting.unit} removed` });
+      setDeleting(null);
     } catch (e) {
-      setToast({ type: "error", msg: e instanceof Error ? e.message : "Delete failed" });
+      setDelErr(e instanceof Error ? e.message : "Delete failed");
+    } finally {
+      setDelBusy(false);
     }
-    setDeleting(null);
   };
 
   if (error) return (
@@ -1061,7 +1076,7 @@ function TrailersTab({ onCountChange }: { onCountChange: (n: number) => void }) 
       {(modal === "create" || modal === "edit") && (
         <EquipModal title={modal === "create" ? "Add Trailer" : "Edit Trailer"} row={editing} onClose={() => setModal(null)} onSave={save} saving={saving} driverOpts={driverOpts} />
       )}
-      {deleting && <DeleteConfirm label={deleting.unit} onClose={() => setDeleting(null)} onConfirm={del} />}
+      {deleting && <DeleteConfirm label={deleting.unit} busy={delBusy} error={delErr} onClose={() => { setDeleting(null); setDelErr(null); }} onConfirm={del} />}
       {importing && <ImportModal entityLabel="Trailer" endpoint="/trailers/import" onClose={() => setImporting(false)} onImported={() => setFetchKey((k) => k + 1)} />}
       {toast && <Toast type={toast.type} msg={toast.msg} onClose={() => setToast(null)} />}
     </>
