@@ -1095,9 +1095,16 @@ export function DispatchTable() {
                       )}
                     </td>
 
-                    {/* Phone */}
+                    {/* Phone — team drivers show both contacts (read-only) */}
                     <td style={td({ borderRight: border })}>
-                      {editableText(driver.driverId, "phone", driver.phone, { mono: true, fontSize: 11, color: "var(--muted-foreground)" })}
+                      {driver.team ? (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                          <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--muted-foreground)", whiteSpace: "nowrap" }}>{driver.phone}</span>
+                          {driver.phone2 && <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--muted-foreground)", whiteSpace: "nowrap" }}>{driver.phone2}</span>}
+                        </div>
+                      ) : (
+                        editableText(driver.driverId, "phone", driver.phone, { mono: true, fontSize: 11, color: "var(--muted-foreground)" })
+                      )}
                     </td>
 
                     {/* Unit */}
