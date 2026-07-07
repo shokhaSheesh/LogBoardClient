@@ -1106,6 +1106,10 @@ export function DispatchTable() {
                   borderBottom: border, verticalAlign: "middle", ...extra,
                 });
 
+                // No active load → route/appointment cells are empty and non-interactive.
+                const hasLoad = !!driver.loadRaw?.id;
+                const emptyDash = <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)" }}>—</span>;
+
                 return (
                   <tr key={driver.driverId}>
 
@@ -1160,8 +1164,9 @@ export function DispatchTable() {
                       <StatusDropdown value={driver.status} onChange={(s) => patch(driver.driverId, { status: s })} />
                     </td>
 
-                    {/* Origin / Dest with stops */}
-                    <td style={td({ borderRight: border, verticalAlign: "top", paddingTop: 12, paddingBottom: 12 })}>
+                    {/* Origin / Dest with stops — only when the driver has a load */}
+                    <td style={td({ borderRight: border, verticalAlign: hasLoad ? "top" : "middle", paddingTop: 12, paddingBottom: 12 })}>
+                      {!hasLoad ? emptyDash : (
                       <StopList
                         origin={driver.origin}
                         originDone={driver.originDone}
@@ -1180,10 +1185,13 @@ export function DispatchTable() {
                           patch(driver.driverId, { stops: updated });
                         }}
                       />
+                      )}
                     </td>
 
                     {/* Appt. Times — #1 pickup, intermediate stops, then destination */}
-                    {(() => {
+                    {!hasLoad ? (
+                      <td style={td({ borderRight: border })}>{emptyDash}</td>
+                    ) : (() => {
                       const stops = driver.stops ?? [];
                       const labelStyle: React.CSSProperties = { fontFamily: "var(--font-mono)", fontSize: 9, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase" as const, flexShrink: 0, width: 30 };
                       const pickupDone = driver.originDone ?? false;
