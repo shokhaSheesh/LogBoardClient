@@ -199,9 +199,9 @@ function CustomSelect({
 
 const PAGE_SIZES = [20, 40, 60, 100];
 
-function Pagination({ page, total, pageSize, onPage, onPageSize }: {
+function Pagination({ page, total, pageSize, onPage, onPageSize, loading = false }: {
   page: number; total: number; pageSize: number;
-  onPage: (p: number) => void; onPageSize: (s: number) => void;
+  onPage: (p: number) => void; onPageSize: (s: number) => void; loading?: boolean;
 }) {
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const from = total === 0 ? 0 : (page - 1) * pageSize + 1;
@@ -242,8 +242,9 @@ function Pagination({ page, total, pageSize, onPage, onPageSize }: {
       backgroundColor: "var(--card)", flexShrink: 0,
     }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)", whiteSpace: "nowrap" }}>
-          {total === 0 ? "No results" : `Showing ${from}–${to} of ${total}`}
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 7, fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)", whiteSpace: "nowrap" }}>
+          {loading && <span style={{ width: 12, height: 12, borderRadius: "50%", border: "2px solid var(--border)", borderTopColor: "var(--primary)", animation: "spin 0.7s linear infinite", display: "inline-block" }} />}
+          {loading ? "Loading…" : total === 0 ? "No results" : `Showing ${from}–${to} of ${total}`}
         </span>
         <span style={{ color: "var(--border)", userSelect: "none" }}>·</span>
         <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)", whiteSpace: "nowrap" }}>
@@ -257,13 +258,13 @@ function Pagination({ page, total, pageSize, onPage, onPageSize }: {
         />
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-        <PBtn disabled={page <= 1} onClick={() => onPage(page - 1)}><ChevronLeft size={14} /></PBtn>
+        <PBtn disabled={loading || page <= 1} onClick={() => onPage(page - 1)}><ChevronLeft size={14} /></PBtn>
         {pages.map((p, i) =>
           p === "…"
             ? <span key={`e${i}`} style={{ padding: "0 4px", fontSize: 13, color: "var(--muted-foreground)", lineHeight: "30px" }}>…</span>
-            : <PBtn key={p} active={p === page} onClick={() => onPage(p as number)}>{p}</PBtn>
+            : <PBtn key={p} active={p === page} disabled={loading && p !== page} onClick={() => onPage(p as number)}>{p}</PBtn>
         )}
-        <PBtn disabled={page >= totalPages} onClick={() => onPage(page + 1)}><ChevronRight size={14} /></PBtn>
+        <PBtn disabled={loading || page >= totalPages} onClick={() => onPage(page + 1)}><ChevronRight size={14} /></PBtn>
       </div>
     </div>
   );
@@ -1605,9 +1606,9 @@ export function LoadsPage() {
             <AddLoadMenu onManual={openCreate} />
           </div>
 
-          {/* Table */}
+          {/* Table — dim existing rows while a page-change refetch is in flight */}
           <div style={{ flex: 1, overflow: "auto", scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent" }}>
-            <table style={{ width: "max-content", minWidth: "100%", borderCollapse: "collapse" }}>
+            <table style={{ width: "max-content", minWidth: "100%", borderCollapse: "collapse", opacity: loading && loads.length > 0 ? 0.45 : 1, pointerEvents: loading ? "none" : "auto", transition: "opacity 0.15s" }}>
               <thead>
                 <tr>
                   <TH width={40}>#</TH>
@@ -1737,7 +1738,7 @@ export function LoadsPage() {
                     </td>
                   </tr>
                 ))}
-                {loading && (
+                {loading && loads.length === 0 && (
                   <tr>
                     <td colSpan={11} style={{ padding: "40px 20px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
                       Loading…
@@ -1757,7 +1758,7 @@ export function LoadsPage() {
 
           <Pagination
             page={page} total={total} pageSize={pageSize}
-            onPage={setPage} onPageSize={setPageSize}
+            onPage={setPage} onPageSize={setPageSize} loading={loading}
           />
           </>)}
         </div>
