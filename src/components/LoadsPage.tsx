@@ -108,6 +108,12 @@ function toBackend(l: Partial<Load>): Partial<BackendLoad> {
   };
 }
 
+// A Completed load has driven its whole route — mark every stop done before persisting.
+function withCompletedStops(l: Load): Load {
+  if (l.status !== "completed" || !l.stops?.length) return l;
+  return { ...l, stops: l.stops.map((s) => ({ ...s, done: true })) };
+}
+
 
 // ─── Custom Select ─────────────────────────────────────────────────────────────
 
@@ -1496,7 +1502,7 @@ export function LoadsPage() {
   const patchLoad = async (id: string, fields: Partial<Load>) => {
     const current = loads.find((l) => l.id === id);
     if (!current) return;
-    const updated = { ...current, ...fields };
+    const updated = withCompletedStops({ ...current, ...fields });
     setLoads((prev) => prev.map((l) => (l.id === id ? updated : l)));
     try {
       await api.put<BackendLoad>(`/loads/${id}`, toBackend(updated));
@@ -1513,13 +1519,14 @@ export function LoadsPage() {
 
   const save = async (l: Load) => {
     setSaving(true);
+    const load = withCompletedStops(l);
     try {
       if (modal === "create") {
-        await api.post<BackendLoad>("/loads", toBackend(l));
-        setToast({ type: "success", msg: `Load ${l.loadId || ""} created` });
+        await api.post<BackendLoad>("/loads", toBackend(load));
+        setToast({ type: "success", msg: `Load ${load.loadId || ""} created` });
       } else {
-        await api.put<BackendLoad>(`/loads/${l.id}`, toBackend(l));
-        setToast({ type: "success", msg: `Load ${l.loadId || ""} updated` });
+        await api.put<BackendLoad>(`/loads/${load.id}`, toBackend(load));
+        setToast({ type: "success", msg: `Load ${load.loadId || ""} updated` });
       }
       setModal(null);
       setFetchKey((k) => k + 1);

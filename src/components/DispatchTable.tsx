@@ -1161,7 +1161,13 @@ export function DispatchTable() {
 
                     {/* Status */}
                     <td style={td({ borderRight: border })}>
-                      <StatusDropdown value={driver.status} onChange={(s) => patch(driver.driverId, { status: s })} />
+                      <StatusDropdown value={driver.status} onChange={async (s) => {
+                        await patch(driver.driverId, { status: s });
+                        // Completing a load marks its whole route done (persisted to the load).
+                        if (s === "completed" && driver.loadRaw?.id) {
+                          await patchLoad(driver.driverId, (driver.stops ?? []).map((st) => ({ ...st, done: true })), true, true);
+                        }
+                      }} />
                     </td>
 
                     {/* Origin / Dest with stops — only when the driver has a load */}
