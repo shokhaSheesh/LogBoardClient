@@ -10,6 +10,8 @@ interface TruckRow {
   unit: string;
   driver: string;
   driver_id: string;
+  driver_team?: boolean;   // resolved on the row — assigned driver is a team
+  driver_name2?: string;   // the team's second driver name
   make: string;
   model: string;
   vin: string;
@@ -20,6 +22,8 @@ interface TrailerRow {
   unit: string;
   driver: string;
   driver_id: string;
+  driver_team?: boolean;
+  driver_name2?: string;
   make: string;
   model: string;
   vin: string;
@@ -717,12 +721,12 @@ function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
   const [fetchKey, setFetchKey]   = useState(0);
   const [toast, setToast]         = useState<{ type: "success" | "error"; msg: string } | null>(null);
   const [driverOpts, setDriverOpts] = useState<SelectOpt[]>([]);
-  const [driverNameMap, setDriverNameMap] = useState<Record<string, string>>({});
 
   useEffect(() => {
+    // Only for the assign-driver dropdown — the row itself now carries the
+    // resolved (team-aware) driver name, so no lookup map is needed.
     api.get<any[]>("/drivers").then((drivers) => {
       setDriverOpts((drivers ?? []).map((d) => ({ value: d.id, label: driverDisplayName(d) })));
-      setDriverNameMap(Object.fromEntries((drivers ?? []).map((d) => [d.id, driverDisplayName(d)])));
     }).catch(() => {});
   }, []);
 
@@ -845,7 +849,7 @@ function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
                     {r.unit}
                   </span>
                 </td>
-                <TD>{(driverNameMap[r.driver_id] || r.driver) || <span style={{ color: "var(--muted-foreground)", fontStyle: "italic" }}>Unassigned</span>}</TD>
+                <TD>{r.driver ? driverDisplayName({ name: r.driver, name2: r.driver_name2, team: r.driver_team }) : <span style={{ color: "var(--muted-foreground)", fontStyle: "italic" }}>Unassigned</span>}</TD>
                 <TD>{r.make}</TD>
                 <TD>{r.model}</TD>
                 <TD mono>{r.vin}</TD>
@@ -900,12 +904,12 @@ function TrailersTab({ onCountChange }: { onCountChange: (n: number) => void }) 
   const [fetchKey, setFetchKey]   = useState(0);
   const [toast, setToast]         = useState<{ type: "success" | "error"; msg: string } | null>(null);
   const [driverOpts, setDriverOpts] = useState<SelectOpt[]>([]);
-  const [driverNameMap, setDriverNameMap] = useState<Record<string, string>>({});
 
   useEffect(() => {
+    // Only for the assign-driver dropdown — the row itself now carries the
+    // resolved (team-aware) driver name, so no lookup map is needed.
     api.get<any[]>("/drivers").then((drivers) => {
       setDriverOpts((drivers ?? []).map((d) => ({ value: d.id, label: driverDisplayName(d) })));
-      setDriverNameMap(Object.fromEntries((drivers ?? []).map((d) => [d.id, driverDisplayName(d)])));
     }).catch(() => {});
   }, []);
 
@@ -1028,7 +1032,7 @@ function TrailersTab({ onCountChange }: { onCountChange: (n: number) => void }) 
                     {r.unit}
                   </span>
                 </td>
-                <TD>{(driverNameMap[r.driver_id] || r.driver) || <span style={{ color: "var(--muted-foreground)", fontStyle: "italic" }}>Unassigned</span>}</TD>
+                <TD>{r.driver ? driverDisplayName({ name: r.driver, name2: r.driver_name2, team: r.driver_team }) : <span style={{ color: "var(--muted-foreground)", fontStyle: "italic" }}>Unassigned</span>}</TD>
                 <TD>{r.make}</TD>
                 <TD>{r.model}</TD>
                 <TD mono>{r.vin}</TD>

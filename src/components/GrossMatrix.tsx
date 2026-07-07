@@ -3,6 +3,7 @@ import { Search, Calendar, Check, ChevronDown, ChevronLeft, ChevronRight } from 
 import { createPortal } from "react-dom";
 import { Status, STATUS_CONFIG, ALL_STATUSES } from "../lib/statuses";
 import { api } from "../lib/api";
+import { driverDisplayName } from "../lib/driverName";
 
 type CellType = Status | "load" | "empty";
 
@@ -33,6 +34,8 @@ interface BackendCell {
 interface BackendDriverRow {
   driver_id: string;
   name: string;
+  team?: boolean;   // team driver — name2 carries the second driver
+  name2?: string;
   driver_type?: string;
   unit?: string;
   weekly_target?: number;
@@ -51,7 +54,8 @@ function toDriverRow(b: BackendDriverRow): DriverRow {
   }
   return {
     id:            b.driver_id,
-    name:          b.name          ?? "",
+    // Combined "Name1 & Name2" for teams; plain name otherwise.
+    name:          driverDisplayName({ name: b.name, name2: b.name2, team: b.team }),
     driverType:    (b.driver_type as "O/O" | "C/D") ?? "O/O",
     unit:          b.unit          ?? "",
     weeklyTarget:  b.weekly_target,
