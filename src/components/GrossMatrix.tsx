@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from "react";
-import { Search, Calendar, Check, ChevronDown, ChevronLeft, ChevronRight, AlertCircle } from "lucide-react";
+import { Search, Calendar, Check, ChevronDown, ChevronLeft, ChevronRight, AlertCircle, X } from "lucide-react";
 import { createPortal } from "react-dom";
 import { Status, STATUS_CONFIG, ALL_STATUSES } from "../lib/statuses";
 import { api } from "../lib/api";
@@ -28,7 +28,7 @@ interface DriverRow {
 interface BackendCell {
   type: string;
   amount?: number;
-  load_id?: string;
+  load_id?: string | number | (string | number)[]; // array on days with multiple real completed loads
 }
 
 interface BackendDriverRow {
@@ -49,8 +49,12 @@ function toDriverRow(b: BackendDriverRow): DriverRow {
     dateMap[date] = {
       type: (cell.type as CellType) ?? "empty",
       amount: cell.amount,
-      // Backend may send load_id as a number; keep it a string for downstream string ops.
-      loadId: cell.load_id != null ? String(cell.load_id) : undefined,
+      // A day with several real completed loads sends load_id as an array — join with
+      // "/" (not the default comma) so it matches getLoadMiles' parsing and the manual
+      // multi-select's own save format; both read the same joined-ref shape.
+      loadId: Array.isArray(cell.load_id)
+        ? cell.load_id.map(String).join("/") || undefined
+        : cell.load_id != null ? String(cell.load_id) : undefined,
     };
   }
   return {
@@ -117,34 +121,35 @@ function DayCellContent({ cell }: { cell: DayCell }) {
     return cell.amount !== undefined ? (
       <>
         <div style={{ fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: 700, color: "#111827", lineHeight: 1.2 }}>{fmt(cell.amount)}</div>
-        <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "#6B7280", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: DAY_W - 12 }}>{cell.loadId}</div>
+        <div title={cell.loadId} style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "#6B7280", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: DAY_W - 12 }}>{cell.loadId}</div>
       </>
     ) : (
-      <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "#9CA3AF" }}>{cell.loadId ?? "—"}</div>
+      <div title={cell.loadId} style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "#9CA3AF" }}>{cell.loadId ?? "—"}</div>
     );
   }
   if (cell.type === "empty") return null;
   return <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 700, color: s.color, letterSpacing: "0.05em", textTransform: "uppercase" }}>{s.label}</span>;
 }
 
-// ─── Searchable load ID selector ──────────────────────────────────────────────
+// ─── Multi-select load ID picker ───────────────────────────────────────────────
+// One cell can reference several of the driver's loads (a day with multiple
+// completed loads). The backend's manual-override field is a single free-text
+// string, so multiple picks are joined with "/" — the same format getLoadMiles
+// already parses for the automatic (system-tracked) multi-load case.
 
-function LoadIdSelect({ value, driverId, onSelect }: {
-  value: string;
+function LoadMultiSelect({ selected, driverId, onChange }: {
+  selected: string[];
   driverId: string;
-  onSelect: (id: string, payout: string) => void;
+  onChange: (ids: string[], sumPayout: number) => void;
 }) {
-  const [query, setQuery] = useState(value);
-  const [open, setOpen]   = useState(false);
+  const [query, setQuery] = useState("");
+  const [open, setOpen]   = useState(true);
   const [allLoads, setAllLoads] = useState<{ id: string; payout: number }[]>([]);
   const wrapRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => { setQuery(value); }, [value]);
-
-  // Fetch driver's loads on mount and open dropdown
+  // Fetch driver's loads on mount and open the picker
   useEffect(() => {
     if (!driverId) return;
-    setOpen(true);
     api.getList<any>("/loads", { driver_id: driverId, page_size: 100 })
       .then(({ items }) => {
         setAllLoads((items ?? []).map((l: any) => ({ id: l.load_id ?? l.id, payout: l.payout ?? 0 })));
@@ -156,10 +161,11 @@ function LoadIdSelect({ value, driverId, onSelect }: {
     ? allLoads.filter((l) => l.id.toLowerCase().includes(query.toLowerCase()))
     : allLoads;
 
-  function pick(load: { id: string; payout: number }) {
-    onSelect(load.id, String(load.payout));
-    setQuery(load.id);
-    setOpen(false);
+  function toggle(load: { id: string; payout: number }) {
+    const isSel = selected.includes(load.id);
+    const nextIds = isSel ? selected.filter((id) => id !== load.id) : [...selected, load.id];
+    const sum = allLoads.filter((l) => nextIds.includes(l.id)).reduce((s, l) => s + l.payout, 0);
+    onChange(nextIds, sum);
   }
 
   useEffect(() => {
@@ -173,6 +179,22 @@ function LoadIdSelect({ value, driverId, onSelect }: {
 
   return (
     <div ref={wrapRef} style={{ position: "relative" }}>
+      {selected.length > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 6 }}>
+          {selected.map((id) => (
+            <span key={id} style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 6px", borderRadius: 5, backgroundColor: "#EFF6FF", border: "1px solid #BFDBFE", fontFamily: "var(--font-mono)", fontSize: 11, color: "#1D4ED8" }}>
+              {id}
+              <button
+                type="button"
+                onMouseDown={(e) => { e.preventDefault(); toggle({ id, payout: allLoads.find((l) => l.id === id)?.payout ?? 0 }); }}
+                style={{ border: "none", background: "none", cursor: "pointer", color: "#1D4ED8", display: "flex", padding: 0 }}
+              >
+                <X size={10} />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
       <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
         <Search size={12} style={{ position: "absolute", left: 8, color: "#9CA3AF", pointerEvents: "none" }} />
         <input
@@ -190,7 +212,7 @@ function LoadIdSelect({ value, driverId, onSelect }: {
           onMouseDown={(e) => e.stopPropagation()}
           onKeyDown={(e) => {
             if (e.key === "Escape") { setOpen(false); e.stopPropagation(); }
-            if (e.key === "Enter" && filtered.length === 1) { e.preventDefault(); pick(filtered[0]); }
+            if (e.key === "Enter" && filtered.length === 1) { e.preventDefault(); e.stopPropagation(); toggle(filtered[0]); setQuery(""); }
           }}
         />
       </div>
@@ -205,23 +227,29 @@ function LoadIdSelect({ value, driverId, onSelect }: {
           }}
           onMouseDown={(e) => e.stopPropagation()}
         >
-          {filtered.map((load) => (
-            <button
-              key={load.id}
-              onMouseDown={(e) => { e.preventDefault(); pick(load); }}
-              style={{
-                display: "flex", alignItems: "center", justifyContent: "space-between",
-                width: "100%", padding: "6px 10px", border: "none",
-                backgroundColor: load.id === query ? "#EFF6FF" : "transparent",
-                cursor: "pointer", textAlign: "left",
-              }}
-              onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = "#F0F9FF"; }}
-              onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = load.id === query ? "#EFF6FF" : "transparent"; }}
-            >
-              <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "#374151" }}>{load.id}</span>
-              <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 600, color: "#10B981" }}>${load.payout.toLocaleString()}</span>
-            </button>
-          ))}
+          {filtered.map((load) => {
+            const isSel = selected.includes(load.id);
+            return (
+              <button
+                key={load.id}
+                onMouseDown={(e) => { e.preventDefault(); toggle(load); }}
+                style={{
+                  display: "flex", alignItems: "center", gap: 8,
+                  width: "100%", padding: "6px 10px", border: "none",
+                  backgroundColor: isSel ? "#EFF6FF" : "transparent",
+                  cursor: "pointer", textAlign: "left",
+                }}
+                onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = isSel ? "#DBEAFE" : "#F0F9FF"; }}
+                onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = isSel ? "#EFF6FF" : "transparent"; }}
+              >
+                <span style={{ width: 14, height: 14, borderRadius: 3, border: `1.5px solid ${isSel ? "#3B82F6" : "#D1D5DB"}`, backgroundColor: isSel ? "#3B82F6" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  {isSel && <Check size={10} color="#fff" />}
+                </span>
+                <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "#374151", flex: 1 }}>{load.id}</span>
+                <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 600, color: "#10B981" }}>${load.payout.toLocaleString()}</span>
+              </button>
+            );
+          })}
         </div>
       )}
     </div>
@@ -236,21 +264,21 @@ interface EditState {
   rect: DOMRect;
   type: CellType;
   amount: string;
-  loadId: string;
+  loadIds: string[]; // the day's selected loads — joined with "/" on save
 }
 
 function CellEditPanel({
   edit,
   onType,
   onAmount,
-  onLoadId,
+  onLoadsChange,
   onSave,
   onCancel,
 }: {
   edit: EditState;
   onType: (t: CellType) => void;
   onAmount: (v: string) => void;
-  onLoadId: (v: string) => void;
+  onLoadsChange: (ids: string[], sumPayout: number) => void;
   onSave: () => void;
   onCancel: () => void;
 }) {
@@ -338,10 +366,10 @@ function CellEditPanel({
                 onBlur={(e)  => { e.currentTarget.style.borderColor = "#D1D5DB"; }}
               />
             </div>
-            <LoadIdSelect
-              value={edit.loadId}
+            <LoadMultiSelect
+              selected={edit.loadIds}
               driverId={edit.driverId}
-              onSelect={(id, payout) => { onLoadId(id); onAmount(payout); }}
+              onChange={(ids, sumPayout) => onLoadsChange(ids, sumPayout)}
             />
           </div>
         )}
@@ -812,15 +840,19 @@ export function GrossMatrix() {
   function openCellEdit(driverId: string, date: string, cell: DayCell, e: React.MouseEvent) {
     e.stopPropagation();
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    setEditState({ driverId, date, rect, type: cell.type, amount: cell.amount !== undefined ? String(cell.amount) : "", loadId: cell.loadId ?? "" });
+    // The stored ref is a single "/"-joined string (see toDriverRow) — split it back
+    // into individual ids so previously-saved loads show pre-checked in the picker.
+    const loadIds = cell.loadId ? cell.loadId.split("/").map((s) => s.trim()).filter(Boolean) : [];
+    setEditState({ driverId, date, rect, type: cell.type, amount: cell.amount !== undefined ? String(cell.amount) : "", loadIds });
   }
 
   function commitCellEdit() {
     if (!editState) return;
     const { driverId, date } = editState;
     const prevCell = rows.find((d) => d.id === driverId)?.dateMap[date]; // for rollback
+    const joinedLoadId = editState.loadIds.join("/") || undefined;
     const newCell: DayCell = editState.type === "load"
-      ? { type: "load", amount: editState.amount ? Number(editState.amount) : undefined, loadId: editState.loadId || undefined }
+      ? { type: "load", amount: editState.amount ? Number(editState.amount) : undefined, loadId: joinedLoadId }
       : { type: editState.type };
     // optimistic update
     setRows((prev) => prev.map((d) => d.id === driverId
@@ -885,9 +917,9 @@ export function GrossMatrix() {
       {editState && (
         <CellEditPanel
           edit={editState}
-          onType={(t) => setEditState((s) => s ? { ...s, type: t, amount: t === "load" ? s.amount : "", loadId: t === "load" ? s.loadId : "" } : s)}
+          onType={(t) => setEditState((s) => s ? { ...s, type: t, amount: t === "load" ? s.amount : "", loadIds: t === "load" ? s.loadIds : [] } : s)}
           onAmount={(v) => setEditState((s) => s ? { ...s, amount: v } : s)}
-          onLoadId={(v) => setEditState((s) => s ? { ...s, loadId: v } : s)}
+          onLoadsChange={(ids, sumPayout) => setEditState((s) => s ? { ...s, loadIds: ids, amount: String(sumPayout) } : s)}
           onSave={commitCellEdit}
           onCancel={cancelCellEdit}
         />
