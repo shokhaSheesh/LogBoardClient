@@ -143,42 +143,65 @@ function LoadMultiSelect({ selected, driverId, onChange }: {
   onChange: (ids: string[], sumPayout: number) => void;
 }) {
   const [query, setQuery] = useState("");
-  const [open, setOpen]   = useState(true);
-  const [allLoads, setAllLoads] = useState<{ id: string; payout: number }[]>([]);
-  const wrapRef = useRef<HTMLDivElement>(null);
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [items, setItems] = useState<{ id: string; payout: number }[]>([]);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const listRef = useRef<HTMLDivElement>(null);
+  const reqId = useRef(0);
+  // Payouts of every load we've ever loaded — so the amount sum stays correct even
+  // for selected loads that have scrolled out of the current page / search results.
+  const payoutRef = useRef<Map<string, number>>(new Map());
 
-  // Fetch driver's loads on mount and open the picker
   useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(query), 250);
+    return () => clearTimeout(t);
+  }, [query]);
+
+  const loadPage = async (pageNum: number, q: string, replace: boolean) => {
     if (!driverId) return;
-    api.getList<any>("/loads", { driver_id: driverId, page_size: 100 })
-      .then(({ items }) => {
-        setAllLoads((items ?? []).map((l: any) => ({ id: l.load_id ?? l.id, payout: l.payout ?? 0 })));
-      })
-      .catch(() => {});
-  }, [driverId]);
+    const id = ++reqId.current; // guard against a slow stale response clobbering a newer one
+    setLoading(true);
+    try {
+      const { items: rows, total: t } = await api.getList<any>("/loads", { driver_id: driverId, q: q || undefined, page: pageNum, page_size: 20 });
+      if (id !== reqId.current) return;
+      const opts = (rows ?? []).map((l: any) => ({ id: String(l.load_id ?? l.id), payout: l.payout ?? 0 }));
+      opts.forEach((o) => payoutRef.current.set(o.id, o.payout));
+      setItems((prev) => (replace ? opts : [...prev, ...opts]));
+      setTotal(t);
+      setPage(pageNum);
+    } catch {
+      // leave whatever's loaded in place
+    } finally {
+      if (id === reqId.current) setLoading(false);
+    }
+  };
 
-  const filtered = query.trim()
-    ? allLoads.filter((l) => l.id.toLowerCase().includes(query.toLowerCase()))
-    : allLoads;
+  // Fresh page-1 fetch on mount and whenever the (debounced) search changes.
+  useEffect(() => {
+    setItems([]); setTotal(0); setPage(1);
+    void loadPage(1, debouncedQuery, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [driverId, debouncedQuery]);
 
-  function toggle(load: { id: string; payout: number }) {
-    const isSel = selected.includes(load.id);
-    const nextIds = isSel ? selected.filter((id) => id !== load.id) : [...selected, load.id];
-    const sum = allLoads.filter((l) => nextIds.includes(l.id)).reduce((s, l) => s + l.payout, 0);
+  const onScroll = () => {
+    const el = listRef.current;
+    if (!el || loading) return;
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < 48 && items.length < total) {
+      void loadPage(page + 1, debouncedQuery, false);
+    }
+  };
+
+  function toggle(id: string) {
+    const isSel = selected.includes(id);
+    const nextIds = isSel ? selected.filter((x) => x !== id) : [...selected, id];
+    const sum = nextIds.reduce((s, x) => s + (payoutRef.current.get(x) ?? 0), 0);
     onChange(nextIds, sum);
   }
 
-  useEffect(() => {
-    if (!open) return;
-    const h = (e: MouseEvent) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener("mousedown", h);
-    return () => document.removeEventListener("mousedown", h);
-  }, [open]);
-
   return (
-    <div ref={wrapRef} style={{ position: "relative" }}>
+    <div style={{ position: "relative" }}>
       {selected.length > 0 && (
         <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 6 }}>
           {selected.map((id) => (
@@ -186,7 +209,7 @@ function LoadMultiSelect({ selected, driverId, onChange }: {
               {id}
               <button
                 type="button"
-                onMouseDown={(e) => { e.preventDefault(); toggle({ id, payout: allLoads.find((l) => l.id === id)?.payout ?? 0 }); }}
+                onMouseDown={(e) => { e.preventDefault(); toggle(id); }}
                 style={{ border: "none", background: "none", cursor: "pointer", color: "#1D4ED8", display: "flex", padding: 0 }}
               >
                 <X size={10} />
@@ -201,8 +224,7 @@ function LoadMultiSelect({ selected, driverId, onChange }: {
           type="text"
           placeholder="Search load ID…"
           value={query}
-          onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
-          onFocus={() => setOpen(true)}
+          onChange={(e) => setQuery(e.target.value)}
           style={{
             width: "100%", paddingLeft: 26, paddingRight: 8, height: 30,
             borderRadius: 6, border: "1px solid #D1D5DB",
@@ -211,47 +233,52 @@ function LoadMultiSelect({ selected, driverId, onChange }: {
           }}
           onMouseDown={(e) => e.stopPropagation()}
           onKeyDown={(e) => {
-            if (e.key === "Escape") { setOpen(false); e.stopPropagation(); }
-            if (e.key === "Enter" && filtered.length === 1) { e.preventDefault(); e.stopPropagation(); toggle(filtered[0]); setQuery(""); }
+            if (e.key === "Escape") { e.stopPropagation(); }
+            if (e.key === "Enter" && items.length === 1) { e.preventDefault(); e.stopPropagation(); toggle(items[0].id); setQuery(""); }
           }}
         />
       </div>
-      {open && filtered.length > 0 && (
-        <div
-          style={{
-            position: "absolute", top: "calc(100% + 3px)", left: 0, right: 0, zIndex: 10,
-            backgroundColor: "#fff", border: "1px solid #D1D5DB", borderRadius: 6,
-            boxShadow: "0 4px 16px rgba(0,0,0,0.12)",
-            maxHeight: 160, overflowY: "auto",
-            scrollbarWidth: "thin", scrollbarColor: "#D1D5DB transparent",
-          }}
-          onMouseDown={(e) => e.stopPropagation()}
-        >
-          {filtered.map((load) => {
-            const isSel = selected.includes(load.id);
-            return (
-              <button
-                key={load.id}
-                onMouseDown={(e) => { e.preventDefault(); toggle(load); }}
-                style={{
-                  display: "flex", alignItems: "center", gap: 8,
-                  width: "100%", padding: "6px 10px", border: "none",
-                  backgroundColor: isSel ? "#EFF6FF" : "transparent",
-                  cursor: "pointer", textAlign: "left",
-                }}
-                onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = isSel ? "#DBEAFE" : "#F0F9FF"; }}
-                onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = isSel ? "#EFF6FF" : "transparent"; }}
-              >
-                <span style={{ width: 14, height: 14, borderRadius: 3, border: `1.5px solid ${isSel ? "#3B82F6" : "#D1D5DB"}`, backgroundColor: isSel ? "#3B82F6" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                  {isSel && <Check size={10} color="#fff" />}
-                </span>
-                <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "#374151", flex: 1 }}>{load.id}</span>
-                <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 600, color: "#10B981" }}>${load.payout.toLocaleString()}</span>
-              </button>
-            );
-          })}
-        </div>
-      )}
+      {/* Inline, bounded list (scrolls internally, infinite-loads on scroll) — never
+          an absolute dropdown that could run off the bottom of the screen. */}
+      <div
+        ref={listRef}
+        onScroll={onScroll}
+        style={{
+          marginTop: 4, border: "1px solid #E5E7EB", borderRadius: 6, backgroundColor: "#fff",
+          maxHeight: 150, overflowY: "auto", scrollbarWidth: "thin", scrollbarColor: "#D1D5DB transparent",
+        }}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        {items.map((load) => {
+          const isSel = selected.includes(load.id);
+          return (
+            <button
+              key={load.id}
+              onMouseDown={(e) => { e.preventDefault(); toggle(load.id); }}
+              style={{
+                display: "flex", alignItems: "center", gap: 8,
+                width: "100%", padding: "6px 10px", border: "none",
+                backgroundColor: isSel ? "#EFF6FF" : "transparent",
+                cursor: "pointer", textAlign: "left",
+              }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = isSel ? "#DBEAFE" : "#F0F9FF"; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = isSel ? "#EFF6FF" : "transparent"; }}
+            >
+              <span style={{ width: 14, height: 14, borderRadius: 3, border: `1.5px solid ${isSel ? "#3B82F6" : "#D1D5DB"}`, backgroundColor: isSel ? "#3B82F6" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                {isSel && <Check size={10} color="#fff" />}
+              </span>
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "#374151", flex: 1 }}>{load.id}</span>
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 600, color: "#10B981" }}>${load.payout.toLocaleString()}</span>
+            </button>
+          );
+        })}
+        {loading && (
+          <div style={{ padding: "8px 10px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 11, color: "var(--muted-foreground)" }}>Loading…</div>
+        )}
+        {!loading && items.length === 0 && (
+          <div style={{ padding: "10px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 11, color: "var(--muted-foreground)" }}>No loads found</div>
+        )}
+      </div>
     </div>
   );
 }
@@ -295,11 +322,20 @@ function CellEditPanel({
     if (edit.type === "load") amountRef.current?.select();
   }, []);
 
-  // Position: below the cell, shifted left if near right edge
+  // Position: below the cell (shifted left if near the right edge), but flip above
+  // when a load cell's taller panel wouldn't fit below — so the list never runs off
+  // the bottom of the screen. A viewport-bounded max height + internal scroll is the
+  // final safety net.
   const PANEL_W = 248;
   const vw = window.innerWidth;
+  const vh = window.innerHeight;
   const left = Math.min(edit.rect.left, vw - PANEL_W - 8);
-  const top  = edit.rect.bottom + 4;
+  const estHeight = edit.type === "load" ? 360 : 130;
+  const spaceBelow = vh - edit.rect.bottom;
+  const flipUp = spaceBelow < estHeight + 12 && edit.rect.top > spaceBelow;
+  const top = flipUp
+    ? Math.max(8, edit.rect.top - Math.min(estHeight, edit.rect.top - 8) - 4)
+    : edit.rect.bottom + 4;
 
   function handleKey(e: React.KeyboardEvent) {
     if (e.key === "Enter")  { e.preventDefault(); onSave(); }
@@ -323,6 +359,7 @@ function CellEditPanel({
           backgroundColor: "#fff", border: "1.5px solid #3B82F6",
           borderRadius: 10, boxShadow: "0 8px 32px rgba(0,0,0,0.18)",
           padding: 10, display: "flex", flexDirection: "column", gap: 8,
+          maxHeight: "calc(100vh - 16px)", overflowY: "auto",
         }}
         onMouseDown={(e) => e.stopPropagation()}
       >
