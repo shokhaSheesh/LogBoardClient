@@ -149,7 +149,10 @@ function toUser(b: BackendUser): User {
 }
 
 function fromUser(u: Partial<User>, isNew: boolean, roles: Role[]): Record<string, unknown> {
-  const roleName = roles.find((r) => r.id === u.roleId)?.name ?? u.roleId ?? "";
+  // Prefer a selected company role; fall back to the coarse marker the backend gave
+  // us (e.g. "updater") so editing a user without a role_id doesn't blank their role.
+  const matched  = roles.find((r) => r.id === u.roleId);
+  const roleName = matched?.name ?? u.roleName ?? "";
   const body: Record<string, unknown> = {
     full_name: u.name,
     phone:     u.phone,
@@ -161,6 +164,7 @@ function fromUser(u: Partial<User>, isNew: boolean, roles: Role[]): Record<strin
     work_from: u.workFrom,
     work_to:   u.workTo,
   };
+  if (matched) body.role_id = matched.id; // fine-grained company role when one is chosen
   if (isNew && u.password) body.password = u.password;
   return body;
 }
@@ -489,11 +493,25 @@ function UserModal({ user, roles, teams, saving, error, onClose, onSave }: {
   const teamOpts  = [{ value: "", label: "No Team" }, ...teams.map((t) => ({ value: t.id, label: t.name }))];
   const statusOpts = [{ value: "Active", label: "Active" }, { value: "Inactive", label: "Inactive" }];
 
+  // The backend may return a coarse role marker (e.g. "updater") with no role_id, so
+  // resolve the selected role by id first, then by the role's name — otherwise editing
+  // such a user leaves roleId empty and the save is silently blocked.
+  const matchedRole = roles.find((r) => r.id === form.roleId) ?? roles.find((r) => r.name.toLowerCase() === (form.roleName ?? "").toLowerCase());
+  const effectiveRoleId = matchedRole?.id ?? "";
+
   const handleSave = () => {
     setSubmitted(true);
-    const missing = !form.name?.trim() || !form.login?.trim() || !form.roleId || (isNew && !form.password?.trim());
+    // A role is present if we resolved a company role OR carry a coarse role marker.
+    const hasRole = !!effectiveRoleId || !!form.roleName?.trim();
+    const missing = !form.name?.trim() || !form.login?.trim() || !hasRole || (isNew && !form.password?.trim());
     if (missing) return;
-    onSave({ ...form, workDays: `${dayFrom}–${dayTo}` } as User);
+    onSave({
+      ...form,
+      roleId:   effectiveRoleId,
+      workDays: `${dayFrom}–${dayTo}`,
+      workFrom: form.workFrom ?? "08:00",
+      workTo:   form.workTo ?? "17:00",
+    } as User);
   };
 
   return (
@@ -542,7 +560,7 @@ function UserModal({ user, roles, teams, saving, error, onClose, onSave }: {
           <div style={fieldStyle}>
             {req("Role")}
             <CustomSelect
-              value={form.roleId || roles.find((r) => r.name.toLowerCase() === (form.roleName ?? "").toLowerCase())?.id || roles[0]?.id || ""}
+              value={effectiveRoleId}
               options={roleOpts}
               onChange={(v) => set("roleId", v)}
               portal
