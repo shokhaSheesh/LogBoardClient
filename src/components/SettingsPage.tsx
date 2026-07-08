@@ -155,7 +155,8 @@ function fromUser(u: Partial<User>, isNew: boolean, roles: Role[]): Record<strin
     phone:     u.phone,
     email:     u.login,
     role:      roleName.toLowerCase(),
-    status:    (u.status ?? "Active").toLowerCase(),
+    // Backend expects capitalized statuses (Active/Inactive/Suspended), not lowercase.
+    status:    u.status ?? "Active",
     work_days: u.workDays,
     work_from: u.workFrom,
     work_to:   u.workTo,
@@ -558,10 +559,10 @@ function UserModal({ user, roles, teams, saving, error, onClose, onSave }: {
             />
           </div>
 
-          {/* Email */}
+          {/* Login */}
           <label style={fieldStyle}>
-            {req("Email")}
-            <input value={form.login ?? ""} onChange={(e) => set("login", e.target.value)} style={{ ...inputStyle, fontFamily: "var(--font-mono)", border: errBorder(form.login) ?? inputStyle.border }} autoComplete="off" type="email" />
+            {req("Login")}
+            <input value={form.login ?? ""} onChange={(e) => set("login", e.target.value)} style={{ ...inputStyle, fontFamily: "var(--font-mono)", border: errBorder(form.login) ?? inputStyle.border }} autoComplete="off" type="text" />
           </label>
           {/* Password */}
           <label style={fieldStyle}>
@@ -606,7 +607,7 @@ function UserModal({ user, roles, teams, saving, error, onClose, onSave }: {
   );
 }
 
-function UsersTab({ roles, teams }: { roles: Role[]; teams: Team[] }) {
+function UsersTab({ roles, teams, reloadTeams }: { roles: Role[]; teams: Team[]; reloadTeams: () => Promise<unknown> }) {
   const [users, setUsers]       = useState<User[]>([]);
   const [loading, setLoading]   = useState(true);
   const [fetchKey, setFetchKey] = useState(0);
@@ -637,11 +638,34 @@ function UsersTab({ roles, teams }: { roles: Role[]; teams: Team[] }) {
     setSaveErr(null);
     setSaving(true);
     try {
+      // 1) Save the user itself. The user body carries no team field — team membership
+      //    lives on the team resource (its user_ids), so it's reconciled separately below.
+      let userId = u.id;
       if (isNew) {
-        await api.post(`/owner/companies/${companyId}/users`, fromUser(u, true, roles));
+        const created = await api.post<{ id?: string }>(`/owner/companies/${companyId}/users`, fromUser(u, true, roles));
+        userId = created?.id ?? "";
       } else {
         await api.put(`/owner/companies/${companyId}/users/${u.id}`, fromUser(u, false, roles));
       }
+
+      // 2) Reconcile team membership by editing the affected teams' user_ids.
+      const desiredTeamId = u.teamId ?? null;
+      const currentTeam   = userId ? teams.find((t) => t.userIds.includes(userId)) ?? null : null;
+      if (userId && desiredTeamId !== (currentTeam?.id ?? null)) {
+        // Remove from the old team (if any)…
+        if (currentTeam) {
+          await api.put(`/owner/companies/${companyId}/teams/${currentTeam.id}`,
+            fromTeam({ ...currentTeam, userIds: currentTeam.userIds.filter((id) => id !== userId) }));
+        }
+        // …and add to the new one (if any).
+        const target = desiredTeamId ? teams.find((t) => t.id === desiredTeamId) : null;
+        if (target && !target.userIds.includes(userId)) {
+          await api.put(`/owner/companies/${companyId}/teams/${target.id}`,
+            fromTeam({ ...target, userIds: [...target.userIds, userId] }));
+        }
+        await reloadTeams();
+      }
+
       setFetchKey((k) => k + 1);
       setModal(null);
     } catch (e) {
@@ -723,7 +747,7 @@ function UsersTab({ roles, teams }: { roles: Role[]; teams: Team[] }) {
               <TH width={120}>Hours</TH>
               <TH width={110}>Role</TH>
               <TH width={130}>Team</TH>
-              <TH width={140}>Email</TH>
+              <TH width={140}>Login</TH>
               <TH width={90}>Status</TH>
               <TH width={90} align="center">Actions</TH>
             </tr>
@@ -734,7 +758,8 @@ function UsersTab({ roles, teams }: { roles: Role[]; teams: Team[] }) {
             )}
             {!loading && paginated.map((u, i) => {
               const role = roles.find((r) => r.id === u.roleId) ?? roles.find((r) => r.name.toLowerCase() === u.roleName.toLowerCase());
-              const team = teams.find((t) => t.id === u.teamId);
+              // A user's team is derived from the team that lists them (user body has no team field).
+              const team = teams.find((t) => t.userIds.includes(u.id));
               const isEven = i % 2 === 0;
               return (
                 <tr key={u.id} style={{ backgroundColor: isEven ? "var(--card)" : "var(--background)" }}
@@ -771,7 +796,7 @@ function UsersTab({ roles, teams }: { roles: Role[]; teams: Team[] }) {
                   </td>
                   <td style={{ padding: "8px 10px", borderBottom: "1px solid var(--border)", verticalAlign: "middle", textAlign: "center" }}>
                     <div style={{ display: "inline-flex", gap: 5 }}>
-                      <ActionBtn icon={<Pencil size={13} />} color="#1D4ED8" bg="#DBEAFE" onClick={() => { setEditing(u); setModal("edit"); }} />
+                      <ActionBtn icon={<Pencil size={13} />} color="#1D4ED8" bg="#DBEAFE" onClick={() => { setEditing({ ...u, teamId: team?.id ?? null }); setModal("edit"); }} />
                       <ActionBtn icon={<Trash2 size={13} />} color="#DC2626" bg="#FEE2E2" onClick={() => setDeleting(u)} />
                     </div>
                   </td>
@@ -1764,14 +1789,20 @@ export function SettingsPage() {
   const [roles, setRoles] = useState<Role[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
 
+  const reloadTeams = () => {
+    const companyId = getCompanyId();
+    return api.get<any[]>(`/owner/companies/${companyId}/teams`)
+      .then((data) => setTeams((data ?? []).map(toTeam)))
+      .catch(() => {});
+  };
+
   useEffect(() => {
     const companyId = getCompanyId();
     api.get<any[]>(`/owner/companies/${companyId}/roles`)
       .then((data) => setRoles((data ?? []).map(toRole)))
       .catch(() => {});
-    api.get<any[]>(`/owner/companies/${companyId}/teams`)
-      .then((data) => setTeams((data ?? []).map(toTeam)))
-      .catch(() => {});
+    void reloadTeams();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const tabs: { id: TabId; label: string; icon: React.ReactNode; color: string; bg: string }[] = [
@@ -1805,7 +1836,7 @@ export function SettingsPage() {
       </div>
       <div style={{ flex: 1, overflow: "hidden", padding: "20px 24px", display: "flex", flexDirection: "column" }}>
         <div style={{ flex: 1, display: "flex", flexDirection: "column", backgroundColor: "var(--card)", borderRadius: 12, overflow: "hidden", border: "1px solid var(--border)" }}>
-          {tab === "users" && <UsersTab roles={roles} teams={teams} />}
+          {tab === "users" && <UsersTab roles={roles} teams={teams} reloadTeams={reloadTeams} />}
           {tab === "teams" && <TeamsTab users={[]} />}
           {tab === "roles" && <RolesTab onRolesChange={setRoles} />}
           {tab === "week"  && <WeekTab />}
