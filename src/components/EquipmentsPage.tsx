@@ -762,7 +762,8 @@ function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
 
   const save = async (r: EquipRow) => {
     const d = r as TruckRow;
-    const payload = { ...d, driver_id: d.driver_id || null };
+    // Only the writable fields — driver/driver_team/driver_name2/id are read-only (resolved).
+    const payload = { unit: d.unit, driver_id: d.driver_id || null, make: d.make, model: d.model, vin: d.vin };
     setSaving(true);
     try {
       if (modal === "create") {
@@ -951,7 +952,8 @@ function TrailersTab({ onCountChange }: { onCountChange: (n: number) => void }) 
 
   const save = async (r: EquipRow) => {
     const d = r as TrailerRow;
-    const payload = { ...d, driver_id: d.driver_id || null };
+    // Only the writable fields — driver/driver_team/driver_name2/id are read-only (resolved).
+    const payload = { unit: d.unit, driver_id: d.driver_id || null, make: d.make, model: d.model, vin: d.vin };
     setSaving(true);
     try {
       if (modal === "create") {
