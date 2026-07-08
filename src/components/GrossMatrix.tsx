@@ -322,20 +322,23 @@ function CellEditPanel({
     if (edit.type === "load") amountRef.current?.select();
   }, []);
 
-  // Position: below the cell (shifted left if near the right edge), but flip above
-  // when a load cell's taller panel wouldn't fit below — so the list never runs off
-  // the bottom of the screen. A viewport-bounded max height + internal scroll is the
-  // final safety net.
+  // Position the panel so it always fits on screen: open below the cell when there's
+  // room, otherwise flip above (whichever side has more space), and cap the height to
+  // the space actually available at that top — the panel scrolls internally past that,
+  // so the Save/Cancel row is always reachable no matter which row the cell is in.
   const PANEL_W = 248;
+  const GAP = 6;
   const vw = window.innerWidth;
   const vh = window.innerHeight;
   const left = Math.min(edit.rect.left, vw - PANEL_W - 8);
-  const estHeight = edit.type === "load" ? 360 : 130;
-  const spaceBelow = vh - edit.rect.bottom;
-  const flipUp = spaceBelow < estHeight + 12 && edit.rect.top > spaceBelow;
-  const top = flipUp
-    ? Math.max(8, edit.rect.top - Math.min(estHeight, edit.rect.top - 8) - 4)
-    : edit.rect.bottom + 4;
+  const desired    = edit.type === "load" ? 420 : 130;
+  const spaceBelow = vh - edit.rect.bottom - GAP;
+  const spaceAbove = edit.rect.top - GAP;
+  const openUp = spaceBelow < desired && spaceAbove > spaceBelow;
+  const top = openUp
+    ? Math.max(8, edit.rect.top - Math.min(desired, spaceAbove) - GAP)
+    : edit.rect.bottom + GAP;
+  const panelMaxHeight = vh - top - 8;
 
   function handleKey(e: React.KeyboardEvent) {
     if (e.key === "Enter")  { e.preventDefault(); onSave(); }
@@ -359,7 +362,7 @@ function CellEditPanel({
           backgroundColor: "#fff", border: "1.5px solid #3B82F6",
           borderRadius: 10, boxShadow: "0 8px 32px rgba(0,0,0,0.18)",
           padding: 10, display: "flex", flexDirection: "column", gap: 8,
-          maxHeight: "calc(100vh - 16px)", overflowY: "auto",
+          maxHeight: panelMaxHeight, overflowY: "auto",
         }}
         onMouseDown={(e) => e.stopPropagation()}
       >
@@ -411,24 +414,25 @@ function CellEditPanel({
           </div>
         )}
 
-        {/* Actions */}
-        <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
-          <button
-            onMouseDown={(e) => { e.preventDefault(); onCancel(); }}
-            style={{ padding: "4px 12px", borderRadius: 5, border: "1px solid #E5E7EB", backgroundColor: "#F9FAFB", fontFamily: "var(--font-sans)", fontSize: 12, color: "#6B7280", cursor: "pointer", outline: "none" }}
-          >
-            Cancel
-          </button>
-          <button
-            onMouseDown={(e) => { e.preventDefault(); onSave(); }}
-            style={{ padding: "4px 12px", borderRadius: 5, border: "none", backgroundColor: "#3B82F6", fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: 600, color: "#fff", cursor: "pointer", outline: "none" }}
-          >
-            Save
-          </button>
-        </div>
-
-        <div style={{ fontFamily: "var(--font-sans)", fontSize: 10, color: "#9CA3AF", textAlign: "right" }}>
-          Enter to save · Esc to cancel
+        {/* Actions — sticky to the panel bottom so they stay reachable if it scrolls */}
+        <div style={{ position: "sticky", bottom: -10, backgroundColor: "#fff", paddingTop: 8, marginTop: -2, borderTop: "1px solid #F3F4F6" }}>
+          <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+            <button
+              onMouseDown={(e) => { e.preventDefault(); onCancel(); }}
+              style={{ padding: "4px 12px", borderRadius: 5, border: "1px solid #E5E7EB", backgroundColor: "#F9FAFB", fontFamily: "var(--font-sans)", fontSize: 12, color: "#6B7280", cursor: "pointer", outline: "none" }}
+            >
+              Cancel
+            </button>
+            <button
+              onMouseDown={(e) => { e.preventDefault(); onSave(); }}
+              style={{ padding: "4px 12px", borderRadius: 5, border: "none", backgroundColor: "#3B82F6", fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: 600, color: "#fff", cursor: "pointer", outline: "none" }}
+            >
+              Save
+            </button>
+          </div>
+          <div style={{ fontFamily: "var(--font-sans)", fontSize: 10, color: "#9CA3AF", textAlign: "right", marginTop: 4 }}>
+            Enter to save · Esc to cancel
+          </div>
         </div>
       </div>
     </>,
