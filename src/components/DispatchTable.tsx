@@ -846,19 +846,24 @@ export function DispatchTable() {
     // Optimistic update
     setRows((prev) => prev.map((d) => d.driverId === driverId ? { ...d, ...fields } : d));
 
-    // Build PUT body — use cached full driver record if available, else fill safe defaults
+    // Build PUT body. PUT /drivers/:id is a FULL REPLACE, so every editable field must be
+    // sent or the backend resets it — critically team/name2/phone2 (a false/omitted team
+    // clears the co-driver). Prefer the cached full record when we have it (inline edits
+    // pre-fetch it), else fall back to the board row, which already carries these fields.
+    // truck/trailer are read-only derived — never send them; omitting truck_id/trailer_id
+    // leaves the assignment untouched (tri-state).
     const cached = driverCache.current[driverId] ?? {};
     const merged = { ...driver, ...fields };
     const body = {
-      name:                cached.name                ?? merged.name,
-      phone:               cached.phone               ?? merged.phone,
-      type:                cached.type                ?? merged.type,
-      team:                cached.team                ?? false,
+      name:                cached.name   ?? merged.name,
+      phone:               cached.phone  ?? merged.phone,
+      type:                cached.type   ?? merged.type,
+      team:                (cached.team   ?? merged.team) ?? false,
+      name2:               (cached.name2  ?? merged.name2)  ?? "",
+      phone2:              (cached.phone2 ?? merged.phone2) ?? "",
       status:              merged.status,
       location:            merged.location,
       comment:             merged.comments,           // API field is "comment"
-      truck:               cached.truck               ?? "",
-      trailer:             cached.trailer             ?? "",
       weekly_gross_target: cached.weekly_gross_target ?? 0,
       next_load_id:        cached.next_load_id        ?? null,
     };
