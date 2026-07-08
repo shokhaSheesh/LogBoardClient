@@ -4,7 +4,7 @@ import {
   Package, Plus, Pencil, Trash2, X, Check, AlertCircle,
   Search, ChevronDown, ChevronLeft, ChevronRight,
   ClipboardList, Sparkles,
-  ArrowLeft, ArrowRight, Building2, User, DollarSign, Clock, History, CalendarDays, Navigation,
+  ArrowLeft, ArrowRight, Building2, User, DollarSign, Clock, History, CalendarDays, Navigation, GripVertical,
 } from "lucide-react";
 import { Status, STATUS_CONFIG as SHARED_STATUS_CONFIG, ALL_STATUSES as SHARED_ALL_STATUSES } from "../lib/statuses";
 import { api, getCompanyId } from "../lib/api";
@@ -842,6 +842,25 @@ function LoadModal({ load, onClose, onSave, driverOpts = [], dispatcherOpts = []
   const [recalcing, setRecalcing]   = useState(false);
   const [milesNote, setMilesNote]   = useState<string | null>(null);
 
+  // Drag-to-reorder stops. grabIdx makes only the grip handle a drag source (so the
+  // city inputs stay normally interactive); dragIdx/overIdx drive the visual feedback.
+  const [grabIdx, setGrabIdx] = useState<number | null>(null);
+  const [dragIdx, setDragIdx] = useState<number | null>(null);
+  const [overIdx, setOverIdx] = useState<number | null>(null);
+  const resetDrag = () => { setGrabIdx(null); setDragIdx(null); setOverIdx(null); };
+  // Move the dragged stop to the drop position (shifting the rest); the new order is
+  // exactly what we send to the backend as the stops array — no order id needed.
+  const moveStop = (from: number, to: number) => {
+    if (from === to) return;
+    setStops((p) => {
+      const next = [...p];
+      const [item] = next.splice(from, 1);
+      next.splice(to, 0, item);
+      return next;
+    });
+    recalcSoon(); // route order changed → recompute miles
+  };
+
   const addStop    = () => setStops((p) => [...p, { city: "", done: false, appt: "" }]);
   const removeStop = (idx: number) => { setStops((p) => p.filter((_, i) => i !== idx)); recalcSoon(); };
   const updateCity = (idx: number, val: string) => setStops((p) => p.map((s, i) => i === idx ? { ...s, city: val, lat: undefined, lng: undefined } : s));
@@ -1036,7 +1055,7 @@ function LoadModal({ load, onClose, onSave, driverOpts = [], dispatcherOpts = []
           {/* Payout + Miles */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
             <label style={labelStyle}>
-              <span style={capStyle}>Payout ($)</span>
+              <span style={capStyle}>Rate ($)</span>
               <input type="number" value={form.payout ?? ""} onChange={(e) => set("payout", Number(e.target.value))} style={{ ...inputStyle, fontFamily: "var(--font-mono)" }} placeholder="0" onFocus={focusInput} onBlur={blurInput} />
             </label>
             <label style={labelStyle}>
@@ -1066,10 +1085,33 @@ function LoadModal({ load, onClose, onSave, driverOpts = [], dispatcherOpts = []
                 return (
                   <div key={idx}>
                     {/* Stop row */}
-                    <div style={{ display: "flex", alignItems: "flex-end", gap: 10 }}>
+                    <div
+                      draggable={grabIdx === idx}
+                      onDragStart={() => setDragIdx(idx)}
+                      onDragEnd={resetDrag}
+                      onDragOver={(e) => { if (dragIdx !== null) { e.preventDefault(); setOverIdx(idx); } }}
+                      onDrop={(e) => { e.preventDefault(); if (dragIdx !== null) moveStop(dragIdx, idx); resetDrag(); }}
+                      style={{
+                        display: "flex", alignItems: "flex-end", gap: 10, borderRadius: 8,
+                        opacity: dragIdx === idx ? 0.4 : 1,
+                        outline: overIdx === idx && dragIdx !== null && dragIdx !== idx ? "2px dashed var(--primary)" : "none",
+                        outlineOffset: 3,
+                        transition: "opacity 0.12s",
+                      }}
+                    >
+
+                      {/* Drag handle */}
+                      <div
+                        onMouseDown={() => setGrabIdx(idx)}
+                        onMouseUp={() => setGrabIdx(null)}
+                        title="Drag to reorder"
+                        style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 34, cursor: "grab", color: "var(--muted-foreground)", flexShrink: 0 }}
+                      >
+                        <GripVertical size={14} />
+                      </div>
 
                       {/* Spine */}
-                      <div style={{ width: 28, display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0, paddingBottom: 4 }}>
+                      <div style={{ width: 20, display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0, paddingBottom: 4 }}>
                         <div style={{ width: 10, height: 10, borderRadius: "50%", backgroundColor: dotColor, border: "2px solid var(--card)", boxShadow: `0 0 0 2px ${dotColor}`, marginTop: 22, flexShrink: 0 }} />
                       </div>
 
@@ -1113,10 +1155,11 @@ function LoadModal({ load, onClose, onSave, driverOpts = [], dispatcherOpts = []
                       </button>
                     </div>
 
-                    {/* Connector */}
+                    {/* Connector — aligned under the dot (grip 14 + gap + spine 20) */}
                     {!isLast && (
                       <div style={{ display: "flex", gap: 10 }}>
-                        <div style={{ width: 28, display: "flex", justifyContent: "center" }}>
+                        <div style={{ width: 14, flexShrink: 0 }} />
+                        <div style={{ width: 20, display: "flex", justifyContent: "center" }}>
                           <div style={{ width: 2, height: 12, backgroundColor: "var(--border)" }} />
                         </div>
                       </div>
@@ -1127,7 +1170,8 @@ function LoadModal({ load, onClose, onSave, driverOpts = [], dispatcherOpts = []
 
               {/* Add stop */}
               <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
-                <div style={{ width: 28, display: "flex", justifyContent: "center" }}>
+                <div style={{ width: 14, flexShrink: 0 }} />
+                <div style={{ width: 20, display: "flex", justifyContent: "center" }}>
                   <div style={{ width: 2, height: 10, backgroundColor: "var(--border)" }} />
                 </div>
                 <div style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
@@ -1229,7 +1273,7 @@ function LoadDetail({ load, onBack }: { load: Load; onBack: () => void }) {
     },
     {
       icon: <DollarSign size={13} />,
-      label: "Payout",
+      label: "Rate",
       value: (
         <span style={{ fontFamily: "var(--font-mono)", fontWeight: 700, color: load.payout === 0 ? "var(--muted-foreground)" : "#10B981" }}>
           {load.payout === 0 ? "—" : `$${load.payout.toLocaleString()}`}
@@ -1635,7 +1679,7 @@ export function LoadsPage() {
                   <TH width={190}>Appt Times</TH>
                   <TH width={240}>Route</TH>
                   <TH width={100} align="right">Miles</TH>
-                  <TH width={100} align="right">Payout</TH>
+                  <TH width={100} align="right">Rate</TH>
                   <TH width={120}>Dispatcher</TH>
                   <TH width={90} align="center">Actions</TH>
                 </tr>
