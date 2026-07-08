@@ -286,6 +286,161 @@ function CustomSelect({
   );
 }
 
+// ─── Async paginated unit select (Trucks / Trailers) ───────────────────────────
+// /trucks and /trailers are backend-paginated (?page=&page_size=) with a `q`
+// search the backend matches against unit/make/model/vin/driver name. Rather
+// than pulling the whole fleet into memory, this fetches a page at a time,
+// loads more as the user scrolls the option list, and re-queries the backend
+// as they type (debounced) — so the dropdown scales the same whether the
+// company has 20 trucks or 2,000.
+function UnitSelect({ value, label, endpoint, onChange, error = false, disabled = false }: {
+  value: string;
+  label: string; // known display label for `value` — the driver row's own resolved unit name, so the closed button never depends on this list having loaded that page
+  endpoint: "/trucks" | "/trailers";
+  onChange: (id: string, label: string) => void;
+  error?: boolean;
+  disabled?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [items, setItems] = useState<SelectOpt[]>([]);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const reqId = useRef(0);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(query), 250);
+    return () => clearTimeout(t);
+  }, [query]);
+
+  const loadPage = async (pageNum: number, q: string, replace: boolean) => {
+    const id = ++reqId.current; // guards against a slower stale request clobbering a newer one
+    setLoading(true);
+    try {
+      const { items: rows, total: t } = await api.getList<{ id: string; unit?: string }>(endpoint, { q: q || undefined, page: pageNum, page_size: 20 });
+      if (id !== reqId.current) return;
+      const opts = (rows ?? []).map((u) => ({ value: u.id, label: u.unit ?? u.id }));
+      setItems((prev) => (replace ? opts : [...prev, ...opts]));
+      setTotal(t);
+      setPage(pageNum);
+    } catch {
+      // leave whatever was already loaded in place
+    } finally {
+      if (id === reqId.current) setLoading(false);
+    }
+  };
+
+  // Fresh page-1 fetch every time the dropdown opens, and again as the search settles.
+  useEffect(() => {
+    if (!open) return;
+    setItems([]); setTotal(0); setPage(1);
+    void loadPage(1, debouncedQuery, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, debouncedQuery]);
+
+  const onScroll = () => {
+    const el = listRef.current;
+    if (!el || loading) return;
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < 48 && items.length < total) {
+      void loadPage(page + 1, debouncedQuery, false);
+    }
+  };
+
+  return (
+    <div ref={ref} style={{ position: "relative", width: "100%" }}>
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => { if (!disabled) { setOpen((v) => !v); setQuery(""); } }}
+        style={{
+          display: "flex", alignItems: "center", gap: 8, width: "100%",
+          height: 34, paddingLeft: 10, paddingRight: 8,
+          fontFamily: "var(--font-sans)", fontSize: 13,
+          backgroundColor: disabled ? "var(--muted)" : error ? "rgba(239,68,68,0.04)" : "var(--input-background)",
+          border: `1px solid ${error ? "#EF4444" : open ? "var(--primary)" : "var(--border)"}`,
+          borderRadius: 7, color: disabled ? "var(--muted-foreground)" : "var(--foreground)",
+          cursor: disabled ? "not-allowed" : "pointer",
+          opacity: disabled ? 0.55 : 1,
+          boxShadow: error ? "0 0 0 3px rgba(239,68,68,0.10)" : open ? "0 0 0 3px rgba(59,130,246,0.12)" : "none",
+          transition: "border-color 0.15s, box-shadow 0.15s",
+          outline: "none",
+        }}
+      >
+        <span style={{ flex: 1, textAlign: "left", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {value ? (label || value) : "— None —"}
+        </span>
+        <ChevronDown size={13} style={{ color: "var(--muted-foreground)", flexShrink: 0, transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s" }} />
+      </button>
+
+      {open && (
+        <div style={{
+          position: "absolute", top: "calc(100% + 4px)", left: 0,
+          minWidth: "100%", width: "max-content",
+          backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 8,
+          boxShadow: "0 8px 24px rgba(0,0,0,0.10)", zIndex: 200, overflow: "hidden",
+        }}>
+          <div style={{ padding: "8px 8px 4px" }}>
+            <div style={{ position: "relative" }}>
+              <Search size={12} style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", color: "var(--muted-foreground)", pointerEvents: "none" }} />
+              <input
+                autoFocus
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search…"
+                style={{ width: "100%", height: 30, paddingLeft: 26, paddingRight: 8, fontFamily: "var(--font-sans)", fontSize: 12, border: "1px solid var(--border)", borderRadius: 6, backgroundColor: "var(--input-background)", color: "var(--foreground)", outline: "none", boxSizing: "border-box" }}
+              />
+            </div>
+          </div>
+          <div ref={listRef} onScroll={onScroll} style={{ maxHeight: 200, overflowY: "auto", scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent" }}>
+            <button
+              type="button"
+              onClick={() => { onChange("", ""); setOpen(false); }}
+              style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "7px 12px", fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: value === "" ? 600 : 400, color: value === "" ? "var(--primary)" : "var(--foreground)", backgroundColor: value === "" ? "var(--accent)" : "transparent", border: "none", cursor: "pointer", textAlign: "left", outline: "none" }}
+              onMouseEnter={(e) => { if (value !== "") (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--muted)"; }}
+              onMouseLeave={(e) => { if (value !== "") (e.currentTarget as HTMLButtonElement).style.backgroundColor = "transparent"; }}
+            >
+              <span style={{ flex: 1 }}>— None —</span>
+              {value === "" && <Check size={13} style={{ color: "var(--primary)", flexShrink: 0 }} />}
+            </button>
+            {items.map((opt) => {
+              const isActive = opt.value === value;
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => { onChange(opt.value, opt.label); setOpen(false); }}
+                  style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "7px 12px", fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: isActive ? 600 : 400, color: isActive ? "var(--primary)" : "var(--foreground)", backgroundColor: isActive ? "var(--accent)" : "transparent", border: "none", cursor: "pointer", textAlign: "left", outline: "none" }}
+                  onMouseEnter={(e) => { if (!isActive) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--muted)"; }}
+                  onMouseLeave={(e) => { if (!isActive) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "transparent"; }}
+                >
+                  <span style={{ flex: 1 }}>{opt.label}</span>
+                  {isActive && <Check size={13} style={{ color: "var(--primary)", flexShrink: 0 }} />}
+                </button>
+              );
+            })}
+            {loading && (
+              <div style={{ padding: "8px 12px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)" }}>Loading…</div>
+            )}
+            {!loading && items.length === 0 && (
+              <div style={{ padding: "10px 12px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)" }}>No results</div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Pagination ───────────────────────────────────────────────────────────────
 
 const PAGE_SIZES = [20, 40, 60, 100];
@@ -558,19 +713,6 @@ const TYPE_OPTS: SelectOpt[] = [
   { value: "C/D", label: "C/D — Company Driver"  },
 ];
 
-// Truck/trailer options are fetched per-tab from /trucks and /trailers.
-// Select value is the unit's id (what we send as truck_id/trailer_id); label is
-// the unit name. Selecting "— None —" sends "" to unassign.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function toEquipmentOpts(units: any[]): SelectOpt[] {
-  return [
-    { value: "", label: "— None —" },
-    ...(units ?? []).map((u) => ({ value: u.id, label: u.unit ?? u.id })),
-  ];
-}
-
-const EMPTY_OPTS: SelectOpt[] = [];
-
 // ─── Toast ────────────────────────────────────────────────────────────────────
 
 function Toast({ msg, type, onClose }: { msg: string; type: "success" | "error"; onClose: () => void }) {
@@ -741,9 +883,9 @@ function QueueReorder({ driverId, queue, onReorder }: {
 
 // ─── Modals ───────────────────────────────────────────────────────────────────
 
-function SoloModal({ driver, onClose, onSave, truckOpts, trailerOpts, saving, fieldErrors }: {
+function SoloModal({ driver, onClose, onSave, saving, fieldErrors }: {
   driver: Partial<SoloDriver>; onClose: () => void; onSave: (d: SoloDriver) => void;
-  truckOpts: SelectOpt[]; trailerOpts: SelectOpt[]; saving?: boolean;
+  saving?: boolean;
   fieldErrors?: { truck?: string; trailer?: string };
 }) {
   const [form, setForm] = useState<Partial<SoloDriver>>(driver);
@@ -789,13 +931,13 @@ function SoloModal({ driver, onClose, onSave, truckOpts, trailerOpts, saving, fi
 
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
             <FieldLabel error={!!fieldErrors?.truck}>Truck Unit</FieldLabel>
-            <CustomSelect value={form.truckId ?? ""} options={truckOpts} onChange={(v) => set("truckId", v)} searchable error={!!fieldErrors?.truck} />
+            <UnitSelect value={form.truckId ?? ""} label={form.truck ?? ""} endpoint="/trucks" onChange={(id, lbl) => setForm((f) => ({ ...f, truckId: id, truck: lbl }))} error={!!fieldErrors?.truck} />
             {fieldErrors?.truck && <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "#EF4444" }}>{fieldErrors.truck}</span>}
           </label>
 
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
             <FieldLabel error={!!fieldErrors?.trailer}>Trailer Unit</FieldLabel>
-            <CustomSelect value={form.trailerId ?? ""} options={trailerOpts} onChange={(v) => set("trailerId", v)} searchable error={!!fieldErrors?.trailer} />
+            <UnitSelect value={form.trailerId ?? ""} label={form.trailer ?? ""} endpoint="/trailers" onChange={(id, lbl) => setForm((f) => ({ ...f, trailerId: id, trailer: lbl }))} error={!!fieldErrors?.trailer} />
             {fieldErrors?.trailer && <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "#EF4444" }}>{fieldErrors.trailer}</span>}
           </label>
 
@@ -864,9 +1006,9 @@ function SoloModal({ driver, onClose, onSave, truckOpts, trailerOpts, saving, fi
   );
 }
 
-function TeamModal({ driver, onClose, onSave, truckOpts, trailerOpts, saving, fieldErrors }: {
+function TeamModal({ driver, onClose, onSave, saving, fieldErrors }: {
   driver: Partial<TeamDriver>; onClose: () => void; onSave: (d: TeamDriver) => void;
-  truckOpts: SelectOpt[]; trailerOpts: SelectOpt[]; saving?: boolean;
+  saving?: boolean;
   fieldErrors?: { truck?: string; trailer?: string };
 }) {
   const [form, setForm] = useState<Partial<TeamDriver>>(driver);
@@ -922,13 +1064,13 @@ function TeamModal({ driver, onClose, onSave, truckOpts, trailerOpts, saving, fi
 
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
             <FieldLabel error={!!fieldErrors?.truck}>Truck Unit</FieldLabel>
-            <CustomSelect value={form.truckId ?? ""} options={truckOpts} onChange={(v) => set("truckId", v)} searchable error={!!fieldErrors?.truck} />
+            <UnitSelect value={form.truckId ?? ""} label={form.truck ?? ""} endpoint="/trucks" onChange={(id, lbl) => setForm((f) => ({ ...f, truckId: id, truck: lbl }))} error={!!fieldErrors?.truck} />
             {fieldErrors?.truck && <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "#EF4444" }}>{fieldErrors.truck}</span>}
           </label>
 
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
             <FieldLabel error={!!fieldErrors?.trailer}>Trailer Unit</FieldLabel>
-            <CustomSelect value={form.trailerId ?? ""} options={trailerOpts} onChange={(v) => set("trailerId", v)} searchable error={!!fieldErrors?.trailer} />
+            <UnitSelect value={form.trailerId ?? ""} label={form.trailer ?? ""} endpoint="/trailers" onChange={(id, lbl) => setForm((f) => ({ ...f, trailerId: id, trailer: lbl }))} error={!!fieldErrors?.trailer} />
             {fieldErrors?.trailer && <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "#EF4444" }}>{fieldErrors.trailer}</span>}
           </label>
 
@@ -1988,8 +2130,6 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
   const [rows, setRows]               = useState<SoloDriver[]>([]);
   const [loading, setLoading]         = useState(true);
   const [error, setError]             = useState("");
-  const [truckOpts, setTruckOpts]     = useState<SelectOpt[]>(EMPTY_OPTS);
-  const [trailerOpts, setTrailerOpts] = useState<SelectOpt[]>(EMPTY_OPTS);
   const [modal, setModal]             = useState<"create" | "edit" | null>(null);
   const [editing, setEditing]         = useState<Partial<SoloDriver>>({});
   const [deleting, setDeleting]       = useState<SoloDriver | null>(null);
@@ -2012,14 +2152,6 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
   }, [search]);
 
   useEffect(() => { setPage(1); }, [statusFilter]);
-
-  useEffect(() => {
-    Promise.all([api.get<any[]>("/trucks"), api.get<any[]>("/trailers")])
-      .then(([trucks, trailers]) => {
-        setTruckOpts(toEquipmentOpts(trucks));
-        setTrailerOpts(toEquipmentOpts(trailers));
-      }).catch(() => {});
-  }, []);
 
   useEffect(() => {
     setLoading(true);
@@ -2226,7 +2358,7 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
       />
 
       {(modal === "create" || modal === "edit") && (
-        <SoloModal driver={editing} onClose={() => setModal(null)} onSave={save} truckOpts={truckOpts} trailerOpts={trailerOpts} saving={saving} fieldErrors={fieldErrors} />
+        <SoloModal driver={editing} onClose={() => setModal(null)} onSave={save} saving={saving} fieldErrors={fieldErrors} />
       )}
       {deleting && (
         <DeleteConfirm label={deleting.name} busy={delBusy} error={delErr} onClose={() => { setDeleting(null); setDelErr(null); }} onConfirm={del} />
@@ -2245,8 +2377,6 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
   const [rows, setRows]               = useState<TeamDriver[]>([]);
   const [loading, setLoading]         = useState(true);
   const [error, setError]             = useState("");
-  const [truckOpts, setTruckOpts]     = useState<SelectOpt[]>(EMPTY_OPTS);
-  const [trailerOpts, setTrailerOpts] = useState<SelectOpt[]>(EMPTY_OPTS);
   const [modal, setModal]             = useState<"create" | "edit" | null>(null);
   const [editing, setEditing]         = useState<Partial<TeamDriver>>({});
   const [deleting, setDeleting]       = useState<TeamDriver | null>(null);
@@ -2269,14 +2399,6 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
   }, [search]);
 
   useEffect(() => { setPage(1); }, [statusFilter]);
-
-  useEffect(() => {
-    Promise.all([api.get<any[]>("/trucks"), api.get<any[]>("/trailers")])
-      .then(([trucks, trailers]) => {
-        setTruckOpts(toEquipmentOpts(trucks));
-        setTrailerOpts(toEquipmentOpts(trailers));
-      }).catch(() => {});
-  }, []);
 
   useEffect(() => {
     setLoading(true);
@@ -2480,7 +2602,7 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
       />
 
       {(modal === "create" || modal === "edit") && (
-        <TeamModal driver={editing} onClose={() => setModal(null)} onSave={save} truckOpts={truckOpts} trailerOpts={trailerOpts} saving={saving} fieldErrors={fieldErrors} />
+        <TeamModal driver={editing} onClose={() => setModal(null)} onSave={save} saving={saving} fieldErrors={fieldErrors} />
       )}
       {deleting && (
         <DeleteConfirm label={`${deleting.name1} & ${deleting.name2}`} busy={delBusy} error={delErr} onClose={() => { setDeleting(null); setDelErr(null); }} onConfirm={del} />
