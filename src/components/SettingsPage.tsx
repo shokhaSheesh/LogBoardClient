@@ -636,10 +636,17 @@ function UsersTab({ roles, teams, reloadTeams }: { roles: Role[]; teams: Team[];
   const [deleting, setDeleting] = useState<User | null>(null);
   const [delBusy, setDelBusy]   = useState(false);
   const [delErr, setDelErr]     = useState<string | null>(null);
+  const [toast, setToast]       = useState<{ type: "success" | "error"; msg: string } | null>(null);
   const [search, setSearch]     = useState("");
   const [filterRole, setFilterRole] = useState("All");
   const [page, setPage]         = useState(1);
   const [pageSize, setPageSize] = useState(20);
+
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 3000);
+    return () => clearTimeout(t);
+  }, [toast]);
 
   useEffect(() => {
     const companyId = getCompanyId();
@@ -686,6 +693,7 @@ function UsersTab({ roles, teams, reloadTeams }: { roles: Role[]; teams: Team[];
 
       setFetchKey((k) => k + 1);
       setModal(null);
+      setToast({ type: "success", msg: isNew ? "User created" : "User updated" });
     } catch (e) {
       setSaveErr(e instanceof Error ? e.message : "Save failed"); // keep modal open
     } finally {
@@ -701,6 +709,7 @@ function UsersTab({ roles, teams, reloadTeams }: { roles: Role[]; teams: Team[];
       await api.delete(`/owner/companies/${companyId}/users/${u.id}`);
       setFetchKey((k) => k + 1);
       setDeleting(null);
+      setToast({ type: "success", msg: `${u.name || "User"} removed` });
     } catch (e) {
       setDelErr(e instanceof Error ? e.message : "Delete failed");
     } finally {
@@ -837,6 +846,13 @@ function UsersTab({ roles, teams, reloadTeams }: { roles: Role[]; teams: Team[];
         total={filtered.length} page={safePage} pageSize={pageSize}
         onPage={setPage} onPageSize={setPageSize}
       />
+
+      {/* Toast */}
+      {toast && (
+        <div style={{ position: "fixed", top: 24, right: 24, zIndex: 9999, display: "flex", alignItems: "center", gap: 10, padding: "10px 16px", borderRadius: 8, backgroundColor: toast.type === "success" ? "#10B981" : "#EF4444", color: "#fff", fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 500, boxShadow: "0 4px 12px rgba(0,0,0,0.15)", animation: "slideUp 0.2s ease" }}>
+          {toast.msg}
+        </div>
+      )}
 
       {(modal === "create" || modal === "edit") && (
         <UserModal user={editing} roles={roles} teams={teams} saving={saving} error={saveErr} onClose={() => { setModal(null); setSaveErr(null); }} onSave={(u) => { void save(u); }} />
