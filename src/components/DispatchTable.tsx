@@ -671,6 +671,9 @@ export function DispatchTable() {
   const [teamFilter,     setTeamFilter]     = useState<string>("all"); // team id or "all"
   const [teamOpen,       setTeamOpen]       = useState(false);
   const [viewMode,       setViewMode]       = useState<"all" | "teams">("all"); // one table vs a section per team
+  // Board rows don't carry the driver's upcoming queue (only /drivers does) — fetched
+  // separately and merged in at render time, keyed by driver id.
+  const [driverQueues,   setDriverQueues]   = useState<Record<string, { id: string; loadId: string }[]>>({});
   const [editCell,       setEditCell]       = useState<{ driverId: string; field: string } | null>(null);
   const [historyEvents,  setHistoryEvents]  = useState<HistoryEvent[]>([]);
   const [historyBadge,   setHistoryBadge]   = useState(0);
@@ -688,6 +691,7 @@ export function DispatchTable() {
   const driverCache   = useRef<Record<string, Record<string, unknown>>>({});
   // Heartbeat intervals per driverId
   const heartbeats    = useRef<Record<string, ReturnType<typeof setInterval>>>({});
+  const queueRefetchRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Auto-dismiss the error banner.
   useEffect(() => {
@@ -708,6 +712,21 @@ export function DispatchTable() {
     } finally {
       setLoading(false);
     }
+  };
+
+  // ── Fetch each driver's upcoming queue (next_loads) ─────────────────────────
+  // /board doesn't carry this — only /drivers does — so it's fetched separately and
+  // merged in at render. Board writes (which rotate queues) still only push a
+  // board.snapshot, so this is re-fetched alongside it (see connectWs) to stay fresh.
+  const fetchDriverQueues = async () => {
+    try {
+      const data = await api.get<{ id: string; next_loads?: { id: string; load_id: string }[] }[]>("/drivers");
+      const map: Record<string, { id: string; loadId: string }[]> = {};
+      (data ?? []).forEach((d) => {
+        map[d.id] = (d.next_loads ?? []).map((q) => ({ id: q.id, loadId: q.load_id }));
+      });
+      setDriverQueues(map);
+    } catch { /* leave the previous queue map in place */ }
   };
 
   // ── Fetch history ──────────────────────────────────────────────────────────
@@ -789,6 +808,11 @@ export function DispatchTable() {
         switch (msg.type) {
           case "board.snapshot":
             setRows((msg.rows ?? []).map(fromBoardRow));
+            // A snapshot can mean a queue rotated (completion, reorder, delete) but the
+            // snapshot itself doesn't carry next_loads — refetch it, debounced so a burst
+            // of writes doesn't fire one request per row update.
+            if (queueRefetchRef.current) clearTimeout(queueRefetchRef.current);
+            queueRefetchRef.current = setTimeout(fetchDriverQueues, 600);
             break;
           case "board.history":
             setHistoryBadge((n) => n + 1);
@@ -829,9 +853,11 @@ export function DispatchTable() {
   useEffect(() => {
     fetchBoard().then(() => { connectWs(); fetchLocks(); });
     fetchTeams();
+    fetchDriverQueues();
     return () => {
       if (wsRef.current) { wsRef.current.close(); wsRef.current = null; }
       if (reconnectRef.current) clearTimeout(reconnectRef.current);
+      if (queueRefetchRef.current) clearTimeout(queueRefetchRef.current);
       Object.values(heartbeats.current).forEach(clearInterval);
       heartbeats.current = {};
     };
@@ -1273,11 +1299,31 @@ export function DispatchTable() {
                 return (
                   <tr key={driver.driverId}>
 
-                    {/* Load ID — sticky, read-only */}
+                    {/* Load ID — sticky, read-only. Upcoming queued loads render below,
+                        smaller and muted, so they read as "next" rather than current. */}
                     <td style={td({ position: "sticky", left: LOAD_ID_LEFT, zIndex: 3, width: 110, minWidth: 110, borderRight: border })}>
                       <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 500, color: "var(--primary)" }}>
                         {driver.loadId}
                       </span>
+                      {(() => {
+                        const queue = driverQueues[driver.driverId] ?? [];
+                        if (queue.length === 0) return null;
+                        const SHOWN = 2;
+                        const shown = queue.slice(0, SHOWN);
+                        const overflow = queue.length - shown.length;
+                        return (
+                          <div style={{ marginTop: 2, display: "flex", flexDirection: "column", gap: 1 }}>
+                            {shown.map((q) => (
+                              <span key={q.id} title={`Next up: ${q.loadId}`} style={{ fontFamily: "var(--font-mono)", fontSize: 10, fontWeight: 500, color: "var(--muted-foreground)", whiteSpace: "nowrap" }}>
+                                Next: {q.loadId}
+                              </span>
+                            ))}
+                            {overflow > 0 && (
+                              <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--muted-foreground)", opacity: 0.75 }}>+{overflow} more</span>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </td>
 
                     {/* Driver Name — sticky, read-only. Shows a "being edited by X" note when locked. */}
