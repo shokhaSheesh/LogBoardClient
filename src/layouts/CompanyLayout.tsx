@@ -475,7 +475,7 @@ function ActiveUsers({ companyId }: { companyId: string }) {
             {hovered === user.id && (
               <div
                 style={{
-                  position: "absolute", bottom: "calc(100% + 8px)", left: "50%", transform: "translateX(-50%)",
+                  position: "absolute", top: "calc(100% + 8px)", left: "50%", transform: "translateX(-50%)",
                   backgroundColor: "#1F2937", color: "#fff", borderRadius: 7, padding: "5px 10px",
                   boxShadow: "0 6px 20px rgba(0,0,0,0.22)", whiteSpace: "nowrap", textAlign: "center",
                   pointerEvents: "none", zIndex: 200,
@@ -484,7 +484,7 @@ function ActiveUsers({ companyId }: { companyId: string }) {
                 <div style={{ fontSize: 12, fontWeight: 600, lineHeight: 1.3 }}>{user.name}</div>
                 <div style={{ fontSize: 10, opacity: 0.7, textTransform: "capitalize", lineHeight: 1.3 }}>{user.role}</div>
                 {/* caret */}
-                <div style={{ position: "absolute", top: "100%", left: "50%", transform: "translateX(-50%)", width: 0, height: 0, borderLeft: "4px solid transparent", borderRight: "4px solid transparent", borderTop: "4px solid #1F2937" }} />
+                <div style={{ position: "absolute", bottom: "100%", left: "50%", transform: "translateX(-50%)", width: 0, height: 0, borderLeft: "4px solid transparent", borderRight: "4px solid transparent", borderBottom: "4px solid #1F2937" }} />
               </div>
             )}
           </div>
