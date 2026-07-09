@@ -440,15 +440,36 @@ function Sidebar({ collapsed, onToggle }: {
 
 // ─── Active Users (multiplayer presence placeholder) ─────────────────────────
 
+const AVATAR_CAP = 3;
+
 function ActiveUsers({ companyId }: { companyId: string }) {
   const { count, users } = useBoardPresence(companyId);
   const [hovered, setHovered] = useState<string | null>(null);
-  const shown = users.slice(0, 5);
+  const [open, setOpen]       = useState(false);
+  const stackRef = useRef<HTMLDivElement>(null);
+  const panelRef  = useRef<HTMLDivElement>(null);
+  const shown = users.slice(0, AVATAR_CAP);
   const overflow = count - shown.length;
+
+  // Close the full-list panel on outside click
+  useEffect(() => {
+    if (!open) return;
+    const h = (e: MouseEvent) => {
+      if (!panelRef.current?.contains(e.target as Node) && !stackRef.current?.contains(e.target as Node))
+        setOpen(false);
+    };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [open]);
 
   return (
     <div className="flex items-center gap-2">
-      <div className="flex items-center">
+      <div
+        ref={stackRef}
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center"
+        style={{ cursor: count > 0 ? "pointer" : "default" }}
+      >
         {shown.map((user, i) => (
           <div
             key={user.id}
@@ -491,7 +512,7 @@ function ActiveUsers({ companyId }: { companyId: string }) {
         ))}
         {overflow > 0 && (
           <div
-            title={`+${overflow} more online`}
+            title={`+${overflow} more online — click to see everyone`}
             style={{
               width: 30, height: 30, marginLeft: shown.length > 0 ? -8 : 0,
               borderRadius: "50%", border: "2px solid white", backgroundColor: "var(--muted)",
@@ -504,15 +525,58 @@ function ActiveUsers({ companyId }: { companyId: string }) {
         )}
       </div>
       <span
+        onClick={() => setOpen((v) => !v)}
         style={{
           fontSize: 12,
           color: "var(--muted-foreground)",
           whiteSpace: "nowrap",
+          cursor: count > 0 ? "pointer" : "default",
         }}
       >
         <span style={{ color: count > 0 ? "#10B981" : "#9CA3AF", fontWeight: 600 }}>●</span>{" "}
         {count} online
       </span>
+
+      {/* Full online-users list — a dropdown panel, not a separate page */}
+      {open && createPortal(
+        <div
+          ref={panelRef}
+          style={{
+            position: "fixed", top: 68, right: 24,
+            width: 280, maxHeight: 420,
+            backgroundColor: "var(--card)", border: "1px solid var(--border)",
+            borderRadius: 12, boxShadow: "0 8px 32px rgba(0,0,0,0.12)",
+            zIndex: 9999, display: "flex", flexDirection: "column", overflow: "hidden",
+          }}
+        >
+          <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
+            <span style={{ fontFamily: "var(--font-sans)", fontSize: 14, fontWeight: 700, color: "var(--foreground)" }}>
+              Online now <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 700, color: "#10B981", backgroundColor: "#D1FAE5", borderRadius: 10, padding: "1px 7px", marginLeft: 6 }}>{count}</span>
+            </span>
+          </div>
+          <div style={{ flex: 1, overflowY: "auto", scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent" }}>
+            {users.length === 0 ? (
+              <div style={{ padding: "24px 16px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>No one else online</div>
+            ) : (
+              users.map((user) => (
+                <div key={user.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 16px" }}>
+                  <Avatar style={{ width: 28, height: 28, flexShrink: 0 }}>
+                    <AvatarFallback style={{ backgroundColor: colorFor(user.id), color: "#fff", fontSize: 10, fontWeight: 600 }}>
+                      {initialsOf(user.name)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 500, color: "var(--foreground)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user.name}</div>
+                    <div style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "var(--muted-foreground)", textTransform: "capitalize" }}>{user.role}</div>
+                  </div>
+                  <span style={{ width: 7, height: 7, borderRadius: "50%", backgroundColor: "#10B981", flexShrink: 0 }} />
+                </div>
+              ))
+            )}
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }
