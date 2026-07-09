@@ -347,10 +347,17 @@ export function PayoutsPage() {
   const [editing, setEditing]           = useState<Payout | null>(null);
   const [saving, setSaving]             = useState(false);
   const [saveErr, setSaveErr]           = useState<string | null>(null);
+  const [toast, setToast]               = useState<{ type: "success" | "error"; msg: string } | null>(null);
 
   const [page, setPage]                 = useState(1);
   const [pageSize, setPageSize]         = useState<PageSize>(20);
   const filterRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 3000);
+    return () => clearTimeout(t);
+  }, [toast]);
 
   // Fetch dispatchers (board users) once on mount
   useEffect(() => {
@@ -407,6 +414,7 @@ export function PayoutsPage() {
       setPayouts((prev) => prev.map((p) => p.id === editing.id ? toPayout(updated as BackendPayout) : p));
       setFetchKey((k) => k + 1); // refetch totals
       setEditing(null);
+      setToast({ type: "success", msg: "Payout updated" });
     } catch (e) {
       setSaveErr(e instanceof Error ? e.message : "Couldn't save the adjustment."); // keep modal open
     } finally {
@@ -430,6 +438,12 @@ export function PayoutsPage() {
           saving={saving}
           error={saveErr}
         />
+      )}
+
+      {toast && (
+        <div style={{ position: "fixed", top: 24, right: 24, zIndex: 9999, display: "flex", alignItems: "center", gap: 10, padding: "10px 16px", borderRadius: 8, backgroundColor: toast.type === "success" ? "#10B981" : "#EF4444", color: "#fff", fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 500, boxShadow: "0 4px 12px rgba(0,0,0,0.15)", animation: "slideUp 0.2s ease" }}>
+          {toast.msg}
+        </div>
       )}
 
       <div style={{ flex: 1, overflow: "hidden", padding: "20px 24px", display: "flex", flexDirection: "column" }}>
