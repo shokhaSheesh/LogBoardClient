@@ -667,7 +667,7 @@ export function DispatchTable() {
   const [search,         setSearch]         = useState("");
   const [statusFilter,   setStatusFilter]   = useState<Status | "all">("all");
   const [filterOpen,     setFilterOpen]     = useState(false);
-  const [teams,          setTeams]          = useState<{ id: string; name: string; driverIds: Set<string> }[]>([]);
+  const [teams,          setTeams]          = useState<{ id: string; name: string; driverIds: Set<string>; userNames: string[] }[]>([]);
   const [teamFilter,     setTeamFilter]     = useState<string>("all"); // team id or "all"
   const [teamOpen,       setTeamOpen]       = useState(false);
   const [viewMode,       setViewMode]       = useState<"all" | "teams">("all"); // one table vs a section per team
@@ -759,8 +759,8 @@ export function DispatchTable() {
   const fetchTeams = async () => {
     if (!companyId) return;
     try {
-      const data = await api.get<{ id: string; name: string; driver_ids?: string[] }[]>(`/owner/companies/${companyId}/teams`);
-      setTeams((data ?? []).map((t) => ({ id: t.id, name: t.name, driverIds: new Set(t.driver_ids ?? []) })));
+      const data = await api.get<{ id: string; name: string; driver_ids?: string[]; user_names?: string[] }[]>(`/owner/companies/${companyId}/teams`);
+      setTeams((data ?? []).map((t) => ({ id: t.id, name: t.name, driverIds: new Set(t.driver_ids ?? []), userNames: t.user_names ?? [] })));
     } catch { setTeams([]); }
   };
 
@@ -1035,14 +1035,14 @@ export function DispatchTable() {
   // one shared table — each section gets its own non-scrolling header bar with the
   // team's name and member names, so the header never scrolls away with the table's
   // own horizontal scroll.
-  const teamGroups: { name: string; isUnassigned: boolean; drivers: Driver[] }[] =
+  const teamGroups: { name: string; isUnassigned: boolean; drivers: Driver[]; userNames: string[] }[] =
     viewMode === "teams" && teams.length > 0
       ? (() => {
           const gs = teams
-            .map((t) => ({ name: t.name, isUnassigned: false, drivers: visible.filter((d) => t.driverIds.has(d.driverId)) }))
+            .map((t) => ({ name: t.name, isUnassigned: false, drivers: visible.filter((d) => t.driverIds.has(d.driverId)), userNames: t.userNames }))
             .filter((g) => g.drivers.length > 0);
           const unassigned = visible.filter((d) => !teams.some((t) => t.driverIds.has(d.driverId)));
-          if (unassigned.length) gs.push({ name: "Unassigned", isUnassigned: true, drivers: unassigned });
+          if (unassigned.length) gs.push({ name: "Unassigned", isUnassigned: true, drivers: unassigned, userNames: [] });
           return gs;
         })()
       : [];
@@ -1180,7 +1180,6 @@ export function DispatchTable() {
         ) : viewMode === "teams" && teamGroups.length > 0 ? (
           <div style={{ display: "flex", flexDirection: "column", gap: 28, padding: "16px 16px 24px" }}>
             {teamGroups.map((g) => {
-              const memberNames = g.drivers.map((d) => d.team ? driverDisplayName({ name: d.name, name2: d.name2, team: d.team }) : d.name);
               return (
                 <div key={g.name} style={{ border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden" }}>
                   {/* Section header — plain block above the table, so it never scrolls
@@ -1188,9 +1187,9 @@ export function DispatchTable() {
                   <div style={{ padding: "10px 14px", backgroundColor: "var(--muted)", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                     <Users size={13} style={{ color: "var(--primary)", flexShrink: 0 }} />
                     <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: 700, color: "var(--foreground)" }}>{g.name}</span>
-                    {!g.isUnassigned && memberNames.length > 0 && (
+                    {!g.isUnassigned && g.userNames.length > 0 && (
                       <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "var(--muted-foreground)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        ({memberNames.join(", ")})
+                        ({g.userNames.join(", ")})
                       </span>
                     )}
                     <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, fontWeight: 600, color: "var(--muted-foreground)", backgroundColor: "var(--secondary)", borderRadius: 10, padding: "1px 7px", marginLeft: "auto" }}>
