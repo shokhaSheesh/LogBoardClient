@@ -442,6 +442,7 @@ function Sidebar({ collapsed, onToggle }: {
 
 function ActiveUsers({ companyId }: { companyId: string }) {
   const { count, users } = useBoardPresence(companyId);
+  const [hovered, setHovered] = useState<string | null>(null);
   const shown = users.slice(0, 5);
   const overflow = count - shown.length;
 
@@ -449,29 +450,44 @@ function ActiveUsers({ companyId }: { companyId: string }) {
     <div className="flex items-center gap-2">
       <div className="flex items-center">
         {shown.map((user, i) => (
-          <Avatar
+          <div
             key={user.id}
-            className="border-2 border-white transition-transform hover:scale-110 cursor-pointer"
-            style={{
-              width: 30,
-              height: 30,
-              marginLeft: i > 0 ? -8 : 0,
-              zIndex: shown.length - i,
-              position: "relative",
-            }}
-            title={user.name}
+            onMouseEnter={() => setHovered(user.id)}
+            onMouseLeave={() => setHovered((h) => (h === user.id ? null : h))}
+            style={{ position: "relative", marginLeft: i > 0 ? -8 : 0, zIndex: hovered === user.id ? 100 : shown.length - i }}
           >
-            <AvatarFallback
-              style={{
-                backgroundColor: colorFor(user.id),
-                color: "#fff",
-                fontSize: 11,
-                fontWeight: 600,
-              }}
+            <Avatar
+              className="border-2 border-white transition-transform hover:scale-110 cursor-pointer"
+              style={{ width: 30, height: 30, position: "relative" }}
             >
-              {initialsOf(user.name)}
-            </AvatarFallback>
-          </Avatar>
+              <AvatarFallback
+                style={{
+                  backgroundColor: colorFor(user.id),
+                  color: "#fff",
+                  fontSize: 11,
+                  fontWeight: 600,
+                }}
+              >
+                {initialsOf(user.name)}
+              </AvatarFallback>
+            </Avatar>
+            {/* Hover tooltip — name + role */}
+            {hovered === user.id && (
+              <div
+                style={{
+                  position: "absolute", bottom: "calc(100% + 8px)", left: "50%", transform: "translateX(-50%)",
+                  backgroundColor: "#1F2937", color: "#fff", borderRadius: 7, padding: "5px 10px",
+                  boxShadow: "0 6px 20px rgba(0,0,0,0.22)", whiteSpace: "nowrap", textAlign: "center",
+                  pointerEvents: "none", zIndex: 200,
+                }}
+              >
+                <div style={{ fontSize: 12, fontWeight: 600, lineHeight: 1.3 }}>{user.name}</div>
+                <div style={{ fontSize: 10, opacity: 0.7, textTransform: "capitalize", lineHeight: 1.3 }}>{user.role}</div>
+                {/* caret */}
+                <div style={{ position: "absolute", top: "100%", left: "50%", transform: "translateX(-50%)", width: 0, height: 0, borderLeft: "4px solid transparent", borderRight: "4px solid transparent", borderTop: "4px solid #1F2937" }} />
+              </div>
+            )}
+          </div>
         ))}
         {overflow > 0 && (
           <div
