@@ -42,6 +42,9 @@ interface BackendLoad {
   id: string;
   load_id: string;
   driver_id: string;
+  driver?: string;         // read-only resolved driver name (primary for a team)
+  driver_team?: boolean;
+  driver_name2?: string;
   status: Status;
   payout: number;
   miles: number;
@@ -65,8 +68,9 @@ const STATUS_MODAL_OPTS: SelectOpt[] = SHARED_ALL_STATUSES.map((s) => ({ value: 
 
 // ─── Backend helpers ──────────────────────────────────────────────────────────
 
-function toLoad(b: BackendLoad, drivers: { id: string; name: string }[]): Load {
-  const driverName = drivers.find((d) => d.id === b.driver_id)?.name ?? "";
+function toLoad(b: BackendLoad): Load {
+  // The backend resolves the driver name (and the team's second name) directly.
+  const driverName = b.driver ? driverDisplayName({ name: b.driver, name2: b.driver_name2, team: b.driver_team }) : "";
   return {
     id: b.id,
     loadId: b.load_id ?? "",
@@ -725,14 +729,31 @@ function CalendarPicker({ value, onChange, min }: { value: string; onChange: (v:
 
 // ─── Searchable select ────────────────────────────────────────────────────────
 
-function SearchableSelect({ value, options, onChange, placeholder, icon }: {
-  value: string; options: SelectOpt[]; onChange: (v: string) => void;
+// Backend-paginated, searchable select with infinite scroll. Fetches one page at a
+// time via fetchPage(query, page), loads more on scroll, and re-queries the backend
+// (debounced) as the user types — so it scales whether there are 20 drivers or 2,000.
+// valueLabel is the already-resolved label for the current value (the load carries it),
+// so the closed button shows the right name even before that page is loaded.
+function AsyncSearchableSelect({ value, valueLabel, fetchPage, onChange, placeholder, icon }: {
+  value: string;
+  valueLabel?: string;
+  fetchPage: (query: string, page: number) => Promise<{ items: SelectOpt[]; total: number }>;
+  onChange: (id: string, label: string) => void;
   placeholder?: string; icon?: React.ReactNode;
 }) {
   const wrapRef  = useRef<HTMLDivElement>(null);
+  const listRef  = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const reqId    = useRef(0);
   const [open,  setOpen]  = useState(false);
   const [query, setQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [items, setItems] = useState<SelectOpt[]>([]);
+  const [page,  setPage]  = useState(1);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [selectedLabel, setSelectedLabel] = useState(valueLabel ?? "");
+  useEffect(() => { setSelectedLabel(valueLabel ?? ""); }, [valueLabel]);
 
   useEffect(() => {
     if (!open) return;
@@ -741,27 +762,55 @@ function SearchableSelect({ value, options, onChange, placeholder, icon }: {
     return () => document.removeEventListener("mousedown", h);
   }, [open]);
 
-  useEffect(() => {
-    if (open) { setQuery(""); setTimeout(() => inputRef.current?.focus(), 0); }
-  }, [open]);
+  useEffect(() => { if (open) setTimeout(() => inputRef.current?.focus(), 0); }, [open]);
+  useEffect(() => { const t = setTimeout(() => setDebouncedQuery(query), 250); return () => clearTimeout(t); }, [query]);
 
-  const filtered = options.filter(o => o.label.toLowerCase().includes(query.toLowerCase()));
-  const selected = options.find(o => o.value === value);
+  const loadPage = async (pageNum: number, q: string, replace: boolean) => {
+    const id = ++reqId.current; // guard against a slow stale response clobbering a newer one
+    setLoading(true);
+    try {
+      const { items: rows, total: t } = await fetchPage(q, pageNum);
+      if (id !== reqId.current) return;
+      setItems((prev) => (replace ? rows : [...prev, ...rows]));
+      setTotal(t);
+      setPage(pageNum);
+    } catch { /* keep whatever's loaded */ } finally {
+      if (id === reqId.current) setLoading(false);
+    }
+  };
+
+  // Fresh page-1 fetch when opened and whenever the (debounced) search changes.
+  useEffect(() => {
+    if (!open) return;
+    setItems([]); setTotal(0); setPage(1);
+    void loadPage(1, debouncedQuery, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, debouncedQuery]);
+
+  const onScroll = () => {
+    const el = listRef.current;
+    if (!el || loading) return;
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < 48 && items.length < total) {
+      void loadPage(page + 1, debouncedQuery, false);
+    }
+  };
+
+  const pick = (id: string, label: string) => { onChange(id, label); setSelectedLabel(label); setOpen(false); };
 
   return (
     <div ref={wrapRef} style={{ position: "relative" }}>
-      <button type="button" onClick={() => setOpen(v => !v)} style={{
+      <button type="button" onClick={() => { setOpen(v => !v); setQuery(""); }} style={{
         display: "flex", alignItems: "center", gap: 8, width: "100%", height: 34,
         padding: "0 8px 0 10px", fontFamily: "var(--font-sans)", fontSize: 13,
         border: `1px solid ${open ? "var(--primary)" : "var(--border)"}`,
         borderRadius: 6, backgroundColor: "var(--input-background)",
-        color: selected ? "var(--foreground)" : "var(--muted-foreground)",
+        color: value ? "var(--foreground)" : "var(--muted-foreground)",
         cursor: "pointer", textAlign: "left", outline: "none",
         boxShadow: open ? "0 0 0 3px rgba(59,130,246,0.12)" : "none",
       }}>
         {icon && <span style={{ color: "var(--muted-foreground)", display: "flex", flexShrink: 0 }}>{icon}</span>}
         <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {selected ? selected.label : <span style={{ color: "var(--muted-foreground)" }}>{placeholder ?? "Select…"}</span>}
+          {value ? (selectedLabel || value) : <span style={{ color: "var(--muted-foreground)" }}>{placeholder ?? "Select…"}</span>}
         </span>
         <ChevronDown size={13} style={{ color: "var(--muted-foreground)", flexShrink: 0, transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s" }} />
       </button>
@@ -783,12 +832,20 @@ function SearchableSelect({ value, options, onChange, placeholder, icon }: {
               />
             </div>
           </div>
-          <div style={{ maxHeight: 180, overflowY: "auto" }}>
-            {filtered.map(opt => {
+          <div ref={listRef} onScroll={onScroll} style={{ maxHeight: 180, overflowY: "auto" }}>
+            {/* Unassigned */}
+            <button type="button" onMouseDown={e => { e.preventDefault(); pick("", ""); }}
+              style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "7px 12px", border: "none", backgroundColor: value === "" ? "var(--accent)" : "transparent", fontFamily: "var(--font-sans)", fontSize: 13, cursor: "pointer", textAlign: "left", color: value === "" ? "var(--primary)" : "var(--foreground)" }}
+              onMouseEnter={e => { if (value !== "") (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--muted)"; }}
+              onMouseLeave={e => { if (value !== "") (e.currentTarget as HTMLButtonElement).style.backgroundColor = "transparent"; }}>
+              <span style={{ flex: 1 }}><em style={{ color: "var(--muted-foreground)" }}>Unassigned</em></span>
+              {value === "" && <Check size={13} style={{ color: "var(--primary)" }} />}
+            </button>
+            {items.map(opt => {
               const active = opt.value === value;
               return (
                 <button key={opt.value} type="button"
-                  onMouseDown={e => { e.preventDefault(); onChange(opt.value); setOpen(false); }}
+                  onMouseDown={e => { e.preventDefault(); pick(opt.value, opt.label); }}
                   style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "7px 12px",
                     border: "none", backgroundColor: active ? "var(--accent)" : "transparent",
                     fontFamily: "var(--font-sans)", fontSize: 13, cursor: "pointer", textAlign: "left",
@@ -797,12 +854,13 @@ function SearchableSelect({ value, options, onChange, placeholder, icon }: {
                   onMouseEnter={e => { if (!active) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--muted)"; }}
                   onMouseLeave={e => { if (!active) (e.currentTarget as HTMLButtonElement).style.backgroundColor = active ? "var(--accent)" : "transparent"; }}
                 >
-                  <span style={{ flex: 1 }}>{opt.value === "" ? <em style={{ color: "var(--muted-foreground)" }}>Unassigned</em> : opt.label}</span>
+                  <span style={{ flex: 1 }}>{opt.label}</span>
                   {active && <Check size={13} style={{ color: "var(--primary)" }} />}
                 </button>
               );
             })}
-            {filtered.length === 0 && (
+            {loading && <div style={{ padding: 10, textAlign: "center", fontSize: 12, color: "var(--muted-foreground)" }}>Loading…</div>}
+            {!loading && items.length === 0 && (
               <div style={{ padding: 12, textAlign: "center", fontSize: 12, color: "var(--muted-foreground)" }}>No results</div>
             )}
           </div>
@@ -819,9 +877,9 @@ function ordinal(n: number): string {
 
 // ─── Modal ────────────────────────────────────────────────────────────────────
 
-function LoadModal({ load, onClose, onSave, driverOpts = [], dispatcherOpts = [], saving = false }: {
+function LoadModal({ load, onClose, onSave, saving = false }: {
   load: Partial<Load>; onClose: () => void; onSave: (l: Load) => void;
-  driverOpts?: SelectOpt[]; dispatcherOpts?: SelectOpt[]; saving?: boolean;
+  saving?: boolean;
 }) {
   const [form, setForm] = useState<Partial<Load>>(load);
   const set = <K extends keyof Load>(k: K, v: Load[K]) => setForm((f) => ({ ...f, [k]: v }));
@@ -1020,24 +1078,33 @@ function LoadModal({ load, onClose, onSave, driverOpts = [], dispatcherOpts = []
             </label>
           </div>
 
-          {/* Driver + Dispatcher */}
+          {/* Driver + Dispatcher — backend-paginated, infinite-scroll */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
             <label style={labelStyle}>
               <span style={capStyle}>Driver</span>
-              <SearchableSelect
+              <AsyncSearchableSelect
                 value={form.driver_id ?? ""}
-                options={driverOpts}
-                onChange={(v) => set("driver_id", v)}
+                valueLabel={form.driver ?? ""}
+                fetchPage={async (q, p) => {
+                  const { items, total } = await api.getList<any>("/drivers", { q: q || undefined, page: p, page_size: 20 });
+                  return { items: (items ?? []).map((d: any) => ({ value: d.id, label: driverDisplayName(d) })), total };
+                }}
+                onChange={(id, label) => setForm((f) => ({ ...f, driver_id: id, driver: label }))}
                 placeholder="Select driver…"
                 icon={<User size={13} />}
               />
             </label>
             <label style={labelStyle}>
               <span style={capStyle}>Dispatcher</span>
-              <SearchableSelect
+              <AsyncSearchableSelect
                 value={form.dispatcher_id ?? ""}
-                options={dispatcherOpts}
-                onChange={(v) => set("dispatcher_id", v)}
+                valueLabel={form.dispatcher ?? ""}
+                fetchPage={async (q, p) => {
+                  const companyId = getCompanyId();
+                  const { items, total } = await api.getList<any>(`/owner/companies/${companyId}/users`, { q: q || undefined, page: p, page_size: 20 });
+                  return { items: (items ?? []).map((u: any) => ({ value: u.id, label: u.full_name ?? u.login ?? u.id })), total };
+                }}
+                onChange={(id, label) => setForm((f) => ({ ...f, dispatcher_id: id, dispatcher: label }))}
                 placeholder="Select dispatcher…"
                 icon={<User size={13} />}
               />
@@ -1479,9 +1546,6 @@ function LoadDetail({ load, onBack }: { load: Load; onBack: () => void }) {
 export function LoadsPage() {
   const [loads, setLoads]           = useState<Load[]>([]);
   const [total, setTotal]           = useState(0);
-  const [driverList, setDriverList] = useState<{ id: string; name: string }[] | null>(null);
-  const [driverOpts, setDriverOpts] = useState<SelectOpt[]>([]);
-  const [dispatcherOpts, setDispatcherOpts] = useState<SelectOpt[]>([]);
   const [loading, setLoading]       = useState(true);
   const [fetchKey, setFetchKey]     = useState(0);
   const [modal, setModal]           = useState<"create" | "edit" | null>(null);
@@ -1512,20 +1576,6 @@ export function LoadsPage() {
   useEffect(() => { setPage(1); }, [filterStatus]);
 
   useEffect(() => {
-    const companyId = getCompanyId();
-    Promise.all([
-      api.get<any[]>("/drivers"),
-      api.get<any[]>(`/owner/companies/${companyId}/users`).catch(() => []),
-    ]).then(([drivers, users]) => {
-      const list = (drivers ?? []).map((d: any) => ({ id: d.id as string, name: driverDisplayName(d) }));
-      setDriverList(list);
-      setDriverOpts(list.map((d) => ({ value: d.id, label: d.name })));
-      setDispatcherOpts((users ?? []).map((u: any) => ({ value: u.id, label: u.full_name ?? u.login ?? u.id })));
-    }).catch(() => { setDriverList([]); });
-  }, []);
-
-  useEffect(() => {
-    if (driverList === null) return;
     setLoading(true);
     api.getList<BackendLoad>("/loads", {
       q: debouncedSearch || undefined,
@@ -1534,14 +1584,14 @@ export function LoadsPage() {
       page_size: pageSize,
     })
       .then(({ items, total: t }) => {
-        const mapped = (items ?? []).map((b) => toLoad(b, driverList));
+        const mapped = (items ?? []).map((b) => toLoad(b));
         setLoads(mapped);
         setTotal(t);
         setDetail((prev) => prev ? (mapped.find((l) => l.id === prev.id) ?? null) : null);
       })
       .catch((e) => setToast({ type: "error", msg: String(e) }))
       .finally(() => setLoading(false));
-  }, [fetchKey, debouncedSearch, filterStatus, page, pageSize, driverList]);
+  }, [fetchKey, debouncedSearch, filterStatus, page, pageSize]);
 
   const patchLoad = async (id: string, fields: Partial<Load>) => {
     const current = loads.find((l) => l.id === id);
@@ -1676,8 +1726,8 @@ export function LoadsPage() {
                   <TH width={170}>Broker</TH>
                   <TH width={190}>Driver</TH>
                   <TH width={120}>Status</TH>
-                  <TH width={190}>Appt Times</TH>
                   <TH width={240}>Route</TH>
+                  <TH width={190}>Appt Times</TH>
                   <TH width={100} align="right">Miles</TH>
                   <TH width={100} align="right">Rate</TH>
                   <TH width={120}>Dispatcher</TH>
@@ -1705,34 +1755,16 @@ export function LoadsPage() {
                         {l.loadId}
                       </button>
                     </td>
-                    <td style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--foreground)", verticalAlign: "middle" }}>
-                      {l.broker}
+                    <td style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", fontFamily: "var(--font-sans)", fontSize: 12, color: l.broker ? "var(--foreground)" : "var(--muted-foreground)", verticalAlign: "middle" }}>
+                      {l.broker || "—"}
                     </td>
                     <td style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", verticalAlign: "middle" }}>
-                      <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: 500, color: l.driver === "—" ? "var(--muted-foreground)" : "var(--foreground)", fontStyle: l.driver === "—" ? "italic" : "normal" }}>
-                        {l.driver === "—" ? "Unassigned" : l.driver}
+                      <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: 500, color: l.driver ? "var(--foreground)" : "var(--muted-foreground)", fontStyle: l.driver ? "normal" : "italic" }}>
+                        {l.driver || "Unassigned"}
                       </span>
                     </td>
                     <td style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", verticalAlign: "middle" }}>
                       <StatusDropdown value={l.status} onChange={(s) => patchLoad(l.id, { status: s })} />
-                    </td>
-                    <td style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", verticalAlign: "middle" }}>
-                      <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                        {/* One row per stop's appointment (#1 = origin … #N = destination) */}
-                        {(l.stops ?? []).map((stop, si) => {
-                          const prevDone  = si === 0 || l.stops![si - 1].done;
-                          const isCurrent = !stop.done && prevDone;
-                          const isDone    = stop.done;
-                          return (
-                            <div key={si} style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                              <span style={{ fontFamily: "var(--font-mono)", fontSize: 9, fontWeight: 700, color: "var(--muted-foreground)", flexShrink: 0 }}>#{si + 1}</span>
-                              <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: isDone ? "var(--muted-foreground)" : isCurrent ? "#2563EB" : "var(--foreground)", textDecoration: isDone ? "line-through" : "none" }}>
-                                {stop.appt || "—"}
-                              </span>
-                            </div>
-                          );
-                        })}
-                      </div>
                     </td>
                     {/* Route — origin + stops */}
                     <td style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", verticalAlign: "top", paddingTop: 12, paddingBottom: 12 }}>
@@ -1763,6 +1795,24 @@ export function LoadsPage() {
                         );
                       })()}
                     </td>
+                    {/* Appt Times — one row per stop's appointment (#1 = origin … #N = destination) */}
+                    <td style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", verticalAlign: "top", paddingTop: 12, paddingBottom: 12 }}>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                        {(l.stops ?? []).map((stop, si) => {
+                          const prevDone  = si === 0 || l.stops![si - 1].done;
+                          const isCurrent = !stop.done && prevDone;
+                          const isDone    = stop.done;
+                          return (
+                            <div key={si} style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                              <span style={{ fontFamily: "var(--font-mono)", fontSize: 9, fontWeight: 700, color: "var(--muted-foreground)", flexShrink: 0, width: 30 }}>#{si + 1}</span>
+                              <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: isDone ? "var(--muted-foreground)" : isCurrent ? "#2563EB" : "var(--foreground)", textDecoration: isDone ? "line-through" : "none" }}>
+                                {stop.appt || "—"}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </td>
                     <td style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", verticalAlign: "middle", textAlign: "right" }}>
                       {l.totalMiles ? (
                         <div style={{ display: "flex", flexDirection: "column", gap: 1, alignItems: "flex-end" }}>
@@ -1788,7 +1838,7 @@ export function LoadsPage() {
                       </span>
                     </td>
                     <td style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", verticalAlign: "middle" }}>
-                      <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--foreground)" }}>{l.dispatcher}</span>
+                      <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: l.dispatcher ? "var(--foreground)" : "var(--muted-foreground)" }}>{l.dispatcher || "—"}</span>
                     </td>
                     <td style={{ padding: "8px 10px", borderBottom: "1px solid var(--border)", verticalAlign: "middle", textAlign: "center" }}>
                       <div style={{ display: "inline-flex", gap: 5 }}>
@@ -1825,7 +1875,7 @@ export function LoadsPage() {
       </div>
 
       {(modal === "create" || modal === "edit") && (
-        <LoadModal load={editing} onClose={() => setModal(null)} onSave={save} driverOpts={driverOpts} dispatcherOpts={dispatcherOpts} saving={saving} />
+        <LoadModal load={editing} onClose={() => setModal(null)} onSave={save} saving={saving} />
       )}
       {deleting && (
         <DeleteConfirm label={deleting.loadId} busy={delBusy} error={delErr} onClose={() => { setDeleting(null); setDelErr(null); }} onConfirm={del} />
