@@ -22,6 +22,7 @@ import {
 import { Avatar, AvatarFallback } from "../components/ui/avatar";
 import { useAuth } from "../lib/auth";
 import { api, setCompanyId, getCompanyId } from "../lib/api";
+import { useBoardPresence } from "../lib/useBoardPresence";
 
 // ─── Account types ──────────────────────────────────────────────────────────
 
@@ -274,13 +275,20 @@ const navItems = [
   { icon: DollarSign,      label: "Payouts",     path: "payouts"     },
 ];
 
-// ─── Active-user presence data (placeholder) ────────────────────────────────
+// ─── Active-user presence helpers ────────────────────────────────────────────
 
-const activeUsers = [
-  { initials: "SR", color: "#8B5CF6", name: "Sofia R." },
-  { initials: "MT", color: "#F59E0B", name: "Marcus T." },
-  { initials: "JR", color: "#10B981", name: "Jake R." },
-];
+const PRESENCE_COLORS = ["#8B5CF6", "#F59E0B", "#10B981", "#3B82F6", "#EF4444", "#EC4899", "#14B8A6"];
+
+function initialsOf(name: string): string {
+  return name.trim().split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? "").join("") || "?";
+}
+
+// Stable colour per user id so an avatar keeps its colour across renders.
+function colorFor(id: string): string {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
+  return PRESENCE_COLORS[h % PRESENCE_COLORS.length];
+}
 
 // ─── User menu (sidebar bottom) ───────────────────────────────────────────────
 
@@ -432,35 +440,52 @@ function Sidebar({ collapsed, onToggle }: {
 
 // ─── Active Users (multiplayer presence placeholder) ─────────────────────────
 
-function ActiveUsers() {
+function ActiveUsers({ companyId }: { companyId: string }) {
+  const { count, users } = useBoardPresence(companyId);
+  const shown = users.slice(0, 5);
+  const overflow = count - shown.length;
+
   return (
     <div className="flex items-center gap-2">
       <div className="flex items-center">
-        {activeUsers.map((user, i) => (
+        {shown.map((user, i) => (
           <Avatar
-            key={user.initials}
+            key={user.id}
             className="border-2 border-white transition-transform hover:scale-110 cursor-pointer"
             style={{
               width: 30,
               height: 30,
               marginLeft: i > 0 ? -8 : 0,
-              zIndex: activeUsers.length - i,
+              zIndex: shown.length - i,
               position: "relative",
             }}
             title={user.name}
           >
             <AvatarFallback
               style={{
-                backgroundColor: user.color,
+                backgroundColor: colorFor(user.id),
                 color: "#fff",
                 fontSize: 11,
                 fontWeight: 600,
               }}
             >
-              {user.initials}
+              {initialsOf(user.name)}
             </AvatarFallback>
           </Avatar>
         ))}
+        {overflow > 0 && (
+          <div
+            title={`+${overflow} more online`}
+            style={{
+              width: 30, height: 30, marginLeft: shown.length > 0 ? -8 : 0,
+              borderRadius: "50%", border: "2px solid white", backgroundColor: "var(--muted)",
+              color: "var(--muted-foreground)", fontSize: 11, fontWeight: 600,
+              display: "flex", alignItems: "center", justifyContent: "center", position: "relative",
+            }}
+          >
+            +{overflow}
+          </div>
+        )}
       </div>
       <span
         style={{
@@ -469,8 +494,8 @@ function ActiveUsers() {
           whiteSpace: "nowrap",
         }}
       >
-        <span style={{ color: "#10B981", fontWeight: 600 }}>●</span>{" "}
-        {activeUsers.length} online
+        <span style={{ color: count > 0 ? "#10B981" : "#9CA3AF", fontWeight: 600 }}>●</span>{" "}
+        {count} online
       </span>
     </div>
   );
@@ -694,7 +719,7 @@ function TopHeader({ onToggleSidebar, accounts, activeAccountId, onSwitch }: {
 
       {/* Right: active users + bell + account switcher */}
       <div className="flex items-center gap-4">
-        <ActiveUsers />
+        <ActiveUsers companyId={activeAccountId} />
 
         <NotificationBell />
 

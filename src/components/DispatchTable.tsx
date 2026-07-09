@@ -5,6 +5,7 @@ import { Status, STATUS_CONFIG, ALL_STATUSES } from "../lib/statuses";
 import { api, getCompanyId } from "../lib/api";
 import { menuPosition } from "../lib/menuPosition";
 import { driverDisplayName } from "../lib/driverName";
+import { boardWsUrl } from "../lib/ws";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -178,10 +179,6 @@ function etaColor(km: number | null): string {
   return "#EF4444";
 }
 
-function getWsBase(): string {
-  const base = import.meta.env.VITE_API_BASE ?? "http://localhost:8080";
-  return base.replace(/^https/, "wss").replace(/^http/, "ws");
-}
 
 // ─── Portal dropdown hook ─────────────────────────────────────────────────────
 
@@ -739,10 +736,7 @@ export function DispatchTable() {
     if (wsRef.current) { wsRef.current.close(); wsRef.current = null; }
     if (!companyId) return;
 
-    const token = localStorage.getItem("auth_token") ?? "";
-    const url   = `${getWsBase()}/api/v1/ws/boards/${companyId}?token=${encodeURIComponent(token)}&company_id=${encodeURIComponent(companyId)}`;
-
-    const ws = new WebSocket(url);
+    const ws = new WebSocket(boardWsUrl(companyId));
     wsRef.current = ws;
 
     ws.onopen = () => {
