@@ -58,11 +58,9 @@ interface BackendLoad {
 
 interface SelectOpt { value: string; label: string; dot?: string }
 
-const LOADS_STATUSES: Status[] = ["re_update", "reserved", "dispatched", "enroute", "completed"];
-
 const STATUS_FILTER_OPTS: SelectOpt[] = [
   { value: "All", label: "All Statuses" },
-  ...LOADS_STATUSES.map((s) => ({ value: s, label: SHARED_STATUS_CONFIG[s].label })),
+  ...SHARED_ALL_STATUSES.map((s) => ({ value: s, label: SHARED_STATUS_CONFIG[s].label })),
 ];
 const STATUS_MODAL_OPTS: SelectOpt[] = SHARED_ALL_STATUSES.map((s) => ({ value: s, label: SHARED_STATUS_CONFIG[s].label }));
 
@@ -833,14 +831,6 @@ function AsyncSearchableSelect({ value, valueLabel, fetchPage, onChange, placeho
             </div>
           </div>
           <div ref={listRef} onScroll={onScroll} style={{ maxHeight: 180, overflowY: "auto" }}>
-            {/* Unassigned */}
-            <button type="button" onMouseDown={e => { e.preventDefault(); pick("", ""); }}
-              style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "7px 12px", border: "none", backgroundColor: value === "" ? "var(--accent)" : "transparent", fontFamily: "var(--font-sans)", fontSize: 13, cursor: "pointer", textAlign: "left", color: value === "" ? "var(--primary)" : "var(--foreground)" }}
-              onMouseEnter={e => { if (value !== "") (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--muted)"; }}
-              onMouseLeave={e => { if (value !== "") (e.currentTarget as HTMLButtonElement).style.backgroundColor = "transparent"; }}>
-              <span style={{ flex: 1 }}><em style={{ color: "var(--muted-foreground)" }}>Unassigned</em></span>
-              {value === "" && <Check size={13} style={{ color: "var(--primary)" }} />}
-            </button>
             {items.map(opt => {
               const active = opt.value === value;
               return (
