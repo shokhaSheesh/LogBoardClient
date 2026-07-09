@@ -342,8 +342,8 @@ function InlineCell({ value, onCommit, mono, fontSize = 12, color = "var(--foreg
 }
 
 // Inline-editable appointment (free-text, e.g. "07/08 · 08:00"). Read-only when disabled.
-function ApptEdit({ value, color, disabled, onCommit, onEditStart, onEditEnd }: {
-  value: string; color: string; disabled?: boolean;
+function ApptEdit({ value, color, disabled, done, onCommit, onEditStart, onEditEnd }: {
+  value: string; color: string; disabled?: boolean; done?: boolean;
   onCommit: (v: string) => void; onEditStart?: () => void; onEditEnd?: () => void;
 }) {
   const [editing, setEditing] = useState(false);
@@ -363,7 +363,7 @@ function ApptEdit({ value, color, disabled, onCommit, onEditStart, onEditEnd }: 
     );
   }
   return (
-    <span onClick={begin} style={{ fontFamily: "var(--font-mono)", fontSize: 11, color, cursor: disabled ? "default" : "text" }}>{shown}</span>
+    <span onClick={begin} style={{ fontFamily: "var(--font-mono)", fontSize: 11, color, cursor: disabled ? "default" : "text", textDecoration: done ? "line-through" : "none" }}>{shown}</span>
   );
 }
 
@@ -1291,8 +1291,8 @@ export function DispatchTable() {
                         return (
                           <div style={{ marginTop: 2, display: "flex", flexDirection: "column", gap: 1 }}>
                             {shown.map((q) => (
-                              <span key={q.id} title={`Next up: ${q.loadId}${q.origin && q.destination ? ` (${q.origin} → ${q.destination})` : ""}`} style={{ fontFamily: "var(--font-mono)", fontSize: 10, fontWeight: 500, color: "var(--muted-foreground)", whiteSpace: "nowrap" }}>
-                                Next: {q.loadId}
+                              <span key={q.id} title={`Next up: ${q.loadId}${q.origin && q.destination ? ` (${q.origin} → ${q.destination})` : ""}`} style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 600, color: "#D97706", whiteSpace: "nowrap" }}>
+                                {q.loadId}
                               </span>
                             ))}
                             {overflow > 0 && (
@@ -1400,7 +1400,7 @@ export function DispatchTable() {
                             {/* #1 pickup → route index 0 */}
                             <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
                               <span style={{ ...labelStyle, color: "var(--muted-foreground)" }}>#1</span>
-                              <ApptEdit value={driver.pickupAppt} color={driver.pickupAppt === "—" || pickupDone ? "var(--muted-foreground)" : "var(--foreground)"} disabled={isLockedByOther}
+                              <ApptEdit value={driver.pickupAppt} color={driver.pickupAppt === "—" || pickupDone ? "var(--muted-foreground)" : "var(--foreground)"} done={pickupDone} disabled={isLockedByOther}
                                 onEditStart={() => claimLock(driver.driverId)} onEditEnd={() => releaseLock(driver.driverId)}
                                 onCommit={(v) => editStop(driver.driverId, 0, { appt: v })} />
                             </div>
@@ -1411,7 +1411,7 @@ export function DispatchTable() {
                               return (
                                 <div key={idx} style={{ display: "flex", alignItems: "center", gap: 5 }}>
                                   <span style={{ ...labelStyle, color: "var(--muted-foreground)" }}>#{idx + 2}</span>
-                                  <ApptEdit value={stop.appt || "—"} color={stop.done || !stop.appt ? "var(--muted-foreground)" : isCurrent ? "var(--foreground)" : "var(--muted-foreground)"} disabled={isLockedByOther}
+                                  <ApptEdit value={stop.appt || "—"} color={stop.done || !stop.appt ? "var(--muted-foreground)" : isCurrent ? "var(--foreground)" : "var(--muted-foreground)"} done={stop.done} disabled={isLockedByOther}
                                     onEditStart={() => claimLock(driver.driverId)} onEditEnd={() => releaseLock(driver.driverId)}
                                     onCommit={(v) => editStop(driver.driverId, idx + 1, { appt: v })} />
                                 </div>
@@ -1421,7 +1421,7 @@ export function DispatchTable() {
                             {driver.dropAppt !== "—" && (
                               <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
                                 <span style={{ ...labelStyle, color: "var(--muted-foreground)" }}>#{destNum}</span>
-                                <ApptEdit value={driver.dropAppt} color={destDone ? "var(--muted-foreground)" : "var(--foreground)"} disabled={isLockedByOther}
+                                <ApptEdit value={driver.dropAppt} color={destDone ? "var(--muted-foreground)" : "var(--foreground)"} done={destDone} disabled={isLockedByOther}
                                   onEditStart={() => claimLock(driver.driverId)} onEditEnd={() => releaseLock(driver.driverId)}
                                   onCommit={(v) => editStop(driver.driverId, stops.length + 1, { appt: v })} />
                               </div>
