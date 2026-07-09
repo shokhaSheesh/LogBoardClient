@@ -756,11 +756,17 @@ export function DispatchTable() {
   // Realtime board.snapshot is still whole-company, so we filter rows to the team's
   // drivers client-side. Teams live under /owner/* — non-owners get 403, which just
   // means no team filter is shown.
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
   const fetchTeams = async () => {
     if (!companyId) return;
     try {
       const data = await api.get<{ id: string; name: string; driver_ids?: string[]; user_names?: string[] }[]>(`/owner/companies/${companyId}/teams`);
-      setTeams((data ?? []).map((t) => ({ id: t.id, name: t.name, driverIds: new Set(t.driver_ids ?? []), userNames: t.user_names ?? [] })));
+      setTeams((data ?? []).map((t) => ({
+        id: t.id, name: t.name, driverIds: new Set(t.driver_ids ?? []),
+        // Drop unresolved names (backend falls back to the raw user id when it can't resolve one).
+        userNames: (t.user_names ?? []).filter((n) => !UUID_RE.test(n)),
+      })));
     } catch { setTeams([]); }
   };
 
