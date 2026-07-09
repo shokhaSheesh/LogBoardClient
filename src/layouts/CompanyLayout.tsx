@@ -446,16 +446,25 @@ function ActiveUsers({ companyId }: { companyId: string }) {
   const { count, users } = useBoardPresence(companyId);
   const [hovered, setHovered] = useState<string | null>(null);
   const [open, setOpen]       = useState(false);
-  const stackRef = useRef<HTMLDivElement>(null);
-  const panelRef  = useRef<HTMLDivElement>(null);
+  const [panelPos, setPanelPos] = useState({ top: 0, right: 0 });
+  const wrapRef  = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const shown = users.slice(0, AVATAR_CAP);
   const overflow = count - shown.length;
+
+  const toggleOpen = () => {
+    if (!open && wrapRef.current) {
+      const rect = wrapRef.current.getBoundingClientRect();
+      setPanelPos({ top: rect.bottom + 8, right: Math.max(8, window.innerWidth - rect.right) });
+    }
+    setOpen((v) => !v);
+  };
 
   // Close the full-list panel on outside click
   useEffect(() => {
     if (!open) return;
     const h = (e: MouseEvent) => {
-      if (!panelRef.current?.contains(e.target as Node) && !stackRef.current?.contains(e.target as Node))
+      if (!panelRef.current?.contains(e.target as Node) && !wrapRef.current?.contains(e.target as Node))
         setOpen(false);
     };
     document.addEventListener("mousedown", h);
@@ -463,10 +472,9 @@ function ActiveUsers({ companyId }: { companyId: string }) {
   }, [open]);
 
   return (
-    <div className="flex items-center gap-2">
+    <div ref={wrapRef} className="flex items-center gap-2">
       <div
-        ref={stackRef}
-        onClick={() => setOpen((v) => !v)}
+        onClick={toggleOpen}
         className="flex items-center"
         style={{ cursor: count > 0 ? "pointer" : "default" }}
       >
@@ -525,7 +533,7 @@ function ActiveUsers({ companyId }: { companyId: string }) {
         )}
       </div>
       <span
-        onClick={() => setOpen((v) => !v)}
+        onClick={toggleOpen}
         style={{
           fontSize: 12,
           color: "var(--muted-foreground)",
@@ -542,7 +550,7 @@ function ActiveUsers({ companyId }: { companyId: string }) {
         <div
           ref={panelRef}
           style={{
-            position: "fixed", top: 68, right: 24,
+            position: "fixed", top: panelPos.top, right: panelPos.right,
             width: 280, maxHeight: 420,
             backgroundColor: "var(--card)", border: "1px solid var(--border)",
             borderRadius: 12, boxShadow: "0 8px 32px rgba(0,0,0,0.12)",
