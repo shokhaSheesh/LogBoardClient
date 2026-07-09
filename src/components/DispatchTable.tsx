@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, Fragment } from "react";
 import { createPortal } from "react-dom";
 import { MapPin, Lock, MessageSquare, ChevronDown, Search, Navigation, Check, ArrowRight, History, X, AlertCircle, RotateCcw, Users } from "lucide-react";
 import { Status, STATUS_CONFIG, ALL_STATUSES } from "../lib/statuses";
@@ -637,6 +637,7 @@ export function DispatchTable() {
   const [teams,          setTeams]          = useState<{ id: string; name: string; driverIds: Set<string> }[]>([]);
   const [teamFilter,     setTeamFilter]     = useState<string>("all"); // team id or "all"
   const [teamOpen,       setTeamOpen]       = useState(false);
+  const [viewMode,       setViewMode]       = useState<"all" | "teams">("all"); // one table vs a section per team
   const [editCell,       setEditCell]       = useState<{ driverId: string; field: string } | null>(null);
   const [historyEvents,  setHistoryEvents]  = useState<HistoryEvent[]>([]);
   const [historyBadge,   setHistoryBadge]   = useState(0);
@@ -972,6 +973,30 @@ export function DispatchTable() {
     return ms && mq && mt;
   });
 
+  // "By team" view: one section per team (plus an Unassigned section), rendered as a
+  // team-name header row followed by that team's drivers. "All" view is a single group.
+  const groups: { name: string | null; drivers: Driver[] }[] =
+    viewMode === "teams" && teams.length > 0
+      ? (() => {
+          const gs = teams
+            .map((t) => ({ name: t.name, drivers: visible.filter((d) => t.driverIds.has(d.driverId)) }))
+            .filter((g) => g.drivers.length > 0);
+          const unassigned = visible.filter((d) => !teams.some((t) => t.driverIds.has(d.driverId)));
+          if (unassigned.length) gs.push({ name: "Unassigned", drivers: unassigned });
+          return gs;
+        })()
+      : [{ name: null, drivers: visible }];
+  const orderedVisible = groups.flatMap((g) => g.drivers);
+  // Map a flattened row index → the team header to render just before it (first of each named group).
+  const headerAt = new Map<number, { name: string; count: number }>();
+  {
+    let idx = 0;
+    for (const g of groups) {
+      if (g.name) headerAt.set(idx, { name: g.name, count: g.drivers.length });
+      idx += g.drivers.length;
+    }
+  }
+
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
@@ -1063,6 +1088,18 @@ export function DispatchTable() {
             </div>
           )}
 
+          {/* View toggle: one table vs a section per team */}
+          {teams.length > 0 && (
+            <div style={{ display: "inline-flex", border: "1px solid var(--border)", borderRadius: 7, overflow: "hidden" }}>
+              {([["all", "All"], ["teams", "By team"]] as const).map(([m, label]) => (
+                <button key={m} onClick={() => setViewMode(m)}
+                  style={{ padding: "5px 11px", fontFamily: "var(--font-sans)", fontSize: 12, border: "none", cursor: "pointer", whiteSpace: "nowrap", backgroundColor: viewMode === m ? "var(--primary)" : "transparent", color: viewMode === m ? "#fff" : "var(--muted-foreground)" }}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+
           <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--muted-foreground)" }}>{visible.length} / {rows.length}</span>
         </div>
 
@@ -1113,14 +1150,14 @@ export function DispatchTable() {
               </tr>
             </thead>
             <tbody>
-              {visible.length === 0 && (
+              {orderedVisible.length === 0 && (
                 <tr>
                   <td colSpan={COLUMNS.length} style={{ padding: "48px 20px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
                     {rows.length === 0 ? "No drivers on the board yet." : "No drivers match your filters."}
                   </td>
                 </tr>
               )}
-              {visible.map((driver, i) => {
+              {orderedVisible.map((driver, i) => {
                 const lock    = locks[driver.driverId];
                 const isLocked = !!lock;
                 const lockColor = isLocked ? "#8B5CF6" : undefined;
@@ -1137,9 +1174,21 @@ export function DispatchTable() {
                 // No active load → route/appointment cells are empty and non-interactive.
                 const hasLoad = !!driver.loadRaw?.id;
                 const emptyDash = <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)" }}>—</span>;
+                const groupHeader = headerAt.get(i);
 
                 return (
-                  <tr key={driver.driverId}>
+                  <Fragment key={`${groupHeader?.name ?? ""}:${driver.driverId}:${i}`}>
+                  {groupHeader && (
+                    <tr>
+                      <td colSpan={COLUMNS.length} style={{ padding: "8px 14px", backgroundColor: "var(--secondary)", borderBottom: "1px solid var(--border)", borderTop: "1px solid var(--border)", position: "sticky", left: 0 }}>
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 700, color: "var(--primary)", letterSpacing: "0.04em", textTransform: "uppercase" }}>
+                          <Users size={12} /> {groupHeader.name}
+                          <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, fontWeight: 600, color: "var(--muted-foreground)" }}>{groupHeader.count}</span>
+                        </span>
+                      </td>
+                    </tr>
+                  )}
+                  <tr>
 
                     {/* Load ID — sticky, read-only */}
                     <td style={td({ position: "sticky", left: LOAD_ID_LEFT, zIndex: 3, width: 110, minWidth: 110, borderRight: border })}>
@@ -1312,6 +1361,7 @@ export function DispatchTable() {
                     </td>
 
                   </tr>
+                  </Fragment>
                 );
               })}
             </tbody>
