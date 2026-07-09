@@ -113,7 +113,7 @@ const COLUMNS = [
   { label: "Load ID",        width: 110, sticky: true,  left: LOAD_ID_LEFT   },
   { label: "Driver Name",    width: 180, sticky: true,  left: DRIVER_NM_LEFT },
   { label: "Phone",          width: 148, sticky: false                        },
-  { label: "Unit / Trailer", width: 116, sticky: false                        },
+  { label: "Unit",           width: 116, sticky: false                        },
   { label: "Type",           width: 72,  sticky: false                        },
   { label: "Status",         width: 130, sticky: false                        },
   { label: "Origin / Dest.", width: 230, sticky: false                        },
@@ -913,6 +913,35 @@ export function DispatchTable() {
     }
   };
 
+  // ── Complete the driver's load ────────────────────────────────────────────
+  // Setting the status to "completed" on the board completes the current load. Per the
+  // API, completing a load runs the whole lifecycle (stamps completed_at, writes a
+  // payout, rotates the queue, lands the driver on covered/ready via WS) — so we do it
+  // as ONE PUT that sets the load to completed AND marks every stop done. Doing it as a
+  // driver-status PUT + a second load PUT would resend the load's old status and revert
+  // the completion (deleting the payout). No load → just set the driver status.
+  const completeLoad = async (driverId: string) => {
+    const driver = rows.find((d) => d.driverId === driverId);
+    if (!driver) return;
+    const load = driver.loadRaw;
+    if (!load?.id) { await patch(driverId, { status: "completed" }); return; }
+
+    const allDone = (load.stops ?? []).map((s) => ({ ...s, done: true }));
+    // Optimistic: reflect the completion + all stops done immediately.
+    setRows((prev) => prev.map((d) => d.driverId === driverId
+      ? { ...d, status: "completed" as Status, stops: allDone.slice(1, -1), originDone: true, destinationDone: true }
+      : d));
+    const rollback = () => setRows((prev) => prev.map((d) => d.driverId === driverId ? driver : d));
+
+    try {
+      await api.put(`/loads/${load.id}`, { ...load, status: "completed", stops: allDone });
+      // WS snapshot pushes the authoritative rows (driver → covered/ready, queue rotated).
+    } catch (e) {
+      rollback();
+      setToast(e instanceof Error ? e.message : "Couldn't complete the load — reverted.");
+    }
+  };
+
   // Pre-fetch full driver record when edit starts (for safe PUT body)
   const startEdit = (driverId: string, field: string) => {
     setEditCell({ driverId, field });
@@ -1149,7 +1178,7 @@ export function DispatchTable() {
                       )}
                     </td>
 
-                    {/* Unit / Trailer */}
+                    {/* Unit (+ trailer below, only when the driver actually has one) */}
                     <td style={td({ borderRight: border })}>
                       <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
@@ -1158,9 +1187,11 @@ export function DispatchTable() {
                             {driver.unit}
                           </span>
                         </div>
-                        <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--muted-foreground)", whiteSpace: "nowrap" }}>
-                          {driver.trailer}
-                        </span>
+                        {driver.trailer && driver.trailer !== "—" && (
+                          <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--muted-foreground)", whiteSpace: "nowrap" }}>
+                            {driver.trailer}
+                          </span>
+                        )}
                       </div>
                     </td>
 
@@ -1171,13 +1202,9 @@ export function DispatchTable() {
 
                     {/* Status */}
                     <td style={td({ borderRight: border })}>
-                      <StatusDropdown value={driver.status} onChange={async (s) => {
-                        await patch(driver.driverId, { status: s });
-                        // Completing a load marks its whole route done (persisted to the load).
-                        if (s === "completed" && driver.loadRaw?.id) {
-                          await patchLoad(driver.driverId, (driver.stops ?? []).map((st) => ({ ...st, done: true })), true, true);
-                        }
-                      }} />
+                      <StatusDropdown value={driver.status} onChange={(s) =>
+                        s === "completed" ? completeLoad(driver.driverId) : patch(driver.driverId, { status: s })
+                      } />
                     </td>
 
                     {/* Origin / Dest with stops — only when the driver has a load */}
