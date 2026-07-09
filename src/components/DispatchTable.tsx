@@ -1217,12 +1217,14 @@ export function DispatchTable() {
               )}
               {orderedVisible.map((driver, i) => {
                 const lock    = locks[driver.driverId];
-                // Only SOMEONE ELSE's lock disables the row; your own lock never blocks you.
+                // Only SOMEONE ELSE's lock disables the row; your own lock never blocks you,
+                // but still gets its own (blue) tint so you can see the lock is active.
                 const isLockedByOther = !!lock && lock.holder_id !== currentUserId;
-                const lockColor = isLockedByOther ? "#8B5CF6" : undefined;
+                const isLockedByMe    = !!lock && lock.holder_id === currentUserId;
+                const lockColor = isLockedByOther ? "#8B5CF6" : isLockedByMe ? "#3B82F6" : undefined;
                 const isEven   = i % 2 === 0;
                 const kmColor  = etaColor(driver.etaKm);
-                const rowBg    = isLockedByOther ? "#F5F3FF" : isEven ? "var(--card)" : "var(--background)";
+                const rowBg    = isLockedByOther ? "#F5F3FF" : isLockedByMe ? "#EFF6FF" : isEven ? "var(--card)" : "var(--background)";
                 const border   = "1px solid var(--border)";
                 // Claim the row lock on any edit interaction; release when it ends.
                 const lockOnOpen = (o: boolean) => (o ? claimLock(driver.driverId) : releaseLock(driver.driverId));
@@ -1266,6 +1268,11 @@ export function DispatchTable() {
                       {isLockedByOther && (
                         <span style={{ display: "inline-flex", alignItems: "center", gap: 3, marginTop: 2, fontFamily: "var(--font-sans)", fontSize: 10, color: lockColor, whiteSpace: "nowrap" }}>
                           <Lock size={9} /> Editing by {lock!.holder_name}
+                        </span>
+                      )}
+                      {isLockedByMe && (
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 3, marginTop: 2, fontFamily: "var(--font-sans)", fontSize: 10, color: lockColor, whiteSpace: "nowrap" }}>
+                          <Lock size={9} /> You're editing
                         </span>
                       )}
                     </td>
