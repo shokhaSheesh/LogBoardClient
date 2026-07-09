@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { MapPin, Lock, MessageSquare, ChevronDown, Search, Navigation, Check, ArrowRight, History, X, AlertCircle, RotateCcw, Users } from "lucide-react";
 import { Status, STATUS_CONFIG, ALL_STATUSES } from "../lib/statuses";
 import { api, getCompanyId } from "../lib/api";
+import { useAuth } from "../lib/auth";
 import { menuPosition } from "../lib/menuPosition";
 import { driverDisplayName } from "../lib/driverName";
 import { boardWsUrl } from "../lib/ws";
@@ -209,10 +210,15 @@ function useDropdown() {
 
 // ─── Status dropdown ──────────────────────────────────────────────────────────
 
-function StatusDropdown({ value, onChange }: { value: Status; onChange: (s: Status) => void | Promise<void> }) {
+function StatusDropdown({ value, onChange, disabled = false, onOpenChange }: { value: Status; onChange: (s: Status) => void | Promise<void>; disabled?: boolean; onOpenChange?: (open: boolean) => void }) {
   const { open, setOpen, rect, anchorRef, dropRef, toggle } = useDropdown();
   const [busy, setBusy] = useState(false);
   const cfg = STATUS_CONFIG[value];
+
+  // Claim/release the row lock as the menu opens/closes — but not on the initial mount
+  // (open starts false, which would otherwise fire a spurious release for every row).
+  const didMount = useRef(false);
+  useEffect(() => { if (!didMount.current) { didMount.current = true; return; } onOpenChange?.(open); }, [open]);
 
   const select = (s: Status) => {
     setOpen(false);
@@ -220,9 +226,10 @@ function StatusDropdown({ value, onChange }: { value: Status; onChange: (s: Stat
     Promise.resolve(onChange(s)).catch(() => {}).finally(() => setBusy(false));
   };
 
+  const inactive = busy || disabled;
   return (
     <>
-      <div ref={anchorRef} onClick={busy ? undefined : toggle} style={{ cursor: busy ? "default" : "pointer", display: "inline-flex" }}>
+      <div ref={anchorRef} onClick={inactive ? undefined : toggle} style={{ cursor: inactive ? "default" : "pointer", display: "inline-flex", opacity: disabled ? 0.55 : 1 }}>
         <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600, color: cfg.color, backgroundColor: cfg.bg, borderRadius: 4, padding: "3px 8px", whiteSpace: "nowrap", userSelect: "none" }}>
           {cfg.label}
           {busy
@@ -258,10 +265,14 @@ function StatusDropdown({ value, onChange }: { value: Status; onChange: (s: Stat
 
 // ─── Type dropdown ────────────────────────────────────────────────────────────
 
-function TypeDropdown({ value, onChange }: { value: DriverType; onChange: (t: DriverType) => void | Promise<void> }) {
+function TypeDropdown({ value, onChange, disabled = false, onOpenChange }: { value: DriverType; onChange: (t: DriverType) => void | Promise<void>; disabled?: boolean; onOpenChange?: (open: boolean) => void }) {
   const { open, setOpen, rect, anchorRef, dropRef, toggle } = useDropdown();
   const [busy, setBusy] = useState(false);
   const cfg = TYPE_CONFIG[value];
+
+  // Skip the initial mount so we don't fire a spurious lock-release for every row.
+  const didMount = useRef(false);
+  useEffect(() => { if (!didMount.current) { didMount.current = true; return; } onOpenChange?.(open); }, [open]);
 
   const select = (t: DriverType) => {
     setOpen(false);
@@ -269,9 +280,10 @@ function TypeDropdown({ value, onChange }: { value: DriverType; onChange: (t: Dr
     Promise.resolve(onChange(t)).catch(() => {}).finally(() => setBusy(false));
   };
 
+  const inactive = busy || disabled;
   return (
     <>
-      <div ref={anchorRef} onClick={busy ? undefined : toggle} style={{ cursor: busy ? "default" : "pointer", display: "inline-flex" }}>
+      <div ref={anchorRef} onClick={inactive ? undefined : toggle} style={{ cursor: inactive ? "default" : "pointer", display: "inline-flex", opacity: disabled ? 0.55 : 1 }}>
         <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 600, color: cfg.color, backgroundColor: cfg.bg, borderRadius: 4, padding: "3px 7px", whiteSpace: "nowrap", userSelect: "none" }}>
           {value}
           {busy
@@ -326,6 +338,32 @@ function InlineCell({ value, onCommit, mono, fontSize = 12, color = "var(--foreg
   );
 }
 
+// Inline-editable appointment (free-text, e.g. "07/08 · 08:00"). Read-only when disabled.
+function ApptEdit({ value, color, disabled, onCommit, onEditStart, onEditEnd }: {
+  value: string; color: string; disabled?: boolean;
+  onCommit: (v: string) => void; onEditStart?: () => void; onEditEnd?: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const shown = value || "—";
+  const begin = () => { if (disabled) return; setDraft(value === "—" ? "" : value); setEditing(true); onEditStart?.(); };
+  const commit = () => { onCommit(draft.trim()); setEditing(false); onEditEnd?.(); };
+  const cancel = () => { setEditing(false); onEditEnd?.(); };
+  if (editing) {
+    return (
+      <input autoFocus value={draft} placeholder="MM/DD · HH:MM"
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); commit(); } if (e.key === "Escape") { e.stopPropagation(); cancel(); } }}
+        style={{ width: 90, border: "none", outline: "none", background: "transparent", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--foreground)", padding: 0, borderBottom: "1.5px solid var(--primary)" }}
+      />
+    );
+  }
+  return (
+    <span onClick={begin} style={{ fontFamily: "var(--font-mono)", fontSize: 11, color, cursor: disabled ? "default" : "text" }}>{shown}</span>
+  );
+}
+
 // ─── Stop list display ────────────────────────────────────────────────────────
 
 function TickBtn({ done, isCurrent, canToggle, onToggle }: { done: boolean; isCurrent: boolean; canToggle: boolean; onToggle?: () => void }) {
@@ -352,18 +390,23 @@ function TickBtn({ done, isCurrent, canToggle, onToggle }: { done: boolean; isCu
   );
 }
 
-function StopList({ origin, originDone, destination, destinationDone, stops, onToggleOrigin, onToggleDestination, onToggleStop, onEditStop, onEditOrigin }: {
+function StopList({ origin, originDone, destination, destinationDone, stops, onToggleOrigin, onToggleDestination, onToggleStop, onEditCity, onEditStart, onEditEnd, disabled = false }: {
   origin: string; originDone?: boolean;
   destination: string; destinationDone?: boolean;
   stops?: Stop[];
   onToggleOrigin?: () => void; onToggleDestination?: () => void;
   onToggleStop?: (idx: number) => void;
-  onEditStop?: (idx: number, city: string) => void;
-  onEditOrigin?: (city: string) => void;
+  // absIndex is the position in the full route (0 = origin … last = destination)
+  onEditCity?: (absIndex: number, city: string) => void;
+  onEditStart?: () => void; onEditEnd?: () => void;
+  disabled?: boolean;
 }) {
-  const [editingStop, setEditingStop] = useState<number | null>(null);
-  const [editingOrigin, setEditingOrigin] = useState(false);
+  const [editingIdx, setEditingIdx] = useState<number | null>(null);
   const [draft, setDraft] = useState("");
+
+  const beginEdit = (idx: number, city: string) => { if (disabled) return; setDraft(city); setEditingIdx(idx); onEditStart?.(); };
+  const commitEdit = (idx: number) => { onEditCity?.(idx, draft.trim()); setEditingIdx(null); onEditEnd?.(); };
+  const cancelEdit = () => { setEditingIdx(null); onEditEnd?.(); };
 
   const labelStyle: React.CSSProperties = {
     fontFamily: "var(--font-mono)", fontSize: 9, fontWeight: 700,
@@ -390,37 +433,25 @@ function StopList({ origin, originDone, destination, destinationDone, stops, onT
       {allStops.map((stop, idx) => {
         const prevDone  = idx === 0 || allStops[idx - 1].done;
         const isCurrent = !stop.done && prevDone;
-        const isEditingThis = stop.isOrigin && editingOrigin;
         // Can mark done only if every earlier stop is done; can always un-mark a done stop.
-        const canToggle = stop.done || prevDone;
+        const canToggle = !disabled && (stop.done || prevDone);
 
         return (
           <div key={idx} style={{ display: "flex", alignItems: "center", gap: 5 }}>
             <span style={labelStyle}>#{idx + 1}</span>
-            <TickBtn done={stop.done} isCurrent={isCurrent} canToggle={canToggle} onToggle={stop.onToggle} />
-            {isEditingThis ? (
+            <TickBtn done={stop.done} isCurrent={isCurrent} canToggle={canToggle} onToggle={canToggle ? stop.onToggle : undefined} />
+            {editingIdx === idx ? (
               <input autoFocus value={draft} onChange={(e) => setDraft(e.target.value)}
-                onBlur={() => { onEditOrigin?.(draft); setEditingOrigin(false); }}
+                onBlur={() => commitEdit(idx)}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter") { e.preventDefault(); onEditOrigin?.(draft); setEditingOrigin(false); }
-                  if (e.key === "Escape") setEditingOrigin(false);
-                }}
-                style={{ border: "none", outline: "none", background: "transparent", fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--foreground)", padding: 0, flex: 1, borderBottom: "1.5px solid var(--primary)" }} />
-            ) : editingStop === idx - 1 && !stop.isOrigin && idx > 0 && idx < allStops.length - 1 ? (
-              <input autoFocus value={draft} onChange={(e) => setDraft(e.target.value)}
-                onBlur={() => { onEditStop?.(idx - 1, draft); setEditingStop(null); }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") { e.preventDefault(); onEditStop?.(idx - 1, draft); setEditingStop(null); }
-                  if (e.key === "Escape") setEditingStop(null);
+                  if (e.key === "Enter") { e.preventDefault(); commitEdit(idx); }
+                  if (e.key === "Escape") cancelEdit();
                 }}
                 style={{ border: "none", outline: "none", background: "transparent", fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--foreground)", padding: 0, flex: 1, borderBottom: "1.5px solid var(--primary)" }} />
             ) : (
               <span
-                onClick={() => {
-                  if (stop.isOrigin) { setDraft(stop.city); setEditingOrigin(true); }
-                  else if (idx > 0 && idx < allStops.length - 1) { setDraft(stop.city); setEditingStop(idx - 1); }
-                }}
-                style={{ ...textStyle(stop.done, isCurrent), cursor: idx < allStops.length - 1 || stop.isOrigin ? "text" : "default" }}
+                onClick={() => beginEdit(idx, stop.city)}
+                style={{ ...textStyle(stop.done, isCurrent), cursor: disabled ? "default" : "text" }}
               >
                 {stop.city || "—"}
               </span>
@@ -627,6 +658,8 @@ function HistoryPanel({ events, loading, onClose, onRevert }: {
 
 export function DispatchTable() {
   const companyId = getCompanyId();
+  const { user } = useAuth();
+  const currentUserId = user?.id;
 
   const [rows,           setRows]           = useState<Driver[]>([]);
   const [loading,        setLoading]        = useState(true);
@@ -908,6 +941,37 @@ export function DispatchTable() {
     }
   };
 
+  // ── Edit a stop's city/appt (persists via the load, unlike a driver PUT) ────
+  // Route edits must go through PUT /loads — a driver PUT ignores stops. Given the full
+  // ordered route (loadRaw.stops matches [origin, …intermediates, destination]), replace
+  // one stop's field and re-derive the board row optimistically, then persist.
+  const editStop = async (driverId: string, absIndex: number, changes: Partial<Stop>) => {
+    const driver = rows.find((d) => d.driverId === driverId);
+    const load = driver?.loadRaw;
+    if (!driver || !load?.id) return;
+    const raw = (load.stops ?? []) as Stop[];
+    if (absIndex < 0 || absIndex >= raw.length) return;
+    const fullStops = raw.map((s, i) => (i === absIndex ? { ...s, ...changes } : s));
+
+    const first = fullStops[0];
+    const last  = fullStops.length > 1 ? fullStops[fullStops.length - 1] : undefined;
+    const derived: Partial<Driver> = {
+      origin:          (first?.city ?? "") || "—",
+      destination:     (last?.city ?? "") || "—",
+      stops:           fullStops.slice(1, -1),
+      pickupAppt:      (first?.appt ?? "") || "—",
+      dropAppt:        (last?.appt ?? "") || "—",
+      loadRaw:         { ...load, stops: fullStops },
+    };
+    setRows((prev) => prev.map((d) => (d.driverId === driverId ? { ...d, ...derived } : d)));
+    try {
+      await api.put(`/loads/${load.id}`, { ...load, stops: fullStops });
+    } catch (e) {
+      setRows((prev) => prev.map((d) => (d.driverId === driverId ? driver : d)));
+      setToast(e instanceof Error ? e.message : "Couldn't save the route — reverted.");
+    }
+  };
+
   // ── Complete the driver's load ────────────────────────────────────────────
   // Setting the status to "completed" on the board completes the current load. Per the
   // API, completing a load runs the whole lifecycle (stamps completed_at, writes a
@@ -954,12 +1018,6 @@ export function DispatchTable() {
   };
 
   const isEdit = (driverId: string, field: string) => editCell?.driverId === driverId && editCell?.field === field;
-
-  const editableText = (driverId: string, field: string, val: string, opts?: { mono?: boolean; color?: string; fontSize?: number; style?: React.CSSProperties }) =>
-    isEdit(driverId, field)
-      ? <InlineCell value={val} mono={opts?.mono} color={opts?.color} fontSize={opts?.fontSize}
-          onCommit={(v) => { patch(driverId, { [field]: v }); stopEdit(driverId); }} />
-      : <span onClick={() => startEdit(driverId, field)} style={{ cursor: "text", display: "block", fontFamily: opts?.mono ? "var(--font-mono)" : "var(--font-sans)", fontSize: opts?.fontSize ?? 12, color: opts?.color ?? "var(--foreground)", ...opts?.style }}>{val}</span>;
 
   // ── Filtered rows ──────────────────────────────────────────────────────────
 
@@ -1159,12 +1217,15 @@ export function DispatchTable() {
               )}
               {orderedVisible.map((driver, i) => {
                 const lock    = locks[driver.driverId];
-                const isLocked = !!lock;
-                const lockColor = isLocked ? "#8B5CF6" : undefined;
+                // Only SOMEONE ELSE's lock disables the row; your own lock never blocks you.
+                const isLockedByOther = !!lock && lock.holder_id !== currentUserId;
+                const lockColor = isLockedByOther ? "#8B5CF6" : undefined;
                 const isEven   = i % 2 === 0;
                 const kmColor  = etaColor(driver.etaKm);
-                const rowBg    = isLocked ? "#F5F3FF" : isEven ? "var(--card)" : "var(--background)";
+                const rowBg    = isLockedByOther ? "#F5F3FF" : isEven ? "var(--card)" : "var(--background)";
                 const border   = "1px solid var(--border)";
+                // Claim the row lock on any edit interaction; release when it ends.
+                const lockOnOpen = (o: boolean) => (o ? claimLock(driver.driverId) : releaseLock(driver.driverId));
 
                 const td = (extra: React.CSSProperties = {}): React.CSSProperties => ({
                   padding: "10px 14px", backgroundColor: rowBg,
@@ -1197,19 +1258,19 @@ export function DispatchTable() {
                       </span>
                     </td>
 
-                    {/* Driver Name — sticky. Team drivers show "Name1 & Name2" and aren't
-                        inline-editable here (there's no single field to write that back to). */}
+                    {/* Driver Name — sticky, read-only. Shows a "being edited by X" note when locked. */}
                     <td style={td({ position: "sticky", left: DRIVER_NM_LEFT, zIndex: 3, width: 180, minWidth: 180, borderRight: border, boxShadow: "2px 0 5px rgba(0,0,0,0.07)" })}>
-                      {driver.team ? (
-                        <span style={{ fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", display: "block", fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--foreground)" }}>
-                          {driverDisplayName({ name: driver.name, name2: driver.name2, team: driver.team })}
+                      <span style={{ fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", display: "block", fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--foreground)" }}>
+                        {driver.team ? driverDisplayName({ name: driver.name, name2: driver.name2, team: driver.team }) : driver.name}
+                      </span>
+                      {isLockedByOther && (
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 3, marginTop: 2, fontFamily: "var(--font-sans)", fontSize: 10, color: lockColor, whiteSpace: "nowrap" }}>
+                          <Lock size={9} /> Editing by {lock!.holder_name}
                         </span>
-                      ) : (
-                        editableText(driver.driverId, "name", driver.name, { style: { fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" } })
                       )}
                     </td>
 
-                    {/* Phone — team drivers show both contacts (read-only) */}
+                    {/* Phone — read-only (team drivers show both contacts) */}
                     <td style={td({ borderRight: border })}>
                       {driver.team ? (
                         <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
@@ -1217,7 +1278,7 @@ export function DispatchTable() {
                           {driver.phone2 && <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--muted-foreground)", whiteSpace: "nowrap" }}>{driver.phone2}</span>}
                         </div>
                       ) : (
-                        editableText(driver.driverId, "phone", driver.phone, { mono: true, fontSize: 11, color: "var(--muted-foreground)" })
+                        <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--muted-foreground)", whiteSpace: "nowrap" }}>{driver.phone}</span>
                       )}
                     </td>
 
@@ -1225,8 +1286,8 @@ export function DispatchTable() {
                     <td style={td({ borderRight: border })}>
                       <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                          {isLocked && <Lock size={10} style={{ color: lockColor, flexShrink: 0 }} />}
-                          <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 500, color: isLocked ? lockColor : "var(--foreground)" }}>
+                          {isLockedByOther && <Lock size={10} style={{ color: lockColor, flexShrink: 0 }} />}
+                          <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 500, color: isLockedByOther ? lockColor : "var(--foreground)" }}>
                             {driver.unit}
                           </span>
                         </div>
@@ -1240,12 +1301,12 @@ export function DispatchTable() {
 
                     {/* Type */}
                     <td style={td({ borderRight: border })}>
-                      <TypeDropdown value={driver.type} onChange={(t) => patch(driver.driverId, { type: t })} />
+                      <TypeDropdown value={driver.type} disabled={isLockedByOther} onOpenChange={lockOnOpen} onChange={(t) => patch(driver.driverId, { type: t })} />
                     </td>
 
                     {/* Status */}
                     <td style={td({ borderRight: border })}>
-                      <StatusDropdown value={driver.status} onChange={(s) =>
+                      <StatusDropdown value={driver.status} disabled={isLockedByOther} onOpenChange={lockOnOpen} onChange={(s) =>
                         s === "completed" ? completeLoad(driver.driverId) : patch(driver.driverId, { status: s })
                       } />
                     </td>
@@ -1259,17 +1320,17 @@ export function DispatchTable() {
                         destination={driver.destination}
                         destinationDone={driver.destinationDone}
                         stops={driver.stops}
+                        disabled={isLockedByOther}
+                        onEditStart={() => claimLock(driver.driverId)}
+                        onEditEnd={() => releaseLock(driver.driverId)}
                         onToggleOrigin={() => patchLoad(driver.driverId, driver.stops ?? [], !driver.originDone, driver.destinationDone ?? false)}
                         onToggleDestination={() => patchLoad(driver.driverId, driver.stops ?? [], driver.originDone ?? false, !driver.destinationDone)}
-                        onEditOrigin={(city) => patch(driver.driverId, { origin: city })}
                         onToggleStop={(idx) => {
                           const updated = (driver.stops ?? []).map((s, i) => i === idx ? { ...s, done: !s.done } : s);
                           patchLoad(driver.driverId, updated, driver.originDone ?? false, driver.destinationDone ?? false);
                         }}
-                        onEditStop={(idx, city) => {
-                          const updated = (driver.stops ?? []).map((s, i) => i === idx ? { ...s, city } : s);
-                          patch(driver.driverId, { stops: updated });
-                        }}
+                        // absIndex is the position in the full route — persist via the load
+                        onEditCity={(absIndex, city) => editStop(driver.driverId, absIndex, { city })}
                       />
                       )}
                     </td>
@@ -1286,29 +1347,33 @@ export function DispatchTable() {
                       return (
                         <td style={td({ borderRight: border, verticalAlign: "top", paddingTop: 12, paddingBottom: 12 })}>
                           <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-                            {/* #1 pickup */}
+                            {/* #1 pickup → route index 0 */}
                             <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
                               <span style={{ ...labelStyle, color: "var(--muted-foreground)" }}>#1</span>
-                              <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: driver.pickupAppt === "—" || pickupDone ? "var(--muted-foreground)" : "var(--foreground)", textDecoration: pickupDone ? "line-through" : "none" }}>{driver.pickupAppt}</span>
+                              <ApptEdit value={driver.pickupAppt} color={driver.pickupAppt === "—" || pickupDone ? "var(--muted-foreground)" : "var(--foreground)"} disabled={isLockedByOther}
+                                onEditStart={() => claimLock(driver.driverId)} onEditEnd={() => releaseLock(driver.driverId)}
+                                onCommit={(v) => editStop(driver.driverId, 0, { appt: v })} />
                             </div>
-                            {/* intermediate stops */}
+                            {/* intermediate stops → route index idx+1 */}
                             {stops.map((stop, idx) => {
                               const prevDone  = idx === 0 ? pickupDone : stops[idx - 1].done;
                               const isCurrent = !stop.done && prevDone;
                               return (
                                 <div key={idx} style={{ display: "flex", alignItems: "center", gap: 5 }}>
                                   <span style={{ ...labelStyle, color: "var(--muted-foreground)" }}>#{idx + 2}</span>
-                                  <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: stop.done || !stop.appt ? "var(--muted-foreground)" : isCurrent ? "var(--foreground)" : "var(--muted-foreground)", textDecoration: stop.done ? "line-through" : "none", fontWeight: isCurrent ? 500 : 400 }}>
-                                    {stop.appt ?? "—"}
-                                  </span>
+                                  <ApptEdit value={stop.appt || "—"} color={stop.done || !stop.appt ? "var(--muted-foreground)" : isCurrent ? "var(--foreground)" : "var(--muted-foreground)"} disabled={isLockedByOther}
+                                    onEditStart={() => claimLock(driver.driverId)} onEditEnd={() => releaseLock(driver.driverId)}
+                                    onCommit={(v) => editStop(driver.driverId, idx + 1, { appt: v })} />
                                 </div>
                               );
                             })}
-                            {/* destination (only when there is a distinct last stop) */}
+                            {/* destination → route index stops.length+1 (only when there's a distinct last stop) */}
                             {driver.dropAppt !== "—" && (
                               <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
                                 <span style={{ ...labelStyle, color: "var(--muted-foreground)" }}>#{destNum}</span>
-                                <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: destDone ? "var(--muted-foreground)" : "var(--foreground)", textDecoration: destDone ? "line-through" : "none" }}>{driver.dropAppt}</span>
+                                <ApptEdit value={driver.dropAppt} color={destDone ? "var(--muted-foreground)" : "var(--foreground)"} disabled={isLockedByOther}
+                                  onEditStart={() => claimLock(driver.driverId)} onEditEnd={() => releaseLock(driver.driverId)}
+                                  onCommit={(v) => editStop(driver.driverId, stops.length + 1, { appt: v })} />
                               </div>
                             )}
                           </div>
@@ -1316,14 +1381,11 @@ export function DispatchTable() {
                       );
                     })()}
 
-                    {/* Current Location */}
+                    {/* Current Location — read-only */}
                     <td style={td({ borderRight: border })}>
                       <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
                         <MapPin size={11} style={{ color: "var(--muted-foreground)", flexShrink: 0 }} />
-                        {isEdit(driver.driverId, "location")
-                          ? <InlineCell value={driver.location} onCommit={(v) => { patch(driver.driverId, { location: v }); stopEdit(driver.driverId); }} />
-                          : <span onClick={() => startEdit(driver.driverId, "location")} style={{ cursor: "text", fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--foreground)" }}>{driver.location}</span>
-                        }
+                        <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--foreground)" }}>{driver.location}</span>
                       </div>
                     </td>
 
@@ -1353,7 +1415,7 @@ export function DispatchTable() {
                         <div style={{ minWidth: 0, flex: 1 }}>
                           {isEdit(driver.driverId, "comments")
                             ? <InlineCell value={driver.comments} onCommit={(v) => { patch(driver.driverId, { comments: v }); stopEdit(driver.driverId); }} />
-                            : <span onClick={() => startEdit(driver.driverId, "comments")} style={{ cursor: "text", fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--foreground)", display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{driver.comments || "—"}</span>
+                            : <span onClick={isLockedByOther ? undefined : () => startEdit(driver.driverId, "comments")} style={{ cursor: isLockedByOther ? "default" : "text", fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--foreground)", display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{driver.comments || "—"}</span>
                           }
                           <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--muted-foreground)", display: "block", marginTop: 1 }}>{driver.lastUpdate}</span>
                         </div>
