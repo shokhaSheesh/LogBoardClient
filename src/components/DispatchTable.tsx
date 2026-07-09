@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef, Fragment } from "react";
+import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
-import { MapPin, Lock, MessageSquare, ChevronDown, Search, Navigation, Check, ArrowRight, History, X, AlertCircle, RotateCcw, Users } from "lucide-react";
+import { MapPin, Lock, MessageSquare, ChevronDown, Search, Navigation, Check, ArrowRight, History, X, AlertCircle, RotateCcw, Users, Rows3 } from "lucide-react";
 import { Status, STATUS_CONFIG, ALL_STATUSES } from "../lib/statuses";
 import { api, getCompanyId } from "../lib/api";
 import { useAuth } from "../lib/auth";
@@ -1031,29 +1031,21 @@ export function DispatchTable() {
     return ms && mq && mt;
   });
 
-  // "By team" view: one section per team (plus an Unassigned section), rendered as a
-  // team-name header row followed by that team's drivers. "All" view is a single group.
-  const groups: { name: string | null; drivers: Driver[] }[] =
+  // "By team" view: a separate table per team (plus an "Unassigned" section) instead of
+  // one shared table — each section gets its own non-scrolling header bar with the
+  // team's name and member names, so the header never scrolls away with the table's
+  // own horizontal scroll.
+  const teamGroups: { name: string; isUnassigned: boolean; drivers: Driver[] }[] =
     viewMode === "teams" && teams.length > 0
       ? (() => {
           const gs = teams
-            .map((t) => ({ name: t.name, drivers: visible.filter((d) => t.driverIds.has(d.driverId)) }))
+            .map((t) => ({ name: t.name, isUnassigned: false, drivers: visible.filter((d) => t.driverIds.has(d.driverId)) }))
             .filter((g) => g.drivers.length > 0);
           const unassigned = visible.filter((d) => !teams.some((t) => t.driverIds.has(d.driverId)));
-          if (unassigned.length) gs.push({ name: "Unassigned", drivers: unassigned });
+          if (unassigned.length) gs.push({ name: "Unassigned", isUnassigned: true, drivers: unassigned });
           return gs;
         })()
-      : [{ name: null, drivers: visible }];
-  const orderedVisible = groups.flatMap((g) => g.drivers);
-  // Map a flattened row index → the team header to render just before it (first of each named group).
-  const headerAt = new Map<number, { name: string; count: number }>();
-  {
-    let idx = 0;
-    for (const g of groups) {
-      if (g.name) headerAt.set(idx, { name: g.name, count: g.drivers.length });
-      idx += g.drivers.length;
-    }
-  }
+      : [];
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
@@ -1149,10 +1141,10 @@ export function DispatchTable() {
           {/* View toggle: one table vs a section per team */}
           {teams.length > 0 && (
             <div style={{ display: "inline-flex", border: "1px solid var(--border)", borderRadius: 7, overflow: "hidden" }}>
-              {([["all", "All"], ["teams", "By team"]] as const).map(([m, label]) => (
-                <button key={m} onClick={() => setViewMode(m)}
-                  style={{ padding: "5px 11px", fontFamily: "var(--font-sans)", fontSize: 12, border: "none", cursor: "pointer", whiteSpace: "nowrap", backgroundColor: viewMode === m ? "var(--primary)" : "transparent", color: viewMode === m ? "#fff" : "var(--muted-foreground)" }}>
-                  {label}
+              {([["all", "All drivers", Rows3], ["teams", "By team", Users]] as const).map(([m, label, Icon]) => (
+                <button key={m} onClick={() => setViewMode(m)} title={label}
+                  style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 30, height: 28, border: "none", cursor: "pointer", backgroundColor: viewMode === m ? "var(--primary)" : "transparent", color: viewMode === m ? "#fff" : "var(--muted-foreground)" }}>
+                  <Icon size={13} />
                 </button>
               ))}
             </div>
@@ -1175,7 +1167,7 @@ export function DispatchTable() {
         </div>
       </div>
 
-      {/* ── Table ── */}
+      {/* ── Table(s) ── */}
       <div style={{ flex: 1, overflow: "auto", position: "relative", scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent" }}>
         {loading ? (
           <div style={{ padding: "64px 20px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>Loading board…</div>
@@ -1185,7 +1177,42 @@ export function DispatchTable() {
             <span style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "#EF4444" }}>{error}</span>
             <button onClick={() => { setLoading(true); fetchBoard(); }} style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--primary)", background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}>Retry</button>
           </div>
-        ) : (
+        ) : viewMode === "teams" && teamGroups.length > 0 ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 28, padding: "16px 16px 24px" }}>
+            {teamGroups.map((g) => {
+              const memberNames = g.drivers.map((d) => d.team ? driverDisplayName({ name: d.name, name2: d.name2, team: d.team }) : d.name);
+              return (
+                <div key={g.name} style={{ border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden" }}>
+                  {/* Section header — plain block above the table, so it never scrolls
+                      horizontally with the table's own scroll. */}
+                  <div style={{ padding: "10px 14px", backgroundColor: "var(--muted)", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    <Users size={13} style={{ color: "var(--primary)", flexShrink: 0 }} />
+                    <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: 700, color: "var(--foreground)" }}>{g.name}</span>
+                    {!g.isUnassigned && memberNames.length > 0 && (
+                      <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "var(--muted-foreground)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        ({memberNames.join(", ")})
+                      </span>
+                    )}
+                    <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, fontWeight: 600, color: "var(--muted-foreground)", backgroundColor: "var(--secondary)", borderRadius: 10, padding: "1px 7px", marginLeft: "auto" }}>
+                      {g.drivers.length}
+                    </span>
+                  </div>
+                  <div style={{ overflowX: "auto" }}>
+                    {renderBoardTable(g.drivers, "No drivers match your filters.")}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : renderBoardTable(visible, rows.length === 0 ? "No drivers on the board yet." : "No drivers match your filters.")}
+      </div>
+    </div>
+  );
+
+  // One full board table (colgroup+thead+tbody) for the given driver list — used for the
+  // single "All drivers" table, and once per section in the "By team" view.
+  function renderBoardTable(driversList: Driver[], emptyMessage: string) {
+    return (
           <table style={{ width: "max-content", minWidth: "100%", borderCollapse: "separate", borderSpacing: 0, tableLayout: "fixed" }}>
             <colgroup>
               {COLUMNS.map((c) => <col key={c.label} style={{ width: c.width, minWidth: c.width }} />)}
@@ -1208,14 +1235,14 @@ export function DispatchTable() {
               </tr>
             </thead>
             <tbody>
-              {orderedVisible.length === 0 && (
+              {driversList.length === 0 && (
                 <tr>
                   <td colSpan={COLUMNS.length} style={{ padding: "48px 20px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
-                    {rows.length === 0 ? "No drivers on the board yet." : "No drivers match your filters."}
+                    {emptyMessage}
                   </td>
                 </tr>
               )}
-              {orderedVisible.map((driver, i) => {
+              {driversList.map((driver, i) => {
                 const lock    = locks[driver.driverId];
                 // Only SOMEONE ELSE's lock disables the row; your own lock never blocks you,
                 // but still gets its own (blue) tint so you can see the lock is active.
@@ -1237,21 +1264,9 @@ export function DispatchTable() {
                 // No active load → route/appointment cells are empty and non-interactive.
                 const hasLoad = !!driver.loadRaw?.id;
                 const emptyDash = <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)" }}>—</span>;
-                const groupHeader = headerAt.get(i);
 
                 return (
-                  <Fragment key={`${groupHeader?.name ?? ""}:${driver.driverId}:${i}`}>
-                  {groupHeader && (
-                    <tr>
-                      <td colSpan={COLUMNS.length} style={{ padding: "8px 14px", backgroundColor: "var(--secondary)", borderBottom: "1px solid var(--border)", borderTop: "1px solid var(--border)", position: "sticky", left: 0 }}>
-                        <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 700, color: "var(--primary)", letterSpacing: "0.04em", textTransform: "uppercase" }}>
-                          <Users size={12} /> {groupHeader.name}
-                          <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, fontWeight: 600, color: "var(--muted-foreground)" }}>{groupHeader.count}</span>
-                        </span>
-                      </td>
-                    </tr>
-                  )}
-                  <tr>
+                  <tr key={driver.driverId}>
 
                     {/* Load ID — sticky, read-only */}
                     <td style={td({ position: "sticky", left: LOAD_ID_LEFT, zIndex: 3, width: 110, minWidth: 110, borderRight: border })}>
@@ -1430,14 +1445,10 @@ export function DispatchTable() {
                     </td>
 
                   </tr>
-                  </Fragment>
                 );
               })}
             </tbody>
           </table>
-        )}
-      </div>
-
-    </div>
-  );
+    );
+  }
 }
