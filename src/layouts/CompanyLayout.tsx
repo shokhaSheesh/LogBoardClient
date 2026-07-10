@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { Avatar, AvatarFallback } from "../components/ui/avatar";
 import { useAuth } from "../lib/auth";
+import { hasPerm } from "../lib/permissions";
 import { api, setCompanyId, getCompanyId } from "../lib/api";
 import { useBoardPresence } from "../lib/useBoardPresence";
 
@@ -50,8 +51,11 @@ function AccountSwitcher({
   activeId: string;
   onSwitch: (id: string) => void;
 }) {
-  const { logout } = useAuth();
+  const { logout, user } = useAuth();
   const navigate = useNavigate();
+  // Billing & Settings are owner self-service (/owner/*) — hidden for dispatcher/updater.
+  const isOwner = user?.role === "owner";
+  const menuItems = isOwner ? USER_MENU_ITEMS : [];
   const [open, setOpen] = useState(false);
   const [rect, setRect] = useState<DOMRect | null>(null);
   const anchorRef = useRef<HTMLButtonElement>(null);
@@ -184,30 +188,32 @@ function AccountSwitcher({
             );
           })}
 
-          {/* Divider */}
-          <div style={{ height: 1, backgroundColor: "var(--border)", margin: "4px 0" }} />
-
-          <div style={sectionLabelStyle}>Account</div>
-
-          {USER_MENU_ITEMS.map(({ icon: Icon, label, path }) => (
-            <NavLink
-              key={path}
-              to={path}
-              onClick={() => setOpen(false)}
-              style={({ isActive }) => ({
-                display: "flex", alignItems: "center", gap: 10,
-                padding: "8px 10px", borderRadius: 8, textDecoration: "none",
-                fontFamily: "var(--font-sans)", fontSize: 13,
-                color: isActive ? "var(--primary)" : "var(--foreground)",
-                backgroundColor: isActive ? "var(--secondary)" : "transparent",
-              })}
-              onMouseEnter={(e) => { (e.currentTarget as HTMLAnchorElement).style.backgroundColor = "var(--muted)"; }}
-              onMouseLeave={(e) => { (e.currentTarget as HTMLAnchorElement).style.backgroundColor = ""; }}
-            >
-              <Icon size={14} style={{ flexShrink: 0, color: "var(--muted-foreground)" }} />
-              {label}
-            </NavLink>
-          ))}
+          {/* Account section — Billing/Settings only for owners */}
+          {menuItems.length > 0 && (
+            <>
+              <div style={{ height: 1, backgroundColor: "var(--border)", margin: "4px 0" }} />
+              <div style={sectionLabelStyle}>Account</div>
+              {menuItems.map(({ icon: Icon, label, path }) => (
+                <NavLink
+                  key={path}
+                  to={path}
+                  onClick={() => setOpen(false)}
+                  style={({ isActive }) => ({
+                    display: "flex", alignItems: "center", gap: 10,
+                    padding: "8px 10px", borderRadius: 8, textDecoration: "none",
+                    fontFamily: "var(--font-sans)", fontSize: 13,
+                    color: isActive ? "var(--primary)" : "var(--foreground)",
+                    backgroundColor: isActive ? "var(--secondary)" : "transparent",
+                  })}
+                  onMouseEnter={(e) => { (e.currentTarget as HTMLAnchorElement).style.backgroundColor = "var(--muted)"; }}
+                  onMouseLeave={(e) => { (e.currentTarget as HTMLAnchorElement).style.backgroundColor = ""; }}
+                >
+                  <Icon size={14} style={{ flexShrink: 0, color: "var(--muted-foreground)" }} />
+                  {label}
+                </NavLink>
+              ))}
+            </>
+          )}
 
           {/* Divider */}
           <div style={{ height: 1, backgroundColor: "var(--border)", margin: "4px 0" }} />
@@ -266,13 +272,13 @@ function Logo({ collapsed }: { collapsed: boolean }) {
 // ─── Navigation config ─────────────────────────────────────────────────────
 
 const navItems = [
-  { icon: LayoutDashboard, label: "Dashboard",  path: "dashboard"   },
-  { icon: Trello,          label: "Board",       path: "board"       },
-  { icon: BarChart2,       label: "Gross",       path: "gross"       },
-  { icon: Package,         label: "Loads",       path: "loads"       },
-  { icon: Users,           label: "Drivers",     path: "drivers"     },
-  { icon: Truck,           label: "Equipments",  path: "equipments"  },
-  { icon: DollarSign,      label: "Payouts",     path: "payouts"     },
+  { icon: LayoutDashboard, label: "Dashboard",  path: "dashboard",  module: "dashboard"  },
+  { icon: Trello,          label: "Board",       path: "board",      module: "board"      },
+  { icon: BarChart2,       label: "Gross",       path: "gross",      module: "gross"      },
+  { icon: Package,         label: "Loads",       path: "loads",      module: "loads"      },
+  { icon: Users,           label: "Drivers",     path: "drivers",    module: "drivers"    },
+  { icon: Truck,           label: "Equipments",  path: "equipments", module: "equipments" },
+  { icon: DollarSign,      label: "Payouts",     path: "payouts",    module: "payouts"    },
 ];
 
 // ─── Active-user presence helpers ────────────────────────────────────────────
@@ -342,6 +348,10 @@ function Sidebar({ collapsed, onToggle }: {
   onToggle: () => void;
 }) {
   const location = useLocation();
+  const { user } = useAuth();
+
+  // Only show pages the current user's company role can actually open.
+  const visibleNav = navItems.filter((n) => hasPerm(user, n.module));
 
   return (
     <aside
@@ -376,7 +386,7 @@ function Sidebar({ collapsed, onToggle }: {
 
       {/* Nav items */}
       <nav className="flex-1 px-2 py-2 flex flex-col gap-0.5 overflow-y-auto">
-        {navItems.map(({ icon: Icon, label, path }) => {
+        {visibleNav.map(({ icon: Icon, label, path }) => {
           const isActive =
             location.pathname === `/workspace/${path}` ||
             location.pathname.startsWith(`/workspace/${path}/`);
@@ -826,7 +836,7 @@ function TopHeader({ onToggleSidebar, accounts, activeAccountId, onSwitch }: {
 // ─── CompanyLayout ────────────────────────────────────────────────────────────
 
 export function CompanyLayout() {
-  const { user } = useAuth();
+  const { user, refresh } = useAuth();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [accounts, setAccounts]               = useState<Account[]>([]);
   const [activeAccountId, setActiveAccountId] = useState(getCompanyId());
@@ -854,8 +864,22 @@ export function CompanyLayout() {
         })
         .catch(() => {/* silently ignore — switcher stays empty */});
     } else if (user?.company_id) {
-      // dispatcher / updater — already pinned, just make sure it's reflected in state
+      // dispatcher / updater — pinned to one company. There's no owner-style
+      // /owner/accounts for them, so build a single non-switchable entry from the
+      // logged-in user so the switcher (and its Sign-out) still renders. Company
+      // name/plan/mc are shown when /auth/me carries them; otherwise a neutral label.
       setActiveAccountId(user.company_id);
+      const name = user.company?.name || user.company_name || "My Company";
+      const plan = user.company?.plan || user.company_plan || "";
+      const mc   = user.company?.mc   || user.company_mc   || undefined;
+      setAccounts([{
+        id: user.company_id,
+        name,
+        initials: initialsOf(name),
+        color: colorFor(user.company_id),
+        plan,
+        mc,
+      }]);
     }
   }, [user]);
 
@@ -866,6 +890,8 @@ export function CompanyLayout() {
     setSwitching(true);
     setActiveAccountId(id);
     setCompanyId(id);
+    // Permissions are resolved per-company — re-pull them for the new active company.
+    void refresh();
     setTimeout(() => setSwitching(false), 800);
   };
 

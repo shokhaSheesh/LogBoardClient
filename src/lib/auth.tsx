@@ -15,7 +15,17 @@ export interface AuthUser {
   email: string;
   full_name: string;
   company_id: string;
+  // Company details for the active company, when the backend includes them on
+  // /auth/me (a dispatcher/updater can't reach /owner/* to fetch them). Supported
+  // as either a nested object or flat company_* fields — whichever the backend sends.
+  company?: { name?: string; plan?: string; mc?: string } | null;
+  company_name?: string;
+  company_plan?: string;
+  company_mc?: string;
   must_change_password: boolean;
+  // Effective permission keys ("<module>.<action>") for the active company.
+  // Resolved fresh by GET /auth/me; [] for an owner who hasn't picked a company yet.
+  permissions: string[];
 }
 
 interface AuthState {
@@ -23,6 +33,9 @@ interface AuthState {
   loading: boolean;
   login: (email: string, password: string) => Promise<{ mustChangePassword: boolean }>;
   logout: () => Promise<void>;
+  // Re-fetch /auth/me — permissions are per-company, so owners must refresh after
+  // switching the active company.
+  refresh: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -50,15 +63,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       { email, password }
     );
     setToken(data.token);
-    setUser(data.user);
 
     // For owners, company_id is "" — they pick a company via the account switcher.
-    // For dispatcher/updater, persist their company immediately.
+    // For dispatcher/updater, persist their company immediately so the very next
+    // /auth/me carries their per-company permission set.
     if (data.user.company_id) {
       setCompanyId(data.user.company_id);
     }
 
+    // The login payload has no permissions — pull the effective set from /auth/me
+    // (now that X-Company-ID is set for non-owners). Fall back to the login user.
+    try {
+      const me = await api.get<AuthUser>("/auth/me");
+      setUser(me);
+    } catch {
+      setUser(data.user);
+    }
+
     return { mustChangePassword: data.user.must_change_password };
+  }, []);
+
+  const refresh = useCallback(async () => {
+    try {
+      const me = await api.get<AuthUser>("/auth/me");
+      setUser(me);
+    } catch {
+      // ignore — keep the current user on a transient failure
+    }
   }, []);
 
   const logout = useCallback(async () => {
@@ -73,7 +104,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, logout, refresh }}>
       {children}
     </AuthContext.Provider>
   );
