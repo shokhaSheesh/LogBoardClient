@@ -1,8 +1,8 @@
 import { useState, useMemo, useEffect, useRef } from "react";
-import { Search, Calendar, Check, ChevronDown, ChevronLeft, ChevronRight, AlertCircle, X } from "lucide-react";
+import { Search, Calendar, Check, ChevronDown, ChevronLeft, ChevronRight, AlertCircle, X, Users, Rows3 } from "lucide-react";
 import { createPortal } from "react-dom";
 import { Status, STATUS_CONFIG, ALL_STATUSES } from "../lib/statuses";
-import { api } from "../lib/api";
+import { api, getCompanyId } from "../lib/api";
 import { driverDisplayName } from "../lib/driverName";
 
 type CellType = Status | "load" | "empty";
@@ -798,6 +798,8 @@ export function GrossMatrix() {
   const [search,   setSearch]   = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo,   setDateTo]   = useState("");
+  const [viewMode, setViewMode] = useState<"all" | "teams">("all"); // one table vs a section per team
+  const [teams,    setTeams]    = useState<{ id: string; name: string; driverIds: Set<string>; userNames: string[] }[]>([]);
 
   // Auto-dismiss the save-error banner.
   useEffect(() => {
@@ -805,6 +807,22 @@ export function GrossMatrix() {
     const t = setTimeout(() => setToast(null), 3500);
     return () => clearTimeout(t);
   }, [toast]);
+
+  // Teams (dispatch pods) for the "By team" view — same fetch/shape as the board.
+  useEffect(() => {
+    const companyId = getCompanyId();
+    if (!companyId) return;
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    api.get<{ id: string; name: string; driver_ids?: string[]; user_names?: string[] }[]>(`/owner/companies/${companyId}/teams`)
+      .then((data) => {
+        setTeams((data ?? []).map((t) => ({
+          id: t.id, name: t.name, driverIds: new Set(t.driver_ids ?? []),
+          // Drop unresolved names (backend falls back to the raw user id when it can't resolve one).
+          userNames: (t.user_names ?? []).filter((n) => !UUID_RE.test(n)),
+        })));
+      })
+      .catch(() => setTeams([]));
+  }, []);
 
   // Fetch gross data. Omit from/to to let the backend pick the default current
   // week (anchored to the company's week_start_day) — we then sync our state
@@ -940,9 +958,21 @@ export function GrossMatrix() {
     }, 0);
   }
 
-  const grandTotal  = filtered.reduce((s, d) => s + rangeTotal(d), 0);
-  const grandProfit = filtered.reduce((s, d) => s + d.companyProfit, 0);
-  const rangeDays   = dates.length;
+  // "By team" view: a separate table per team (plus an "Unassigned" section), each with
+  // its own subtotal row — same pattern as the board.
+  const teamGroups: { name: string; isUnassigned: boolean; drivers: DriverRow[]; userNames: string[] }[] =
+    viewMode === "teams" && teams.length > 0
+      ? (() => {
+          const gs = teams
+            .map((t) => ({ name: t.name, isUnassigned: false, drivers: filtered.filter((d) => t.driverIds.has(d.id)), userNames: t.userNames }))
+            .filter((g) => g.drivers.length > 0);
+          const unassigned = filtered.filter((d) => !teams.some((t) => t.driverIds.has(d.id)));
+          if (unassigned.length) gs.push({ name: "Unassigned", isUnassigned: true, drivers: unassigned, userNames: [] });
+          return gs;
+        })()
+      : [];
+
+  const rangeDays = dates.length;
 
 
   const R = { total: 240, target: 120, profit: 0 };
@@ -978,6 +1008,19 @@ export function GrossMatrix() {
                 {rangeDays} {rangeDays === 1 ? "day" : "days"}
               </span>
             )}
+
+            {/* View toggle: one table vs a section per team */}
+            {teams.length > 0 && (
+              <div style={{ display: "inline-flex", border: "1px solid var(--border)", borderRadius: 7, overflow: "hidden", flexShrink: 0 }}>
+                {([["all", "All drivers", Rows3], ["teams", "By team", Users]] as const).map(([m, label, Icon]) => (
+                  <button key={m} onClick={() => setViewMode(m)} title={label}
+                    style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 30, height: 28, border: "none", cursor: "pointer", backgroundColor: viewMode === m ? "var(--primary)" : "transparent", color: viewMode === m ? "#fff" : "var(--muted-foreground)" }}>
+                    <Icon size={13} />
+                  </button>
+                ))}
+              </div>
+            )}
+
             <div style={{ flex: 1 }} />
 
             <div style={{ position: "relative", flexShrink: 0 }}>
@@ -1032,7 +1075,44 @@ export function GrossMatrix() {
                 <span style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "#EF4444" }}>{loadErr}</span>
                 <button onClick={() => loadGross(dateFrom, dateTo, search)} style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--primary)", background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}>Retry</button>
               </div>
-            ) : (
+            ) : viewMode === "teams" && teamGroups.length > 0 ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: 28, padding: "16px 16px 24px" }}>
+                {teamGroups.map((g) => (
+                  <div key={g.name} style={{ border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden" }}>
+                    {/* Section header — plain block above the table, so it never scrolls
+                        horizontally with the table's own scroll. */}
+                    <div style={{ padding: "10px 14px", backgroundColor: "var(--muted)", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                      <Users size={13} style={{ color: "var(--primary)", flexShrink: 0 }} />
+                      <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: 700, color: "var(--foreground)" }}>{g.name}</span>
+                      {!g.isUnassigned && g.userNames.length > 0 && (
+                        <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "var(--muted-foreground)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          ({g.userNames.join(", ")})
+                        </span>
+                      )}
+                      <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, fontWeight: 600, color: "var(--muted-foreground)", backgroundColor: "var(--secondary)", borderRadius: 10, padding: "1px 7px", marginLeft: "auto" }}>
+                        {g.drivers.length}
+                      </span>
+                    </div>
+                    <div style={{ overflowX: "auto" }}>
+                      {renderGrossTable(g.drivers)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : renderGrossTable(filtered)}
+          </div>
+
+        </div>
+      </div>
+    </div>
+  );
+
+  // One full gross table (thead+tbody+totals row) for the given driver list — used for
+  // the single "All drivers" table, and once per section in the "By team" view.
+  function renderGrossTable(driversList: DriverRow[]) {
+    const groupTotal  = driversList.reduce((s, d) => s + rangeTotal(d), 0);
+    const groupProfit = driversList.reduce((s, d) => s + d.companyProfit, 0);
+    return (
               <table style={{ borderCollapse: "separate", borderSpacing: 0, tableLayout: "fixed", minWidth: "100%" }}>
                 <thead>
                   <tr style={{ position: "sticky", top: 0, zIndex: 20, backgroundColor: "#0F172A" }}>
@@ -1056,13 +1136,13 @@ export function GrossMatrix() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.length === 0 ? (
+                  {driversList.length === 0 ? (
                     <tr>
                       <td colSpan={2 + dates.length + 3} style={{ padding: "48px 20px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
                         No drivers match your search.
                       </td>
                     </tr>
-                  ) : filtered.map((driver, i) => {
+                  ) : driversList.map((driver, i) => {
                     const isEven   = i % 2 === 0;
                     const rowBg    = isEven ? "#ffffff" : "#F9FAFB";
                     const total    = rangeTotal(driver);
@@ -1157,7 +1237,7 @@ export function GrossMatrix() {
                       Totals
                     </td>
                     {dates.map((iso) => {
-                      const dayTotal = filtered.reduce((sum, dr) => {
+                      const dayTotal = driversList.reduce((sum, dr) => {
                         const cell = dr.dateMap[iso];
                         return sum + (cell?.type === "load" && cell.amount ? cell.amount : 0);
                       }, 0);
@@ -1168,22 +1248,17 @@ export function GrossMatrix() {
                       );
                     })}
                     <td style={{ padding: "8px 12px", textAlign: "right", verticalAlign: "middle", borderTop: "2px solid #334155", borderLeft: "2px solid #334155", fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 700, color: "#34D399", position: "sticky", right: R.total, zIndex: 16, backgroundColor: "#0F172A" }}>
-                      {fmt(grandTotal)}
+                      {fmt(groupTotal)}
                     </td>
                     <td style={{ padding: "8px 12px", textAlign: "center", verticalAlign: "middle", borderTop: "2px solid #334155", borderLeft: "1px solid #334155", fontFamily: "var(--font-mono)", fontSize: 11, color: "#475569", position: "sticky", right: R.target, zIndex: 16, backgroundColor: "#0F172A" }}>—</td>
-                    <td style={{ padding: "8px 12px", textAlign: "right", verticalAlign: "middle", borderTop: "2px solid #334155", borderLeft: "1px solid #334155", fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 700, color: grandProfit >= 0 ? "#34D399" : "#F87171", position: "sticky", right: R.profit, zIndex: 16, backgroundColor: "#0F172A" }}>
-                      {grandProfit >= 0 ? fmt(grandProfit) : `-$${Math.abs(grandProfit).toLocaleString()}`}
+                    <td style={{ padding: "8px 12px", textAlign: "right", verticalAlign: "middle", borderTop: "2px solid #334155", borderLeft: "1px solid #334155", fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 700, color: groupProfit >= 0 ? "#34D399" : "#F87171", position: "sticky", right: R.profit, zIndex: 16, backgroundColor: "#0F172A" }}>
+                      {groupProfit >= 0 ? fmt(groupProfit) : `-$${Math.abs(groupProfit).toLocaleString()}`}
                     </td>
                   </tr>
                 </tbody>
               </table>
-            )}
-          </div>
-
-        </div>
-      </div>
-    </div>
-  );
+    );
+  }
 }
 
 /* ─── Header style helpers ──────────────────────────────────────────────────── */
