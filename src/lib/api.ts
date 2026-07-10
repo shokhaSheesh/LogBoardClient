@@ -152,8 +152,10 @@ async function upload<T>(path: string, file: File, field = "file"): Promise<T> {
 
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {
+    // Carry the machine-readable code (file_too_large, unsupported_media_type,
+    // not_configured, ai_unavailable, …) so callers can map it to a specific message.
     const msg = json?.error?.message ?? json?.error ?? `HTTP ${res.status}`;
-    throw new Error(msg);
+    throw new ApiError(msg, json?.error?.code);
   }
   return (json.data ?? json) as T;
 }

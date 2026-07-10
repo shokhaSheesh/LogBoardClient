@@ -3,11 +3,11 @@ import { createPortal } from "react-dom";
 import {
   Package, Plus, Pencil, Trash2, X, Check, AlertCircle,
   Search, ChevronDown, ChevronLeft, ChevronRight,
-  ClipboardList, Sparkles,
+  ClipboardList, Sparkles, Upload, FileText,
   ArrowLeft, ArrowRight, Building2, User, DollarSign, Clock, History, CalendarDays, Navigation, GripVertical,
 } from "lucide-react";
 import { Status, STATUS_CONFIG as SHARED_STATUS_CONFIG, ALL_STATUSES as SHARED_ALL_STATUSES } from "../lib/statuses";
-import { api, getCompanyId } from "../lib/api";
+import { api, ApiError, getCompanyId } from "../lib/api";
 import { menuPosition } from "../lib/menuPosition";
 import { driverDisplayName } from "../lib/driverName";
 import { geocodeCity, routeMiles } from "../lib/geo";
@@ -421,7 +421,194 @@ function fmt(n: number) {
 
 // ─── Add Menu ─────────────────────────────────────────────────────────────────
 
-function AddLoadMenu({ onManual }: { onManual: () => void }) {
+// ─── AI Smart Extract ─────────────────────────────────────────────────────────
+
+const EXTRACT_ACCEPT = ".pdf,.png,.jpg,.jpeg,.webp,.txt";
+const MAX_DOC_BYTES  = 10 * 1024 * 1024; // pdf/image; text is 1 MB but the server judges
+
+// The backend sniffs the bytes, so these messages describe *its* verdict, not ours.
+function extractErrorMessage(e: unknown): string {
+  const code = e instanceof ApiError ? e.code : undefined;
+  switch (code) {
+    case "not_configured":        return "AI Smart Extract isn't enabled on this server yet. Ask an admin to configure it.";
+    case "ai_unavailable":        return "The model is busy or today's quota is spent. Try again in a moment.";
+    case "file_too_large":        return "That file is over the limit (10 MB for a PDF or image, 1 MB for text).";
+    case "unsupported_media_type":return "That doesn't look like a PDF, image, or text file.";
+    case "invalid_request":       return "The document was empty or unreadable.";
+    default:                      return e instanceof Error ? e.message : "Extraction failed.";
+  }
+}
+
+function ExtractModal({ onClose, onExtracted }: {
+  onClose: () => void;
+  onExtracted: (draft: ExtractDraft) => void;
+}) {
+  const [mode, setMode]       = useState<"file" | "text">("file");
+  const [file, setFile]       = useState<File | null>(null);
+  const [text, setText]       = useState("");
+  const [dragging, setDragging] = useState(false);
+  const [busy, setBusy]       = useState(false);
+  const [error, setError]     = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const pickFile = (f: File | undefined | null) => {
+    if (!f) return;
+    if (f.size > MAX_DOC_BYTES) { setError("That file is over the 10 MB limit."); return; }
+    setError(null);
+    setFile(f);
+  };
+
+  const canSubmit = mode === "file" ? !!file : text.trim().length > 0;
+
+  const submit = async () => {
+    if (!canSubmit || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      // Extraction reads the document with a reasoning model — 8–35s is normal,
+      // longer for a many-page PDF. fetch has no default timeout, so just wait.
+      const res = mode === "file"
+        ? await api.upload<{ draft: ExtractDraft }>("/loads/extract", file!)
+        : await api.post<{ draft: ExtractDraft }>("/loads/extract", { text: text.trim() });
+      onExtracted(res?.draft ?? {});
+    } catch (e) {
+      setError(extractErrorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const tabStyle = (active: boolean): React.CSSProperties => ({
+    flex: 1, padding: "8px 0", fontFamily: "var(--font-sans)", fontSize: 12.5,
+    fontWeight: active ? 600 : 500, cursor: busy ? "default" : "pointer",
+    color: active ? "#7C3AED" : "var(--muted-foreground)",
+    backgroundColor: active ? "#F5F3FF" : "transparent",
+    border: "none", borderBottom: `2px solid ${active ? "#7C3AED" : "transparent"}`,
+  });
+
+  return (
+    <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ backgroundColor: "var(--card)", borderRadius: 12, width: 540, boxShadow: "0 20px 60px rgba(0,0,0,0.22)" }}>
+        {/* Header */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderBottom: "1px solid var(--border)", backgroundColor: "var(--muted)", borderRadius: "12px 12px 0 0" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+            <div style={{ width: 30, height: 30, borderRadius: 8, backgroundColor: "#F5F3FF", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <Sparkles size={15} color="#7C3AED" />
+            </div>
+            <span style={{ fontFamily: "var(--font-sans)", fontSize: 14, fontWeight: 600, color: "var(--foreground)" }}>AI Smart Extract</span>
+          </div>
+          <button onClick={onClose} disabled={busy} style={{ background: "none", border: "none", cursor: busy ? "default" : "pointer", color: "var(--muted-foreground)", display: "flex", opacity: busy ? 0.4 : 1 }}>
+            <X size={16} />
+          </button>
+        </div>
+
+        {/* Mode tabs */}
+        <div style={{ display: "flex", borderBottom: "1px solid var(--border)" }}>
+          <button onClick={() => !busy && setMode("file")} style={tabStyle(mode === "file")}>Upload a rate confirmation</button>
+          <button onClick={() => !busy && setMode("text")} style={tabStyle(mode === "text")}>Paste an email</button>
+        </div>
+
+        <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 14 }}>
+          {mode === "file" ? (
+            <div
+              onClick={() => !busy && inputRef.current?.click()}
+              onDragOver={(e) => { e.preventDefault(); if (!busy) setDragging(true); }}
+              onDragLeave={() => setDragging(false)}
+              onDrop={(e) => { e.preventDefault(); setDragging(false); if (!busy) pickFile(e.dataTransfer.files[0]); }}
+              style={{
+                border: `2px dashed ${dragging ? "#7C3AED" : file ? "#10B981" : "var(--border)"}`,
+                borderRadius: 10, padding: "34px 20px", textAlign: "center",
+                backgroundColor: dragging ? "#F5F3FF" : file ? "#F0FDF4" : "var(--input-background)",
+                cursor: busy ? "default" : "pointer", transition: "all 0.15s",
+              }}
+            >
+              <input ref={inputRef} type="file" accept={EXTRACT_ACCEPT} onChange={(e) => pickFile(e.target.files?.[0])} style={{ display: "none" }} />
+              {file ? (
+                <>
+                  <div style={{ width: 44, height: 44, borderRadius: 10, backgroundColor: "#D1FAE5", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 12px" }}>
+                    <FileText size={22} color="#059669" />
+                  </div>
+                  <div style={{ fontFamily: "var(--font-sans)", fontSize: 14, fontWeight: 600, color: "#065F46" }}>{file.name}</div>
+                  <div style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "#6B7280", marginTop: 4 }}>
+                    {(file.size / 1024).toFixed(1)} KB · Click to change
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div style={{ width: 44, height: 44, borderRadius: 10, backgroundColor: "var(--muted)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 12px" }}>
+                    <Upload size={20} color="var(--muted-foreground)" />
+                  </div>
+                  <div style={{ fontFamily: "var(--font-sans)", fontSize: 14, fontWeight: 500, color: "var(--foreground)" }}>Drop the rate confirmation here</div>
+                  <div style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)", marginTop: 4 }}>
+                    or <span style={{ color: "#7C3AED", fontWeight: 500 }}>browse files</span> — PDF, photo/scan, or text (max 10 MB)
+                  </div>
+                </>
+              )}
+            </div>
+          ) : (
+            <textarea
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              disabled={busy}
+              placeholder="Paste the broker's email or the load details here…"
+              style={{
+                width: "100%", minHeight: 160, resize: "vertical", boxSizing: "border-box",
+                fontFamily: "var(--font-sans)", fontSize: 13, lineHeight: 1.5, padding: "10px 12px",
+                border: "1px solid var(--border)", borderRadius: 8,
+                backgroundColor: "var(--input-background)", color: "var(--foreground)", outline: "none",
+              }}
+            />
+          )}
+
+          {/* Third-party disclosure — the document leaves our server. */}
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 8, fontFamily: "var(--font-sans)", fontSize: 11, color: "var(--muted-foreground)", lineHeight: 1.5 }}>
+            <AlertCircle size={13} style={{ flexShrink: 0, marginTop: 1 }} />
+            <span>The document is sent to Google's Gemini API to be read. Nothing is saved until you review the draft and create the load.</span>
+          </div>
+
+          {busy && (
+            <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", backgroundColor: "#F5F3FF", border: "1px solid #DDD6FE", borderRadius: 8 }}>
+              <span style={{ width: 15, height: 15, borderRadius: "50%", border: "2px solid #DDD6FE", borderTopColor: "#7C3AED", animation: "spin 0.7s linear infinite", flexShrink: 0 }} />
+              <div style={{ fontFamily: "var(--font-sans)", fontSize: 12.5, color: "#5B21B6", lineHeight: 1.45 }}>
+                Reading the document… this usually takes 10–35 seconds.
+              </div>
+            </div>
+          )}
+
+          {error && !busy && (
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 14px", backgroundColor: "#FEF2F2", borderRadius: 8, border: "1px solid #FECACA" }}>
+              <AlertCircle size={15} color="#DC2626" style={{ flexShrink: 0, marginTop: 1 }} />
+              <div style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "#991B1B", lineHeight: 1.5 }}>{error}</div>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, padding: "14px 20px", borderTop: "1px solid var(--border)" }}>
+          <button onClick={onClose} disabled={busy} style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 16px", borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "var(--muted)", color: "var(--foreground)", cursor: busy ? "default" : "pointer", opacity: busy ? 0.5 : 1 }}>
+            Cancel
+          </button>
+          <button
+            onClick={submit}
+            disabled={!canSubmit || busy}
+            style={{
+              display: "flex", alignItems: "center", gap: 6,
+              fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 16px",
+              borderRadius: 6, border: "none",
+              backgroundColor: canSubmit && !busy ? "#7C3AED" : "var(--muted)",
+              color: canSubmit && !busy ? "#fff" : "var(--muted-foreground)",
+              cursor: canSubmit && !busy ? "pointer" : "not-allowed",
+            }}
+          >
+            <Sparkles size={14} /> {busy ? "Extracting…" : "Extract"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AddLoadMenu({ onManual, onExtract }: { onManual: () => void; onExtract: () => void }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -446,9 +633,9 @@ function AddLoadMenu({ onManual }: { onManual: () => void }) {
       icon: <Sparkles size={16} />,
       iconColor: "#7C3AED", iconBg: "#F5F3FF",
       label: "AI Smart Extract",
-      desc: "Parse load info from any document or email",
-      comingSoon: true,
-      onClick: () => {},
+      desc: "Parse a rate confirmation or pasted email",
+      comingSoon: false,
+      onClick: onExtract,
     },
   ];
 
@@ -556,6 +743,50 @@ function apptToDate(v: string): Date | null {
 function startOfToday(): Date {
   const n = new Date();
   return new Date(n.getFullYear(), n.getMonth(), n.getDate());
+}
+
+// A rate confirmation's appt is copied verbatim by the extractor, so it arrives in
+// whatever shape the broker printed — "7/06/26 0800 -to- 7/06/26 1700",
+// "07/06/2026 08:00", sometimes nothing. Take the first date (and time, if any) and
+// render it as the canonical "MM/DD · HH:MM" the picker round-trips. Anything we
+// can't read confidently becomes "" for a human to fill in, rather than a wrong date.
+function draftApptToCanonical(raw: string): string {
+  if (!raw) return "";
+  const m = raw.match(/(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?(?:\D{1,3}(\d{1,2}):?(\d{2}))?/);
+  if (!m) return "";
+  const mo = Number(m[1]), d = Number(m[2]);
+  if (mo < 1 || mo > 12 || d < 1 || d > 31) return "";
+  const hh = m[4] != null ? Number(m[4]) : 8;
+  const mm = m[5] != null ? Number(m[5]) : 0;
+  if (hh > 23 || mm > 59) return "";
+  return fmtAppt(mo - 1, d, 0, `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`);
+}
+
+// The extractor's draft — exactly the fields a load stores. No driver/dispatcher
+// (a human assigns those), and draft stops carry no `done` flag.
+interface ExtractDraft {
+  load_id?: string;
+  broker?: string;
+  payout?: number;
+  miles?: number;
+  stops?: { city?: string; appt?: string }[];
+}
+
+function draftToLoad(d: ExtractDraft): Partial<Load> {
+  const stops: Stop[] = (d.stops ?? []).map((s) => ({
+    city: s.city ?? "",
+    appt: draftApptToCanonical(s.appt ?? ""),
+    done: false,
+  }));
+  // The modal expects at least an origin and a destination row.
+  while (stops.length < 2) stops.push({ city: "", appt: "", done: false });
+  return {
+    loadId:     d.load_id ?? "",
+    broker:     d.broker  ?? "",
+    payout:     d.payout  ?? 0,
+    totalMiles: d.miles   ?? 0,
+    stops,
+  };
 }
 
 function CalendarPicker({ value, onChange, min }: { value: string; onChange: (v: string) => void; min?: Date }) {
@@ -1539,6 +1770,7 @@ export function LoadsPage() {
   const [loading, setLoading]       = useState(true);
   const [fetchKey, setFetchKey]     = useState(0);
   const [modal, setModal]           = useState<"create" | "edit" | null>(null);
+  const [extracting, setExtracting] = useState(false);
   const [saving, setSaving]         = useState(false);
   const [editing, setEditing]       = useState<Partial<Load>>({});
   const [deleting, setDeleting]     = useState<Load | null>(null);
@@ -1600,6 +1832,14 @@ export function LoadsPage() {
 
   const openCreate = () => { setEditing({}); setModal("create"); };
   const openEdit   = (l: Load) => { setEditing(l); setModal("edit"); };
+
+  // The draft is never persisted by the extractor — drop it into the normal create
+  // modal so a human reviews it, assigns driver/dispatcher, and saves via POST /loads.
+  const openFromDraft = (draft: ExtractDraft) => {
+    setExtracting(false);
+    setEditing(draftToLoad(draft));
+    setModal("create");
+  };
 
   const save = async (l: Load) => {
     setSaving(true);
@@ -1703,7 +1943,7 @@ export function LoadsPage() {
 
             <div style={{ flex: 1 }} />
 
-            <AddLoadMenu onManual={openCreate} />
+            <AddLoadMenu onManual={openCreate} onExtract={() => setExtracting(true)} />
           </div>
 
           {/* Table — dim existing rows while a page-change refetch is in flight */}
@@ -1864,6 +2104,9 @@ export function LoadsPage() {
         </div>
       </div>
 
+      {extracting && (
+        <ExtractModal onClose={() => setExtracting(false)} onExtracted={openFromDraft} />
+      )}
       {(modal === "create" || modal === "edit") && (
         <LoadModal load={editing} onClose={() => setModal(null)} onSave={save} saving={saving} />
       )}
