@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Truck, Container, Plus, Pencil, Trash2, X, Check, Search, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, FileSpreadsheet, Upload, FileText, AlertCircle } from "lucide-react";
+import { Truck, Container, Plus, Pencil, Trash2, X, Check, Search, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, FileSpreadsheet, Upload, FileText, AlertCircle, User } from "lucide-react";
 import { api } from "../lib/api";
 import { driverDisplayName } from "../lib/driverName";
 
@@ -177,6 +177,136 @@ function CustomSelect({
   );
 }
 
+// ─── AsyncSearchableSelect (infinite-scroll, backend-paginated) ──────────────
+
+function AsyncSearchableSelect({ value, valueLabel, fetchPage, onChange, placeholder, icon }: {
+  value: string;
+  valueLabel?: string;
+  fetchPage: (query: string, page: number) => Promise<{ items: SelectOpt[]; total: number }>;
+  onChange: (id: string, label: string) => void;
+  placeholder?: string; icon?: React.ReactNode;
+}) {
+  const wrapRef  = useRef<HTMLDivElement>(null);
+  const listRef  = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const reqId    = useRef(0);
+  const [open,  setOpen]  = useState(false);
+  const [query, setQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [items, setItems] = useState<SelectOpt[]>([]);
+  const [page,  setPage]  = useState(1);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [selectedLabel, setSelectedLabel] = useState(valueLabel ?? "");
+  useEffect(() => { setSelectedLabel(valueLabel ?? ""); }, [valueLabel]);
+
+  useEffect(() => {
+    if (!open) return;
+    const h = (e: MouseEvent) => { if (!wrapRef.current?.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [open]);
+
+  useEffect(() => { if (open) setTimeout(() => inputRef.current?.focus(), 0); }, [open]);
+  useEffect(() => { const t = setTimeout(() => setDebouncedQuery(query), 250); return () => clearTimeout(t); }, [query]);
+
+  const loadPage = async (pageNum: number, q: string, replace: boolean) => {
+    const id = ++reqId.current; // guard against a slow stale response clobbering a newer one
+    setLoading(true);
+    try {
+      const { items: rows, total: t } = await fetchPage(q, pageNum);
+      if (id !== reqId.current) return;
+      setItems((prev) => (replace ? rows : [...prev, ...rows]));
+      setTotal(t);
+      setPage(pageNum);
+    } catch { /* keep whatever's loaded */ } finally {
+      if (id === reqId.current) setLoading(false);
+    }
+  };
+
+  // Fresh page-1 fetch when opened and whenever the (debounced) search changes.
+  useEffect(() => {
+    if (!open) return;
+    setItems([]); setTotal(0); setPage(1);
+    void loadPage(1, debouncedQuery, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, debouncedQuery]);
+
+  const onScroll = () => {
+    const el = listRef.current;
+    if (!el || loading) return;
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < 48 && items.length < total) {
+      void loadPage(page + 1, debouncedQuery, false);
+    }
+  };
+
+  const pick = (id: string, label: string) => { onChange(id, label); setSelectedLabel(label); setOpen(false); };
+
+  return (
+    <div ref={wrapRef} style={{ position: "relative" }}>
+      <button type="button" onClick={() => { setOpen(v => !v); setQuery(""); }} style={{
+        display: "flex", alignItems: "center", gap: 8, width: "100%", height: 34,
+        padding: "0 8px 0 10px", fontFamily: "var(--font-sans)", fontSize: 13,
+        border: `1px solid ${open ? "var(--primary)" : "var(--border)"}`,
+        borderRadius: 6, backgroundColor: "var(--input-background)",
+        color: value ? "var(--foreground)" : "var(--muted-foreground)",
+        cursor: "pointer", textAlign: "left", outline: "none",
+        boxShadow: open ? "0 0 0 3px rgba(59,130,246,0.12)" : "none",
+      }}>
+        {icon && <span style={{ color: "var(--muted-foreground)", display: "flex", flexShrink: 0 }}>{icon}</span>}
+        <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {value ? (selectedLabel || value) : <span style={{ color: "var(--muted-foreground)" }}>{placeholder ?? "Select…"}</span>}
+        </span>
+        <ChevronDown size={13} style={{ color: "var(--muted-foreground)", flexShrink: 0, transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s" }} />
+      </button>
+
+      {open && (
+        <div style={{
+          position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, zIndex: 600,
+          backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 8,
+          boxShadow: "0 8px 24px rgba(0,0,0,0.12)", overflow: "hidden",
+        }}>
+          <div style={{ padding: "6px 8px", borderBottom: "1px solid var(--border)" }}>
+            <div style={{ position: "relative" }}>
+              <Search size={12} style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", color: "var(--muted-foreground)" }} />
+              <input ref={inputRef} value={query} onChange={e => setQuery(e.target.value)}
+                placeholder="Search…"
+                style={{ width: "100%", height: 28, paddingLeft: 26, paddingRight: 8, boxSizing: "border-box",
+                  fontFamily: "var(--font-sans)", fontSize: 12, border: "1px solid var(--border)", borderRadius: 5,
+                  backgroundColor: "var(--muted)", color: "var(--foreground)", outline: "none" }}
+              />
+            </div>
+          </div>
+          <div ref={listRef} onScroll={onScroll} style={{ maxHeight: 180, overflowY: "auto" }}>
+            {items.map(opt => {
+              const active = opt.value === value;
+              return (
+                <button key={opt.value} type="button"
+                  onMouseDown={e => { e.preventDefault(); pick(opt.value, opt.label); }}
+                  style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "7px 12px",
+                    border: "none", backgroundColor: active ? "var(--accent)" : "transparent",
+                    fontFamily: "var(--font-sans)", fontSize: 13, cursor: "pointer", textAlign: "left",
+                    color: active ? "var(--primary)" : "var(--foreground)", fontWeight: active ? 600 : 400,
+                  }}
+                  onMouseEnter={e => { if (!active) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--muted)"; }}
+                  onMouseLeave={e => { if (!active) (e.currentTarget as HTMLButtonElement).style.backgroundColor = active ? "var(--accent)" : "transparent"; }}
+                >
+                  <span style={{ flex: 1 }}>{opt.label}</span>
+                  {active && <Check size={13} style={{ color: "var(--primary)" }} />}
+                </button>
+              );
+            })}
+            {loading && <div style={{ padding: 10, textAlign: "center", fontSize: 12, color: "var(--muted-foreground)" }}>Loading…</div>}
+            {!loading && items.length === 0 && (
+              <div style={{ padding: 12, textAlign: "center", fontSize: 12, color: "var(--muted-foreground)" }}>No results</div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Pagination ───────────────────────────────────────────────────────────────
 
 const PAGE_SIZES = [20, 40, 60, 100];
@@ -318,13 +448,12 @@ function ActionBtn({ icon, color, bg, onClick }: { icon: React.ReactNode; color:
 
 type EquipRow = TruckRow | TrailerRow;
 
-function EquipModal({ title, row, onClose, onSave, saving = false, driverOpts = [] }: {
+function EquipModal({ title, row, onClose, onSave, saving = false }: {
   title: string;
   row: Partial<EquipRow>;
   onClose: () => void;
   onSave: (r: EquipRow) => void;
   saving?: boolean;
-  driverOpts?: SelectOpt[];
 }) {
   const [form, setForm] = useState<Partial<EquipRow>>(row);
   const [touched, setTouched] = useState<Partial<Record<keyof EquipRow, boolean>>>({});
@@ -374,11 +503,16 @@ function EquipModal({ title, row, onClose, onSave, saving = false, driverOpts = 
                   <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600, color: "var(--muted-foreground)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
                     Driver
                   </span>
-                  <CustomSelect
+                  <AsyncSearchableSelect
                     value={form.driver_id ?? ""}
-                    options={[{ value: "", label: "— None —" }, ...driverOpts]}
-                    onChange={(v) => set("driver_id", v)}
-                    searchable
+                    valueLabel={form.driver ?? ""}
+                    fetchPage={async (q, p) => {
+                      const { items, total } = await api.getList<any>("/drivers", { q: q || undefined, page: p, page_size: 20 });
+                      return { items: (items ?? []).map((d: any) => ({ value: d.id, label: driverDisplayName(d) })), total };
+                    }}
+                    onChange={(id, label) => setForm((f) => ({ ...f, driver_id: id, driver: label }))}
+                    placeholder="Select driver…"
+                    icon={<User size={13} />}
                   />
                 </label>
               </>
@@ -726,16 +860,6 @@ function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
   const [saving, setSaving]       = useState(false);
   const [fetchKey, setFetchKey]   = useState(0);
   const [toast, setToast]         = useState<{ type: "success" | "error"; msg: string } | null>(null);
-  const [driverOpts, setDriverOpts] = useState<SelectOpt[]>([]);
-
-  useEffect(() => {
-    // Only for the assign-driver dropdown — the row itself now carries the
-    // resolved (team-aware) driver name, so no lookup map is needed.
-    api.get<any[]>("/drivers").then((drivers) => {
-      setDriverOpts((drivers ?? []).map((d) => ({ value: d.id, label: driverDisplayName(d) })));
-    }).catch(() => {});
-  }, []);
-
   useEffect(() => {
     const t = setTimeout(() => { setDebouncedQ(search); setPage(1); }, 350);
     return () => clearTimeout(t);
@@ -861,9 +985,9 @@ function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
                   </span>
                 </td>
                 <TD>{r.driver ? driverDisplayName({ name: r.driver, name2: r.driver_name2, team: r.driver_team }) : <span style={{ color: "var(--muted-foreground)", fontStyle: "italic" }}>Unassigned</span>}</TD>
-                <TD>{r.make}</TD>
-                <TD>{r.model}</TD>
-                <TD mono>{r.vin}</TD>
+                <TD>{r.make || "—"}</TD>
+                <TD>{r.model || "—"}</TD>
+                <TD mono>{r.vin || "—"}</TD>
                 <td style={{ padding: "8px 10px", borderBottom: "1px solid var(--border)", verticalAlign: "middle", textAlign: "center" }}>
                   <div style={{ display: "inline-flex", gap: 5 }}>
                     <ActionBtn icon={<Pencil size={13} />} color="#1D4ED8" bg="#DBEAFE" onClick={() => openEdit(r)} />
@@ -887,7 +1011,7 @@ function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
       <Pagination total={total} page={page} pageSize={pageSize} loading={loading} onPage={setPage} onPageSize={(s) => { setPageSize(s); setPage(1); }} />
 
       {(modal === "create" || modal === "edit") && (
-        <EquipModal title={modal === "create" ? "Add Truck" : "Edit Truck"} row={editing} onClose={() => setModal(null)} onSave={save} saving={saving} driverOpts={driverOpts} />
+        <EquipModal title={modal === "create" ? "Add Truck" : "Edit Truck"} row={editing} onClose={() => setModal(null)} onSave={save} saving={saving} />
       )}
       {deleting && <DeleteConfirm label={deleting.unit} busy={delBusy} error={delErr} onClose={() => { setDeleting(null); setDelErr(null); }} onConfirm={del} />}
       {importing && <ImportModal entityLabel="Truck" endpoint="/trucks/import" onClose={() => setImporting(false)} onImported={() => setFetchKey((k) => k + 1)} />}
@@ -916,16 +1040,6 @@ function TrailersTab({ onCountChange }: { onCountChange: (n: number) => void }) 
   const [saving, setSaving]       = useState(false);
   const [fetchKey, setFetchKey]   = useState(0);
   const [toast, setToast]         = useState<{ type: "success" | "error"; msg: string } | null>(null);
-  const [driverOpts, setDriverOpts] = useState<SelectOpt[]>([]);
-
-  useEffect(() => {
-    // Only for the assign-driver dropdown — the row itself now carries the
-    // resolved (team-aware) driver name, so no lookup map is needed.
-    api.get<any[]>("/drivers").then((drivers) => {
-      setDriverOpts((drivers ?? []).map((d) => ({ value: d.id, label: driverDisplayName(d) })));
-    }).catch(() => {});
-  }, []);
-
   useEffect(() => {
     const t = setTimeout(() => { setDebouncedQ(search); setPage(1); }, 350);
     return () => clearTimeout(t);
@@ -1051,9 +1165,9 @@ function TrailersTab({ onCountChange }: { onCountChange: (n: number) => void }) 
                   </span>
                 </td>
                 <TD>{r.driver ? driverDisplayName({ name: r.driver, name2: r.driver_name2, team: r.driver_team }) : <span style={{ color: "var(--muted-foreground)", fontStyle: "italic" }}>Unassigned</span>}</TD>
-                <TD>{r.make}</TD>
-                <TD>{r.model}</TD>
-                <TD mono>{r.vin}</TD>
+                <TD>{r.make || "—"}</TD>
+                <TD>{r.model || "—"}</TD>
+                <TD mono>{r.vin || "—"}</TD>
                 <td style={{ padding: "8px 10px", borderBottom: "1px solid var(--border)", verticalAlign: "middle", textAlign: "center" }}>
                   <div style={{ display: "inline-flex", gap: 5 }}>
                     <ActionBtn icon={<Pencil size={13} />} color="#1D4ED8" bg="#DBEAFE" onClick={() => openEdit(r)} />
@@ -1077,7 +1191,7 @@ function TrailersTab({ onCountChange }: { onCountChange: (n: number) => void }) 
       <Pagination total={total} page={page} pageSize={pageSize} loading={loading} onPage={setPage} onPageSize={(s) => { setPageSize(s); setPage(1); }} />
 
       {(modal === "create" || modal === "edit") && (
-        <EquipModal title={modal === "create" ? "Add Trailer" : "Edit Trailer"} row={editing} onClose={() => setModal(null)} onSave={save} saving={saving} driverOpts={driverOpts} />
+        <EquipModal title={modal === "create" ? "Add Trailer" : "Edit Trailer"} row={editing} onClose={() => setModal(null)} onSave={save} saving={saving} />
       )}
       {deleting && <DeleteConfirm label={deleting.unit} busy={delBusy} error={delErr} onClose={() => { setDeleting(null); setDelErr(null); }} onConfirm={del} />}
       {importing && <ImportModal entityLabel="Trailer" endpoint="/trailers/import" onClose={() => setImporting(false)} onImported={() => setFetchKey((k) => k + 1)} />}
