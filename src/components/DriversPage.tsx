@@ -244,7 +244,6 @@ function CustomSelect({
               </div>
             </div>
           )}
-          <div style={{ maxHeight: 180, overflowY: "auto", scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent" }}>
           {filtered.map((opt) => {
             const isActive = opt.value === value;
             return (
@@ -279,7 +278,6 @@ function CustomSelect({
               </button>
             );
           })}
-          </div>
         </div>
       )}
     </div>
@@ -376,8 +374,8 @@ function UnitSelect({ value, label, endpoint, onChange, error = false, disabled 
           outline: "none",
         }}
       >
-        <span style={{ flex: 1, textAlign: "left", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {value ? (label || value) : "— None —"}
+        <span style={{ flex: 1, textAlign: "left", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: value ? "var(--foreground)" : "var(--muted-foreground)" }}>
+          {value ? (label || value) : "Select…"}
         </span>
         <ChevronDown size={13} style={{ color: "var(--muted-foreground)", flexShrink: 0, transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s" }} />
       </button>
@@ -402,16 +400,6 @@ function UnitSelect({ value, label, endpoint, onChange, error = false, disabled 
             </div>
           </div>
           <div ref={listRef} onScroll={onScroll} style={{ maxHeight: 200, overflowY: "auto", scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent" }}>
-            <button
-              type="button"
-              onClick={() => { onChange("", ""); setOpen(false); }}
-              style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "7px 12px", fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: value === "" ? 600 : 400, color: value === "" ? "var(--primary)" : "var(--foreground)", backgroundColor: value === "" ? "var(--accent)" : "transparent", border: "none", cursor: "pointer", textAlign: "left", outline: "none" }}
-              onMouseEnter={(e) => { if (value !== "") (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--muted)"; }}
-              onMouseLeave={(e) => { if (value !== "") (e.currentTarget as HTMLButtonElement).style.backgroundColor = "transparent"; }}
-            >
-              <span style={{ flex: 1 }}>— None —</span>
-              {value === "" && <Check size={13} style={{ color: "var(--primary)", flexShrink: 0 }} />}
-            </button>
             {items.map((opt) => {
               const isActive = opt.value === value;
               return (
