@@ -20,6 +20,9 @@ interface WeekData {
   topDriversByGross: { name: string; gross: number; loads: number }[];
   topDriversByRpm:   { name: string; rpm: number; miles: number }[];
   topDispatchers:    { name: string; payout: number; loads: number }[];
+  // Dense per-day series for the selected week (backend `daily`): one entry per
+  // day, ascending, quiet days included as zeros — drives the two line charts.
+  daily: { date: string; gross: number; completedLoads: number }[];
 }
 
 // ─── Backend mapper ───────────────────────────────────────────────────────────
@@ -37,6 +40,7 @@ interface BackendDashboard {
   top_drivers_by_gross?: { name: string; gross: number; loads: number }[];
   top_drivers_by_rpm?:   { name: string; rpm: number; miles: number }[];
   top_dispatchers?:      { name: string; payout: number; loads: number }[];
+  daily?: { date: string; gross: number; completed_loads: number }[];
 }
 
 function getMondayOf(d: Date): Date {
@@ -74,7 +78,16 @@ function toWeekData(b: BackendDashboard, key: string): WeekData {
     topDriversByGross: b.top_drivers_by_gross ?? [],
     topDriversByRpm:   b.top_drivers_by_rpm   ?? [],
     topDispatchers:    b.top_dispatchers       ?? [],
+    daily: (b.daily ?? []).map((d) => ({ date: d.date, gross: d.gross, completedLoads: d.completed_loads })),
   };
+}
+
+// "2026-06-22" → "Mon 22" for the daily-series X axis.
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+function fmtDayLabel(dateStr: string): string {
+  const d = new Date(dateStr + "T12:00:00");
+  if (Number.isNaN(d.getTime())) return dateStr;
+  return `${WEEKDAYS[d.getDay()]} ${d.getDate()}`;
 }
 
 // ─── Color palettes ───────────────────────────────────────────────────────────
@@ -166,15 +179,6 @@ function RpmBarLabel({ x = 0, y = 0, width = 0, height = 0, value = 0 }: {
   );
 }
 
-// ─── Area chart dot ───────────────────────────────────────────────────────────
-
-function ActiveDot({ cx, cy, payload, color, activeIdx, dataIdx }: {
-  cx: number; cy: number; payload: { active: boolean }; color: string; activeIdx: number; dataIdx: number;
-}) {
-  const isActive = payload.active;
-  return <circle cx={cx} cy={cy} r={isActive ? 7 : 4} fill={isActive ? color : "#fff"} stroke={color} strokeWidth={2} key={`dot-${activeIdx}-${dataIdx}`} />;
-}
-
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export function DashboardPage() {
@@ -200,12 +204,9 @@ export function DashboardPage() {
 
   const week = cache.get(weekKey);
 
-  // Sorted cached weeks for trend charts (ascending by date)
-  const trendWeeks = [...cache.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([, v]) => v);
-
-  const activeIdx = trendWeeks.findIndex((w) => w.weekKey === weekKey);
+  // Per-day series for the selected week — the backend `daily` array powers both
+  // line charts (gross/day and completed-loads/day).
+  const daily = week?.daily ?? [];
 
   const goBack = () => setWeekDate((d) => new Date(d.getTime() - 7 * 86400000));
   const goNext = () => {
@@ -409,11 +410,11 @@ export function DashboardPage() {
               </>
             </ChartCard>
 
-            {/* Weekly Gross Trend */}
-            <ChartCard title="Weekly Gross Comparison" subtitle="Revenue trend across browsed weeks" icon={<TrendingUp size={16} />} color="#6366F1" bg="#EEF2FF">
+            {/* Daily Gross Trend — one point per day of the selected week */}
+            <ChartCard title="Gross Revenue by Day" subtitle="Daily earnings across the selected week" icon={<TrendingUp size={16} />} color="#6366F1" bg="#EEF2FF">
               <ResponsiveContainer width="100%" height={280}>
                 <AreaChart
-                  data={trendWeeks.map((w, i) => ({ weekLabel: w.label, gross: w.totalGross, loads: w.completedLoads, active: i === activeIdx }))}
+                  data={daily.map((d) => ({ dayLabel: fmtDayLabel(d.date), gross: d.gross, loads: d.completedLoads }))}
                   margin={{ top: 10, right: 12, left: 0, bottom: 4 }}>
                   <defs>
                     <linearGradient id="grossGrad" x1="0" y1="0" x2="0" y2="1">
@@ -422,38 +423,36 @@ export function DashboardPage() {
                     </linearGradient>
                   </defs>
                   <CartesianGrid vertical={false} stroke="var(--border)" strokeDasharray="4 4" />
-                  <XAxis dataKey="weekLabel" tickFormatter={(v: string) => v.split("–")[0].trim()}
+                  <XAxis dataKey="dayLabel"
                     tick={{ fontFamily: "var(--font-sans)", fontSize: 10, fill: "var(--muted-foreground)" }} axisLine={false} tickLine={false} />
                   <YAxis tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`}
                     tick={{ fontFamily: "var(--font-mono)", fontSize: 10, fill: "var(--muted-foreground)" }} axisLine={false} tickLine={false} width={44} />
                   <Tooltip cursor={{ stroke: "#6366F1", strokeWidth: 1.5, strokeDasharray: "4 4" }}
                     content={({ active, payload }) => {
                       if (!active || !payload?.length) return null;
-                      const d = payload[0].payload as { weekLabel: string; gross: number; loads: number };
+                      const d = payload[0].payload as { dayLabel: string; gross: number; loads: number };
                       return (
                         <div style={{ backgroundColor: "#0F172A", border: "1px solid #1E293B", borderRadius: 8, padding: "10px 14px", boxShadow: "0 8px 24px rgba(0,0,0,0.4)" }}>
-                          <div style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "#64748B", marginBottom: 4 }}>{d.weekLabel}</div>
+                          <div style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "#64748B", marginBottom: 4 }}>{d.dayLabel}</div>
                           <div style={{ fontFamily: "var(--font-mono)", fontSize: 16, fontWeight: 700, color: "#818CF8" }}>${d.gross.toLocaleString()}</div>
                           <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "#64748B", marginTop: 2 }}>{d.loads} loads completed</div>
                         </div>
                       );
                     }} />
                   <Area type="monotone" dataKey="gross" stroke="#6366F1" strokeWidth={2.5} fill="url(#grossGrad)"
-                    dot={(props: { cx: number; cy: number; index: number; payload: { active: boolean } }) => (
-                      <ActiveDot key={props.index} cx={props.cx} cy={props.cy} payload={props.payload} color="#6366F1" activeIdx={activeIdx} dataIdx={props.index} />
-                    )}
-                    activeDot={{ r: 8, fill: "#6366F1", stroke: "#fff", strokeWidth: 2 }} />
+                    dot={{ r: 3, fill: "#fff", stroke: "#6366F1", strokeWidth: 2 }}
+                    activeDot={{ r: 7, fill: "#6366F1", stroke: "#fff", strokeWidth: 2 }} />
                 </AreaChart>
               </ResponsiveContainer>
             </ChartCard>
           </div>
 
-          {/* ── Row 3: Completed loads trend ── */}
+          {/* ── Row 3: Completed loads per day ── */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 16 }}>
-            <ChartCard title="Completed Loads per Week" subtitle="Load volume trend across browsed weeks" icon={<Package size={16} />} color="#3B82F6" bg="#DBEAFE">
+            <ChartCard title="Completed Loads by Day" subtitle="Daily load volume across the selected week" icon={<Package size={16} />} color="#3B82F6" bg="#DBEAFE">
               <ResponsiveContainer width="100%" height={220}>
                 <AreaChart
-                  data={trendWeeks.map((w, i) => ({ weekLabel: w.label, loads: w.completedLoads, active: i === activeIdx }))}
+                  data={daily.map((d) => ({ dayLabel: fmtDayLabel(d.date), loads: d.completedLoads }))}
                   margin={{ top: 10, right: 12, left: 0, bottom: 4 }}>
                   <defs>
                     <linearGradient id="loadsGrad" x1="0" y1="0" x2="0" y2="1">
@@ -462,25 +461,23 @@ export function DashboardPage() {
                     </linearGradient>
                   </defs>
                   <CartesianGrid vertical={false} stroke="var(--border)" strokeDasharray="4 4" />
-                  <XAxis dataKey="weekLabel" tickFormatter={(v: string) => v.split("–")[0].trim()}
+                  <XAxis dataKey="dayLabel"
                     tick={{ fontFamily: "var(--font-sans)", fontSize: 10, fill: "var(--muted-foreground)" }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fontFamily: "var(--font-mono)", fontSize: 10, fill: "var(--muted-foreground)" }} axisLine={false} tickLine={false} width={28} />
+                  <YAxis allowDecimals={false} tick={{ fontFamily: "var(--font-mono)", fontSize: 10, fill: "var(--muted-foreground)" }} axisLine={false} tickLine={false} width={28} />
                   <Tooltip cursor={{ stroke: "#3B82F6", strokeWidth: 1.5, strokeDasharray: "4 4" }}
                     content={({ active, payload }) => {
                       if (!active || !payload?.length) return null;
-                      const d = payload[0].payload as { weekLabel: string; loads: number };
+                      const d = payload[0].payload as { dayLabel: string; loads: number };
                       return (
                         <div style={{ backgroundColor: "#0F172A", border: "1px solid #1E293B", borderRadius: 8, padding: "10px 14px", boxShadow: "0 8px 24px rgba(0,0,0,0.4)" }}>
-                          <div style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "#64748B", marginBottom: 4 }}>{d.weekLabel}</div>
+                          <div style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "#64748B", marginBottom: 4 }}>{d.dayLabel}</div>
                           <div style={{ fontFamily: "var(--font-mono)", fontSize: 16, fontWeight: 700, color: "#60A5FA" }}>{d.loads} loads</div>
                         </div>
                       );
                     }} />
                   <Area type="monotone" dataKey="loads" stroke="#3B82F6" strokeWidth={2.5} fill="url(#loadsGrad)"
-                    dot={(props: { cx: number; cy: number; index: number; payload: { active: boolean } }) => (
-                      <ActiveDot key={props.index} cx={props.cx} cy={props.cy} payload={props.payload} color="#3B82F6" activeIdx={activeIdx} dataIdx={props.index} />
-                    )}
-                    activeDot={{ r: 8, fill: "#3B82F6", stroke: "#fff", strokeWidth: 2 }} />
+                    dot={{ r: 3, fill: "#fff", stroke: "#3B82F6", strokeWidth: 2 }}
+                    activeDot={{ r: 7, fill: "#3B82F6", stroke: "#fff", strokeWidth: 2 }} />
                 </AreaChart>
               </ResponsiveContainer>
             </ChartCard>
