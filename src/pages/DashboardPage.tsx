@@ -30,6 +30,7 @@ interface WeekData {
 interface BackendKpi { value: number; prev: number; delta_pct: number | null; }
 interface BackendDashboard {
   week?: { start: string; end: string; label: string };
+  week_start_day?: number; // 0=Sunday … 6=Saturday — the company's work-week anchor
   kpis?: {
     loads?:           BackendKpi;
     completed_loads?: BackendKpi;
@@ -43,19 +44,14 @@ interface BackendDashboard {
   daily?: { date: string; gross: number; completed_loads: number }[];
 }
 
-function getMondayOf(d: Date): Date {
-  const copy = new Date(d);
-  const day  = copy.getDay();
-  copy.setDate(copy.getDate() + (day === 0 ? -6 : 1 - day));
-  copy.setHours(0, 0, 0, 0);
-  return copy;
-}
-
-function toISODate(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
+// Shift a calendar date (YYYY-MM-DD) by n days. Pure UTC math so the browser's own
+// timezone can never drift the result — the backend buckets days in its business
+// timezone (APP_TZ), and these strings are plain calendar dates, not instants.
+function addDaysISO(iso: string, n: number): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() + n);
+  return dt.toISOString().slice(0, 10);
 }
 
 function fmtWeekLabel(from: string): string {
@@ -182,37 +178,47 @@ function RpmBarLabel({ x = 0, y = 0, width = 0, height = 0, value = 0 }: {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export function DashboardPage() {
-  const [weekDate, setWeekDate]   = useState<Date>(() => getMondayOf(new Date()));
+  // null = "the current week, as the server reckons it". The first request omits
+  // ?week= entirely and the response tells us which week that is (anchored to the
+  // company's week_start_day, in the server's business timezone) — so we never
+  // guess Monday, and never derive "today" from the browser's clock.
+  const [weekKey, setWeekKey]             = useState<string | null>(null);
+  const [currentWeekKey, setCurrentWeekKey] = useState<string | null>(null);
   const [cache, setCache]         = useState<Map<string, WeekData>>(new Map());
   const [loading, setLoading]     = useState(true);
   const [error, setError]         = useState<string | null>(null);
 
-  const weekKey        = toISODate(weekDate);
-  const currentWeekKey = toISODate(getMondayOf(new Date()));
-
   useEffect(() => {
-    if (cache.has(weekKey)) { setLoading(false); return; }
+    if (weekKey && cache.has(weekKey)) { setLoading(false); return; }
     setLoading(true);
     setError(null);
-    api.get<BackendDashboard>(`/dashboard?week=${weekKey}`)
+    api.get<BackendDashboard>(weekKey ? `/dashboard?week=${weekKey}` : "/dashboard")
       .then((data) => {
-        setCache((prev) => new Map(prev).set(weekKey, toWeekData(data, weekKey)));
+        // The server names the week it actually returned; trust it over our request.
+        const resolved = data.week?.start ?? weekKey ?? "";
+        setCache((prev) => new Map(prev).set(resolved, toWeekData(data, resolved)));
+        if (!weekKey) setWeekKey(resolved);
+        // Only the first (parameterless) response defines "the current week".
+        setCurrentWeekKey((prev) => prev ?? resolved);
       })
       .catch((e) => setError(e instanceof Error ? e.message : "Failed to load"))
       .finally(() => setLoading(false));
   }, [weekKey]);
 
-  const week = cache.get(weekKey);
+  const week = weekKey ? cache.get(weekKey) : undefined;
 
   // Per-day series for the selected week — the backend `daily` array powers both
   // line charts (gross/day and completed-loads/day).
   const daily = week?.daily ?? [];
 
-  const goBack = () => setWeekDate((d) => new Date(d.getTime() - 7 * 86400000));
-  const goNext = () => {
-    const next = new Date(weekDate.getTime() + 7 * 86400000);
-    if (toISODate(next) <= currentWeekKey) setWeekDate(next);
-  };
+  // week.start is already anchored to the company's week_start_day, so ±7 calendar
+  // days lands on the neighbouring week's start whatever that anchor is.
+  const goBack = () => setWeekKey((k) => (k ? addDaysISO(k, -7) : k));
+  const goNext = () => setWeekKey((k) => {
+    if (!k || !currentWeekKey) return k;
+    const next = addDaysISO(k, 7);
+    return next <= currentWeekKey ? next : k;
+  });
 
   // Use delta_pct from backend directly
   const trendStr = (v: number | null) => v != null ? `${v >= 0 ? "+" : ""}${v.toFixed(0)}%` : "No prior data";
@@ -236,7 +242,7 @@ export function DashboardPage() {
           </button>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minWidth: 188, height: 32, borderRadius: 8, border: "1px solid var(--border)", backgroundColor: "var(--muted)", padding: "0 14px" }}>
             <span style={{ fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 600, color: "var(--foreground)", whiteSpace: "nowrap" }}>
-              {week ? week.label : fmtWeekLabel(weekKey)}
+              {week ? week.label : weekKey ? fmtWeekLabel(weekKey) : "—"}
             </span>
           </div>
           <button onClick={goNext} disabled={isAtCurrentWeek}

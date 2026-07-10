@@ -15,13 +15,18 @@ export interface AuthUser {
   email: string;
   full_name: string;
   company_id: string;
-  // Company details for the active company, when the backend includes them on
-  // /auth/me (a dispatcher/updater can't reach /owner/* to fetch them). Supported
-  // as either a nested object or flat company_* fields — whichever the backend sends.
-  company?: { name?: string; plan?: string; mc?: string } | null;
-  company_name?: string;
-  company_plan?: string;
-  company_mc?: string;
+  // The company the caller is acting as. Omitted (never null) when there's none to
+  // resolve — an admin, or an owner who named no company / one they don't own.
+  // `mc` is only present once the backend includes it; everything else always is.
+  company?: {
+    id: string;
+    name: string;
+    initials: string;
+    color: string;
+    plan: string;          // "" when the company has no plan
+    week_start_day: number; // 0=Sunday … 6=Saturday
+    mc?: string;
+  };
   must_change_password: boolean;
   // Effective permission keys ("<module>.<action>") for the active company.
   // Resolved fresh by GET /auth/me; [] for an owner who hasn't picked a company yet.

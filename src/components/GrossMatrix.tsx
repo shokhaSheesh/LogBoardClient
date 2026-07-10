@@ -21,6 +21,9 @@ interface DriverRow {
   dateMap: Record<string, DayCell>;
   weeklyTarget?: number;
   companyProfit: number;
+  weekTotal?: number;
+  miles: number;
+  rpm: number; // 0 when miles is 0 — render "—" rather than 0.00
 }
 
 // ─── Backend types + mapper ───────────────────────────────────────────────────
@@ -40,6 +43,9 @@ interface BackendDriverRow {
   unit?: string;
   weekly_target?: number;
   company_profit?: number;
+  week_total?: number; // the row's earnings for the window (load cells only)
+  miles?: number;      // mileage of the loads the ledger attributes to this driver
+  rpm?: number;        // week_total ÷ miles; 0 when miles is 0
   days?: Record<string, BackendCell>;
 }
 
@@ -50,8 +56,8 @@ function toDriverRow(b: BackendDriverRow): DriverRow {
       type: (cell.type as CellType) ?? "empty",
       amount: cell.amount,
       // A day with several real completed loads sends load_id as an array — join with
-      // "/" (not the default comma) so it matches getLoadMiles' parsing and the manual
-      // multi-select's own save format; both read the same joined-ref shape.
+      // "/" (not the default comma) so it matches the manual multi-select's own save
+      // format; both read the same joined-ref shape.
       loadId: Array.isArray(cell.load_id)
         ? cell.load_id.map(String).join("/") || undefined
         : cell.load_id != null ? String(cell.load_id) : undefined,
@@ -65,6 +71,9 @@ function toDriverRow(b: BackendDriverRow): DriverRow {
     unit:          b.unit          ?? "",
     weeklyTarget:  b.weekly_target,
     companyProfit: b.company_profit ?? 0,
+    weekTotal:     b.week_total,
+    miles:         b.miles ?? 0,
+    rpm:           b.rpm   ?? 0,
     dateMap,
   };
 }
@@ -89,12 +98,6 @@ function colLabel(iso: string) {
   return { day: DAY_NAMES[d.getDay()], date: d.getDate() };
 }
 function fmt(n: number) { return `$${n.toLocaleString()}`; }
-
-// miles lookup is now derived from fetched rows — kept as a ref updated after each fetch
-const grossMilesMapRef = new Map<string, number>();
-function getLoadMiles(loadId: string): number {
-  return String(loadId).split("/").reduce((s, id) => s + (grossMilesMapRef.get(id.trim()) ?? 0), 0);
-}
 
 // ─── Cell display styles ──────────────────────────────────────────────────────
 
@@ -134,8 +137,8 @@ function DayCellContent({ cell }: { cell: DayCell }) {
 // ─── Multi-select load ID picker ───────────────────────────────────────────────
 // One cell can reference several of the driver's loads (a day with multiple
 // completed loads). The backend's manual-override field is a single free-text
-// string, so multiple picks are joined with "/" — the same format getLoadMiles
-// already parses for the automatic (system-tracked) multi-load case.
+// string, so multiple picks are joined with "/" — the same joined-ref shape the
+// backend sends for the automatic (system-tracked) multi-load case.
 
 function LoadMultiSelect({ selected, driverId, onChange }: {
   selected: string[];
@@ -840,17 +843,8 @@ export function GrossMatrix() {
         if (data?.from) setDateFrom(data.from);
         if (data?.to)   setDateTo(data.to);
         const items: BackendDriverRow[] = data?.drivers ?? [];
-        const mapped = items.map(toDriverRow);
-        // update miles lookup from fresh load data
-        grossMilesMapRef.clear();
-        for (const row of mapped) {
-          for (const cell of Object.values(row.dateMap)) {
-            if (cell.type === "load" && cell.loadId && cell.amount) {
-              grossMilesMapRef.set(cell.loadId, grossMilesMapRef.get(cell.loadId) ?? 0);
-            }
-          }
-        }
-        setRows(mapped);
+        // miles/rpm now come straight from the ledger on each row — no client derivation.
+        setRows(items.map(toDriverRow));
       })
       .catch((e) => setLoadErr(e instanceof Error ? e.message : "Couldn't load gross data."))
       .finally(() => setLoading(false));
@@ -1110,8 +1104,13 @@ export function GrossMatrix() {
   // One full gross table (thead+tbody+totals row) for the given driver list — used for
   // the single "All drivers" table, and once per section in the "By team" view.
   function renderGrossTable(driversList: DriverRow[]) {
-    const groupTotal  = driversList.reduce((s, d) => s + rangeTotal(d), 0);
+    // Footer sums the rows actually on screen, so it reconciles with them under a
+    // search filter or a team split. (The backend's `totals` are company-wide and
+    // ignore ?q=, which would contradict the visible rows.)
+    const groupTotal  = driversList.reduce((s, d) => s + (d.weekTotal ?? rangeTotal(d)), 0);
     const groupProfit = driversList.reduce((s, d) => s + d.companyProfit, 0);
+    const groupMiles  = driversList.reduce((s, d) => s + d.miles, 0);
+    const groupRpm    = groupMiles > 0 ? groupTotal / groupMiles : null;
     return (
               <table style={{ borderCollapse: "separate", borderSpacing: 0, tableLayout: "fixed", minWidth: "100%" }}>
                 <thead>
@@ -1145,12 +1144,10 @@ export function GrossMatrix() {
                   ) : driversList.map((driver, i) => {
                     const isEven   = i % 2 === 0;
                     const rowBg    = isEven ? "#ffffff" : "#F9FAFB";
-                    const total    = rangeTotal(driver);
-                    const driverMiles = dates.reduce((s, iso) => {
-                      const cell = driver.dateMap[iso];
-                      return s + (cell?.type === "load" && cell.loadId ? getLoadMiles(cell.loadId) : 0);
-                    }, 0);
-                    const driverRpm = driverMiles > 0 && total > 0 ? total / driverMiles : null;
+                    const total    = driver.weekTotal ?? rangeTotal(driver);
+                    // rpm is 0 when the driver earned with no recorded mileage — there's
+                    // no meaningful quotient, so show "—" instead of $0.00/mi.
+                    const driverRpm = driver.miles > 0 ? driver.rpm : null;
                     // Target may be unset (0/undefined) — keep the same layout regardless: $0 / 0% / empty bar.
                     const targetPct = driver.weeklyTarget ? Math.min(100, Math.round((total / driver.weeklyTarget) * 100)) : 0;
                     const barColor  = targetPct >= 100 ? "#10B981" : targetPct >= 70 ? "#F59E0B" : "#3B82F6";
@@ -1201,11 +1198,10 @@ export function GrossMatrix() {
                         {/* Total */}
                         <td style={{ width: 110, minWidth: 110, padding: "0 12px", textAlign: "right", verticalAlign: "middle", borderLeft: "2px solid #CBD5E1", borderBottom: "1px solid #E5E7EB", backgroundColor: isEven ? "#EFF6FF" : "#DBEAFE", position: "sticky", right: R.total, zIndex: 10 }}>
                           <div style={{ fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 700, color: "#1D4ED8", whiteSpace: "nowrap" }}>{fmt(total)}</div>
-                          {driverRpm !== null && (
-                            <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "#10B981", marginTop: 2, whiteSpace: "nowrap" }}>
-                              ${driverRpm.toFixed(2)}/mi
-                            </div>
-                          )}
+                          <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: driverRpm !== null ? "#10B981" : "#9CA3AF", marginTop: 2, whiteSpace: "nowrap" }}
+                            title={driverRpm !== null ? `${driver.miles.toLocaleString()} mi` : "No recorded mileage"}>
+                            {driverRpm !== null ? `$${driverRpm.toFixed(2)}/mi` : "—"}
+                          </div>
                         </td>
 
                         {/* Target — inline editable */}
@@ -1248,7 +1244,11 @@ export function GrossMatrix() {
                       );
                     })}
                     <td style={{ padding: "8px 12px", textAlign: "right", verticalAlign: "middle", borderTop: "2px solid #334155", borderLeft: "2px solid #334155", fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 700, color: "#34D399", position: "sticky", right: R.total, zIndex: 16, backgroundColor: "#0F172A" }}>
-                      {fmt(groupTotal)}
+                      <div style={{ whiteSpace: "nowrap" }}>{fmt(groupTotal)}</div>
+                      <div style={{ fontSize: 10, fontWeight: 600, color: "#64748B", marginTop: 2, whiteSpace: "nowrap" }}
+                        title={groupRpm !== null ? `${groupMiles.toLocaleString()} mi` : "No recorded mileage"}>
+                        {groupRpm !== null ? `$${groupRpm.toFixed(2)}/mi` : "—"}
+                      </div>
                     </td>
                     <td style={{ padding: "8px 12px", textAlign: "center", verticalAlign: "middle", borderTop: "2px solid #334155", borderLeft: "1px solid #334155", fontFamily: "var(--font-mono)", fontSize: 11, color: "#475569", position: "sticky", right: R.target, zIndex: 16, backgroundColor: "#0F172A" }}>—</td>
                     <td style={{ padding: "8px 12px", textAlign: "right", verticalAlign: "middle", borderTop: "2px solid #334155", borderLeft: "1px solid #334155", fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 700, color: groupProfit >= 0 ? "#34D399" : "#F87171", position: "sticky", right: R.profit, zIndex: 16, backgroundColor: "#0F172A" }}>

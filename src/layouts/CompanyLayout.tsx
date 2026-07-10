@@ -864,21 +864,18 @@ export function CompanyLayout() {
         })
         .catch(() => {/* silently ignore — switcher stays empty */});
     } else if (user?.company_id) {
-      // dispatcher / updater — pinned to one company. There's no owner-style
-      // /owner/accounts for them, so build a single non-switchable entry from the
-      // logged-in user so the switcher (and its Sign-out) still renders. Company
-      // name/plan/mc are shown when /auth/me carries them; otherwise a neutral label.
+      // dispatcher / updater — pinned to one company and 403 on /owner/accounts, so
+      // build their single non-switchable entry from the company object /auth/me
+      // resolves for them. Keeps the switcher (and its Sign-out) rendering.
       setActiveAccountId(user.company_id);
-      const name = user.company?.name || user.company_name || "My Company";
-      const plan = user.company?.plan || user.company_plan || "";
-      const mc   = user.company?.mc   || user.company_mc   || undefined;
+      const c = user.company;
       setAccounts([{
-        id: user.company_id,
-        name,
-        initials: initialsOf(name),
-        color: colorFor(user.company_id),
-        plan,
-        mc,
+        id:       c?.id       ?? user.company_id,
+        name:     c?.name     ?? "My Company",
+        initials: c?.initials ?? initialsOf(c?.name ?? "My Company"),
+        color:    c?.color    ?? colorFor(user.company_id),
+        plan:     c?.plan     ?? "",
+        mc:       c?.mc,
       }]);
     }
   }, [user]);

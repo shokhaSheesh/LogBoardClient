@@ -13,7 +13,9 @@ import { driverDisplayName } from "../lib/driverName";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type UserStatus = "Active" | "Inactive";
+// The stored vocabulary is closed to Active | Suspended. A write may send "Inactive",
+// but the backend normalizes it to Suspended and returns/filters on Suspended.
+type UserStatus = "Active" | "Suspended";
 
 type Permissions = Record<string, Record<string, boolean>>;
 
@@ -144,7 +146,7 @@ function toUser(b: BackendUser): User {
     teamId:   null,
     login:    b.email ?? b.login ?? "",
     password: "",
-    status:   (b.status === "active" || b.status === "Active") ? "Active" : "Inactive",
+    status:   (b.status === "active" || b.status === "Active") ? "Active" : "Suspended",
   };
 }
 
@@ -158,7 +160,7 @@ function fromUser(u: Partial<User>, isNew: boolean, roles: Role[]): Record<strin
     phone:     u.phone,
     email:     u.login,
     role:      roleName.toLowerCase(),
-    // Backend expects capitalized statuses (Active/Inactive/Suspended), not lowercase.
+    // Capitalized and from the stored vocabulary — Active | Suspended.
     status:    u.status ?? "Active",
     work_days: u.workDays,
     work_from: u.workFrom,
@@ -491,7 +493,7 @@ function UserModal({ user, roles, teams, saving, error, onClose, onSave }: {
 
   const roleOpts  = roles.map((r) => ({ value: r.id, label: r.name }));
   const teamOpts  = [{ value: "", label: "No Team" }, ...teams.map((t) => ({ value: t.id, label: t.name }))];
-  const statusOpts = [{ value: "Active", label: "Active" }, { value: "Inactive", label: "Inactive" }];
+  const statusOpts = [{ value: "Active", label: "Active" }, { value: "Suspended", label: "Suspended" }];
 
   // The backend may return a coarse role marker (e.g. "updater") with no role_id, so
   // resolve the selected role by id first, then by the role's name — otherwise editing
