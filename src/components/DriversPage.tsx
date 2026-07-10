@@ -446,9 +446,9 @@ function UnitSelect({ value, label, endpoint, onChange, error = false, disabled 
 const PAGE_SIZES = [20, 40, 60, 100];
 
 function Pagination({
-  page, total, pageSize, onPage, onPageSize, totalPending = false,
+  page, total, pageSize, onPage, onPageSize, totalPending = false, loading = false,
 }: {
-  page: number; total: number; pageSize: number; totalPending?: boolean;
+  page: number; total: number; pageSize: number; totalPending?: boolean; loading?: boolean;
   onPage: (p: number) => void; onPageSize: (s: number) => void;
 }) {
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
@@ -498,8 +498,9 @@ function Pagination({
       {/* Left: count info + rows-per-page */}
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
         <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 5 }}>
-          {total === 0 ? "No results" : `Showing ${from}–${to}`}
-          {total > 0 && (totalPending
+          {loading && <span style={{ width: 12, height: 12, borderRadius: "50%", border: "2px solid var(--border)", borderTopColor: "var(--primary)", animation: "spin 0.7s linear infinite", display: "inline-block" }} />}
+          {loading ? "Loading…" : total === 0 ? "No results" : `Showing ${from}–${to}`}
+          {!loading && total > 0 && (totalPending
             ? <span style={{ fontSize: 8, fontWeight: 700, color: "#D97706", backgroundColor: "#FEF3C7", border: "1px solid #FDE68A", borderRadius: 4, padding: "1px 4px", letterSpacing: "0.04em", textTransform: "uppercase" }}>total pending</span>
             : <span>of {total}</span>
           )}
@@ -520,17 +521,17 @@ function Pagination({
 
       {/* Right: prev / page numbers / next */}
       <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-        <PBtn disabled={page <= 1} onClick={() => onPage(page - 1)}>
+        <PBtn disabled={loading || page <= 1} onClick={() => onPage(page - 1)}>
           <ChevronLeft size={14} />
         </PBtn>
         {pages.map((p, i) =>
           p === "…" ? (
             <span key={`e${i}`} style={{ padding: "0 4px", fontSize: 13, color: "var(--muted-foreground)", lineHeight: "30px" }}>…</span>
           ) : (
-            <PBtn key={p} active={p === page} onClick={() => onPage(p as number)}>{p}</PBtn>
+            <PBtn key={p} active={p === page} disabled={loading && p !== page} onClick={() => onPage(p as number)}>{p}</PBtn>
           )
         )}
-        <PBtn disabled={page >= totalPages} onClick={() => onPage(page + 1)}>
+        <PBtn disabled={loading || page >= totalPages} onClick={() => onPage(page + 1)}>
           <ChevronRight size={14} />
         </PBtn>
       </div>
@@ -2128,6 +2129,7 @@ function Toolbar({
 
 function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDriver) => void; onCountChange: (n: number) => void }) {
   const [rows, setRows]               = useState<SoloDriver[]>([]);
+  const [total, setTotal]             = useState(0);
   const [loading, setLoading]         = useState(true);
   const [error, setError]             = useState("");
   const [modal, setModal]             = useState<"create" | "edit" | null>(null);
@@ -2158,15 +2160,18 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
     api.getList<any>("/drivers", {
       q: debouncedSearch || undefined,
       status: statusFilter !== "All" ? statusFilter : undefined,
+      team: "false",
+      page,
+      page_size: pageSize,
     })
-      .then(({ items }) => {
-        const solo = (items ?? []).filter((d) => !d.team).map(toSolo);
-        setRows(solo);
-        onCountChange(solo.length);
+      .then(({ items, total: t }) => {
+        setRows((items ?? []).map(toSolo));
+        setTotal(t);
+        onCountChange(t);
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [fetchKey, debouncedSearch, statusFilter]);
+  }, [fetchKey, debouncedSearch, statusFilter, page, pageSize]);
 
   const patchRow = async (id: string, fields: Partial<SoloDriver>) => {
     const existing = rows.find((d) => d.id === id);
@@ -2179,6 +2184,23 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
       setFetchKey((k) => k + 1);
     } catch (e) {
       setRows((prev) => prev.map((d) => (d.id === id ? existing : d)));
+      setToast({ type: "error", msg: e instanceof Error ? e.message : "Update failed" });
+    }
+  };
+
+  // Setting status to Completed completes the driver's current load — same lifecycle as
+  // Board/Loads: one PUT /loads with status=completed AND every stop done (the backend
+  // derives the driver's status to covered/ready from that; it doesn't mark stops done on
+  // its own). No current load → just a normal driver status change.
+  const completeLoad = async (driverId: string, loadId?: string) => {
+    if (!loadId) { await patchRow(driverId, { status: "completed" }); return; }
+    try {
+      const load = await api.get<any>(`/loads/${loadId}`);
+      const stops = (load.stops ?? []).map((s: any) => ({ ...s, done: true }));
+      await api.put(`/loads/${loadId}`, { ...load, status: "completed", stops });
+      setToast({ type: "success", msg: "Status updated" });
+      setFetchKey((k) => k + 1);
+    } catch (e) {
       setToast({ type: "error", msg: e instanceof Error ? e.message : "Update failed" });
     }
   };
@@ -2226,12 +2248,10 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
     }
   };
 
-  const paged = rows.slice((page - 1) * pageSize, page * pageSize);
-
   const handleSearch = (v: string) => setSearch(v);
   const handleStatus = (v: string) => setStatus(v);
 
-  if (loading) return (
+  if (loading && rows.length === 0) return (
     <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
       Loading drivers…
     </div>
@@ -2253,7 +2273,7 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
       />
 
       <div style={{ flex: 1, overflow: "auto", scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent" }}>
-        <table style={{ width: "max-content", minWidth: "100%", borderCollapse: "collapse" }}>
+        <table style={{ width: "max-content", minWidth: "100%", borderCollapse: "collapse", opacity: loading ? 0.45 : 1, pointerEvents: loading ? "none" : "auto", transition: "opacity 0.15s" }}>
           <thead>
             <tr>
               <TH width={36}>#</TH>
@@ -2271,7 +2291,7 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
             </tr>
           </thead>
           <tbody>
-            {paged.map((d, i) => (
+            {rows.map((d, i) => (
               <tr
                 key={d.id}
                 style={{ backgroundColor: i % 2 === 0 ? "var(--card)" : "var(--background)" }}
@@ -2293,9 +2313,11 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
                     {d.name}
                   </button>
                 </TD>
-                <TD mono>{d.phone}</TD>
+                <TD mono>{d.phone || "—"}</TD>
                 <TD><TypeBadge type={d.type} /></TD>
-                <TD><StatusDropdown value={d.status} onChange={(s) => patchRow(d.id, { status: s })} /></TD>
+                <TD><StatusDropdown value={d.status} onChange={(s) =>
+                  s === "completed" ? completeLoad(d.id, d.currentLoadId) : patchRow(d.id, { status: s })
+                } /></TD>
                 <TD mono>
                   {d.currentLoad ? (
                     <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 600, color: "var(--primary)", backgroundColor: "var(--secondary)", borderRadius: 4, padding: "2px 7px" }}>
@@ -2319,18 +2341,18 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
                     <span style={{ color: "var(--muted-foreground)" }}>—</span>
                   )}
                 </TD>
-                <TD mono>{d.truck}</TD>
-                <TD mono>{d.trailer}</TD>
+                <TD mono>{d.truck || "—"}</TD>
+                <TD mono>{d.trailer || "—"}</TD>
                 <TD>
                   <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
                     <MapPin size={11} style={{ color: "var(--muted-foreground)", flexShrink: 0 }} />
-                    {d.location}
+                    {d.location || "—"}
                   </span>
                 </TD>
                 <TD>
                   <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
                     <MessageSquare size={11} style={{ color: "var(--muted-foreground)", flexShrink: 0 }} />
-                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 200, display: "inline-block" }}>{d.comment}</span>
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 200, display: "inline-block" }}>{d.comment || "—"}</span>
                   </span>
                 </TD>
                 <td style={{ padding: "8px 10px", borderBottom: "1px solid var(--border)", verticalAlign: "middle", textAlign: "center" }}>
@@ -2341,7 +2363,7 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
                 </td>
               </tr>
             ))}
-            {paged.length === 0 && (
+            {!loading && rows.length === 0 && (
               <tr>
                 <td colSpan={11} style={{ padding: "40px 20px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
                   No drivers match your filters.
@@ -2353,7 +2375,7 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
       </div>
 
       <Pagination
-        page={page} total={rows.length} pageSize={pageSize}
+        page={page} total={total} pageSize={pageSize} loading={loading}
         onPage={setPage} onPageSize={(s) => { setPageSize(s); setPage(1); }}
       />
 
@@ -2375,6 +2397,7 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
 
 function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver) => void; onCountChange: (n: number) => void }) {
   const [rows, setRows]               = useState<TeamDriver[]>([]);
+  const [total, setTotal]             = useState(0);
   const [loading, setLoading]         = useState(true);
   const [error, setError]             = useState("");
   const [modal, setModal]             = useState<"create" | "edit" | null>(null);
@@ -2405,15 +2428,18 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
     api.getList<any>("/drivers", {
       q: debouncedSearch || undefined,
       status: statusFilter !== "All" ? statusFilter : undefined,
+      team: "true",
+      page,
+      page_size: pageSize,
     })
-      .then(({ items }) => {
-        const teams = (items ?? []).filter((d) => d.team).map(toTeam);
-        setRows(teams);
-        onCountChange(teams.length);
+      .then(({ items, total: t }) => {
+        setRows((items ?? []).map(toTeam));
+        setTotal(t);
+        onCountChange(t);
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [fetchKey, debouncedSearch, statusFilter]);
+  }, [fetchKey, debouncedSearch, statusFilter, page, pageSize]);
 
   const patchRow = async (id: string, fields: Partial<TeamDriver>) => {
     const existing = rows.find((d) => d.id === id);
@@ -2426,6 +2452,21 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
       setFetchKey((k) => k + 1);
     } catch (e) {
       setRows((prev) => prev.map((d) => (d.id === id ? existing : d)));
+      setToast({ type: "error", msg: e instanceof Error ? e.message : "Update failed" });
+    }
+  };
+
+  // Same lifecycle as Board/Loads/Solo: completing the current load is a PUT /loads with
+  // status=completed + every stop done, not a plain driver status change.
+  const completeLoad = async (driverId: string, loadId?: string) => {
+    if (!loadId) { await patchRow(driverId, { status: "completed" }); return; }
+    try {
+      const load = await api.get<any>(`/loads/${loadId}`);
+      const stops = (load.stops ?? []).map((s: any) => ({ ...s, done: true }));
+      await api.put(`/loads/${loadId}`, { ...load, status: "completed", stops });
+      setToast({ type: "success", msg: "Status updated" });
+      setFetchKey((k) => k + 1);
+    } catch (e) {
       setToast({ type: "error", msg: e instanceof Error ? e.message : "Update failed" });
     }
   };
@@ -2472,12 +2513,10 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
     }
   };
 
-  const paged = rows.slice((page - 1) * pageSize, page * pageSize);
-
   const handleSearch = (v: string) => setSearch(v);
   const handleStatus = (v: string) => setStatus(v);
 
-  if (loading) return (
+  if (loading && rows.length === 0) return (
     <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
       Loading teams…
     </div>
@@ -2499,7 +2538,7 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
       />
 
       <div style={{ flex: 1, overflow: "auto", scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent" }}>
-        <table style={{ width: "max-content", minWidth: "100%", borderCollapse: "collapse" }}>
+        <table style={{ width: "max-content", minWidth: "100%", borderCollapse: "collapse", opacity: loading ? 0.45 : 1, pointerEvents: loading ? "none" : "auto", transition: "opacity 0.15s" }}>
           <thead>
             <tr>
               <TH width={36}>#</TH>
@@ -2518,7 +2557,7 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
             </tr>
           </thead>
           <tbody>
-            {paged.map((d, i) => (
+            {rows.map((d, i) => (
               <tr
                 key={d.id}
                 style={{ backgroundColor: i % 2 === 0 ? "var(--card)" : "var(--background)" }}
@@ -2534,7 +2573,7 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
                     onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.textDecoration = "none"; }}
                   >{d.name1}</button>
                 </TD>
-                <TD mono>{d.phone1}</TD>
+                <TD mono>{d.phone1 || "—"}</TD>
                 <TD>
                   <button
                     onClick={() => onSelectTeam(d)}
@@ -2543,9 +2582,11 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
                     onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.textDecoration = "none"; }}
                   >{d.name2}</button>
                 </TD>
-                <TD mono>{d.phone2}</TD>
+                <TD mono>{d.phone2 || "—"}</TD>
                 <TD><TypeBadge type={d.type} /></TD>
-                <TD><StatusDropdown value={d.status} onChange={(s) => patchRow(d.id, { status: s })} /></TD>
+                <TD><StatusDropdown value={d.status} onChange={(s) =>
+                  s === "completed" ? completeLoad(d.id, d.currentLoadId) : patchRow(d.id, { status: s })
+                } /></TD>
                 <TD mono>
                   {d.currentLoad ? (
                     <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 600, color: "var(--primary)", backgroundColor: "var(--secondary)", borderRadius: 4, padding: "2px 7px" }}>
@@ -2569,12 +2610,12 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
                     <span style={{ color: "var(--muted-foreground)" }}>—</span>
                   )}
                 </TD>
-                <TD mono>{d.truck}</TD>
-                <TD mono>{d.trailer}</TD>
+                <TD mono>{d.truck || "—"}</TD>
+                <TD mono>{d.trailer || "—"}</TD>
                 <TD>
                   <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
                     <MessageSquare size={11} style={{ color: "var(--muted-foreground)", flexShrink: 0 }} />
-                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 200, display: "inline-block" }}>{d.comment}</span>
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 200, display: "inline-block" }}>{d.comment || "—"}</span>
                   </span>
                 </TD>
                 <td style={{ padding: "8px 10px", borderBottom: "1px solid var(--border)", verticalAlign: "middle", textAlign: "center" }}>
@@ -2585,7 +2626,7 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
                 </td>
               </tr>
             ))}
-            {paged.length === 0 && (
+            {!loading && rows.length === 0 && (
               <tr>
                 <td colSpan={13} style={{ padding: "40px 20px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
                   No teams match your filters.
@@ -2597,7 +2638,7 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
       </div>
 
       <Pagination
-        page={page} total={rows.length} pageSize={pageSize}
+        page={page} total={total} pageSize={pageSize} loading={loading}
         onPage={setPage} onPageSize={(s) => { setPageSize(s); setPage(1); }}
       />
 
