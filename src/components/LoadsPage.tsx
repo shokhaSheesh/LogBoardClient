@@ -443,9 +443,7 @@ function ExtractModal({ onClose, onExtracted }: {
   onClose: () => void;
   onExtracted: (draft: ExtractDraft) => void;
 }) {
-  const [mode, setMode]       = useState<"file" | "text">("file");
   const [file, setFile]       = useState<File | null>(null);
-  const [text, setText]       = useState("");
   const [dragging, setDragging] = useState(false);
   const [busy, setBusy]       = useState(false);
   const [error, setError]     = useState<string | null>(null);
@@ -458,7 +456,7 @@ function ExtractModal({ onClose, onExtracted }: {
     setFile(f);
   };
 
-  const canSubmit = mode === "file" ? !!file : text.trim().length > 0;
+  const canSubmit = !!file;
 
   const submit = async () => {
     if (!canSubmit || busy) return;
@@ -467,9 +465,7 @@ function ExtractModal({ onClose, onExtracted }: {
     try {
       // Extraction reads the document with a reasoning model — 8–35s is normal,
       // longer for a many-page PDF. fetch has no default timeout, so just wait.
-      const res = mode === "file"
-        ? await api.upload<{ draft: ExtractDraft }>("/loads/extract", file!)
-        : await api.post<{ draft: ExtractDraft }>("/loads/extract", { text: text.trim() });
+      const res = await api.upload<{ draft: ExtractDraft }>("/loads/extract", file);
       onExtracted(res?.draft ?? {});
     } catch (e) {
       setError(extractErrorMessage(e));
@@ -477,14 +473,6 @@ function ExtractModal({ onClose, onExtracted }: {
       setBusy(false);
     }
   };
-
-  const tabStyle = (active: boolean): React.CSSProperties => ({
-    flex: 1, padding: "8px 0", fontFamily: "var(--font-sans)", fontSize: 12.5,
-    fontWeight: active ? 600 : 500, cursor: busy ? "default" : "pointer",
-    color: active ? "#7C3AED" : "var(--muted-foreground)",
-    backgroundColor: active ? "#F5F3FF" : "transparent",
-    border: "none", borderBottom: `2px solid ${active ? "#7C3AED" : "transparent"}`,
-  });
 
   return (
     <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -502,63 +490,42 @@ function ExtractModal({ onClose, onExtracted }: {
           </button>
         </div>
 
-        {/* Mode tabs */}
-        <div style={{ display: "flex", borderBottom: "1px solid var(--border)" }}>
-          <button onClick={() => !busy && setMode("file")} style={tabStyle(mode === "file")}>Upload a rate confirmation</button>
-          <button onClick={() => !busy && setMode("text")} style={tabStyle(mode === "text")}>Paste an email</button>
-        </div>
-
         <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 14 }}>
-          {mode === "file" ? (
-            <div
-              onClick={() => !busy && inputRef.current?.click()}
-              onDragOver={(e) => { e.preventDefault(); if (!busy) setDragging(true); }}
-              onDragLeave={() => setDragging(false)}
-              onDrop={(e) => { e.preventDefault(); setDragging(false); if (!busy) pickFile(e.dataTransfer.files[0]); }}
-              style={{
-                border: `2px dashed ${dragging ? "#7C3AED" : file ? "#10B981" : "var(--border)"}`,
-                borderRadius: 10, padding: "34px 20px", textAlign: "center",
-                backgroundColor: dragging ? "#F5F3FF" : file ? "#F0FDF4" : "var(--input-background)",
-                cursor: busy ? "default" : "pointer", transition: "all 0.15s",
-              }}
-            >
-              <input ref={inputRef} type="file" accept={EXTRACT_ACCEPT} onChange={(e) => pickFile(e.target.files?.[0])} style={{ display: "none" }} />
-              {file ? (
-                <>
-                  <div style={{ width: 44, height: 44, borderRadius: 10, backgroundColor: "#D1FAE5", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 12px" }}>
-                    <FileText size={22} color="#059669" />
-                  </div>
-                  <div style={{ fontFamily: "var(--font-sans)", fontSize: 14, fontWeight: 600, color: "#065F46" }}>{file.name}</div>
-                  <div style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "#6B7280", marginTop: 4 }}>
-                    {(file.size / 1024).toFixed(1)} KB · Click to change
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div style={{ width: 44, height: 44, borderRadius: 10, backgroundColor: "var(--muted)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 12px" }}>
-                    <Upload size={20} color="var(--muted-foreground)" />
-                  </div>
-                  <div style={{ fontFamily: "var(--font-sans)", fontSize: 14, fontWeight: 500, color: "var(--foreground)" }}>Drop the rate confirmation here</div>
-                  <div style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)", marginTop: 4 }}>
-                    or <span style={{ color: "#7C3AED", fontWeight: 500 }}>browse files</span> — PDF, photo/scan, or text (max 10 MB)
-                  </div>
-                </>
-              )}
-            </div>
-          ) : (
-            <textarea
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              disabled={busy}
-              placeholder="Paste the broker's email or the load details here…"
-              style={{
-                width: "100%", minHeight: 160, resize: "vertical", boxSizing: "border-box",
-                fontFamily: "var(--font-sans)", fontSize: 13, lineHeight: 1.5, padding: "10px 12px",
-                border: "1px solid var(--border)", borderRadius: 8,
-                backgroundColor: "var(--input-background)", color: "var(--foreground)", outline: "none",
-              }}
-            />
-          )}
+          <div
+            onClick={() => !busy && inputRef.current?.click()}
+            onDragOver={(e) => { e.preventDefault(); if (!busy) setDragging(true); }}
+            onDragLeave={() => setDragging(false)}
+            onDrop={(e) => { e.preventDefault(); setDragging(false); if (!busy) pickFile(e.dataTransfer.files[0]); }}
+            style={{
+              border: `2px dashed ${dragging ? "#7C3AED" : file ? "#10B981" : "var(--border)"}`,
+              borderRadius: 10, padding: "34px 20px", textAlign: "center",
+              backgroundColor: dragging ? "#F5F3FF" : file ? "#F0FDF4" : "var(--input-background)",
+              cursor: busy ? "default" : "pointer", transition: "all 0.15s",
+            }}
+          >
+            <input ref={inputRef} type="file" accept={EXTRACT_ACCEPT} onChange={(e) => pickFile(e.target.files?.[0])} style={{ display: "none" }} />
+            {file ? (
+              <>
+                <div style={{ width: 44, height: 44, borderRadius: 10, backgroundColor: "#D1FAE5", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 12px" }}>
+                  <FileText size={22} color="#059669" />
+                </div>
+                <div style={{ fontFamily: "var(--font-sans)", fontSize: 14, fontWeight: 600, color: "#065F46" }}>{file.name}</div>
+                <div style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "#6B7280", marginTop: 4 }}>
+                  {(file.size / 1024).toFixed(1)} KB · Click to change
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ width: 44, height: 44, borderRadius: 10, backgroundColor: "var(--muted)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 12px" }}>
+                  <Upload size={20} color="var(--muted-foreground)" />
+                </div>
+                <div style={{ fontFamily: "var(--font-sans)", fontSize: 14, fontWeight: 500, color: "var(--foreground)" }}>Drop the rate confirmation here</div>
+                <div style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)", marginTop: 4 }}>
+                  or <span style={{ color: "#7C3AED", fontWeight: 500 }}>browse files</span> — PDF, photo/scan, or text (max 10 MB)
+                </div>
+              </>
+            )}
+          </div>
 
           {/* Third-party disclosure — the document leaves our server. */}
           <div style={{ display: "flex", alignItems: "flex-start", gap: 8, fontFamily: "var(--font-sans)", fontSize: 11, color: "var(--muted-foreground)", lineHeight: 1.5 }}>
@@ -633,7 +600,7 @@ function AddLoadMenu({ onManual, onExtract }: { onManual: () => void; onExtract:
       icon: <Sparkles size={16} />,
       iconColor: "#7C3AED", iconBg: "#F5F3FF",
       label: "AI Smart Extract",
-      desc: "Parse a rate confirmation or pasted email",
+      desc: "Parse load info from a rate confirmation",
       comingSoon: false,
       onClick: onExtract,
     },
