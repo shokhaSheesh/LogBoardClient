@@ -7,7 +7,7 @@ import {
   ArrowLeft, ArrowRight, Building2, User, DollarSign, Clock, History, CalendarDays, Navigation, GripVertical,
 } from "lucide-react";
 import { Status, STATUS_CONFIG as SHARED_STATUS_CONFIG, ALL_STATUSES as SHARED_ALL_STATUSES } from "../lib/statuses";
-import { api, ApiError, getCompanyId } from "../lib/api";
+import { api, ApiError, isForbidden, getCompanyId } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { hasPerm } from "../lib/permissions";
 import { menuPosition } from "../lib/menuPosition";
@@ -951,6 +951,7 @@ function AsyncSearchableSelect({ value, valueLabel, fetchPage, onChange, placeho
   const [page,  setPage]  = useState(1);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [denied, setDenied]   = useState(false);
   const [selectedLabel, setSelectedLabel] = useState(valueLabel ?? "");
   useEffect(() => { setSelectedLabel(valueLabel ?? ""); }, [valueLabel]);
 
@@ -973,7 +974,11 @@ function AsyncSearchableSelect({ value, valueLabel, fetchPage, onChange, placeho
       setItems((prev) => (replace ? rows : [...prev, ...rows]));
       setTotal(t);
       setPage(pageNum);
-    } catch { /* keep whatever's loaded */ } finally {
+      setDenied(false);
+    } catch (e) {
+      // 403 → the caller can't read this list; show that instead of "No results".
+      if (id === reqId.current && isForbidden(e)) setDenied(true);
+    } finally {
       if (id === reqId.current) setLoading(false);
     }
   };
@@ -1052,7 +1057,9 @@ function AsyncSearchableSelect({ value, valueLabel, fetchPage, onChange, placeho
             })}
             {loading && <div style={{ padding: 10, textAlign: "center", fontSize: 12, color: "var(--muted-foreground)" }}>Loading…</div>}
             {!loading && items.length === 0 && (
-              <div style={{ padding: 12, textAlign: "center", fontSize: 12, color: "var(--muted-foreground)" }}>No results</div>
+              <div style={{ padding: 12, textAlign: "center", fontSize: 12, color: "var(--muted-foreground)" }}>
+                {denied ? "You don't have access to this list." : "No results"}
+              </div>
             )}
           </div>
         </div>

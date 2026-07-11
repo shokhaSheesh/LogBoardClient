@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { Truck, Container, Plus, Pencil, Trash2, X, Check, Search, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, FileSpreadsheet, Upload, FileText, AlertCircle, User } from "lucide-react";
-import { api } from "../lib/api";
+import { api, isForbidden } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { hasPerm } from "../lib/permissions";
 import { driverDisplayName } from "../lib/driverName";
@@ -199,6 +199,7 @@ function AsyncSearchableSelect({ value, valueLabel, fetchPage, onChange, placeho
   const [page,  setPage]  = useState(1);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [denied, setDenied]   = useState(false);
   const [selectedLabel, setSelectedLabel] = useState(valueLabel ?? "");
   useEffect(() => { setSelectedLabel(valueLabel ?? ""); }, [valueLabel]);
 
@@ -221,7 +222,11 @@ function AsyncSearchableSelect({ value, valueLabel, fetchPage, onChange, placeho
       setItems((prev) => (replace ? rows : [...prev, ...rows]));
       setTotal(t);
       setPage(pageNum);
-    } catch { /* keep whatever's loaded */ } finally {
+      setDenied(false);
+    } catch (e) {
+      // 403 → the caller can't read this list; show that instead of "No results".
+      if (id === reqId.current && isForbidden(e)) setDenied(true);
+    } finally {
       if (id === reqId.current) setLoading(false);
     }
   };
@@ -300,7 +305,9 @@ function AsyncSearchableSelect({ value, valueLabel, fetchPage, onChange, placeho
             })}
             {loading && <div style={{ padding: 10, textAlign: "center", fontSize: 12, color: "var(--muted-foreground)" }}>Loading…</div>}
             {!loading && items.length === 0 && (
-              <div style={{ padding: 12, textAlign: "center", fontSize: 12, color: "var(--muted-foreground)" }}>No results</div>
+              <div style={{ padding: 12, textAlign: "center", fontSize: 12, color: "var(--muted-foreground)" }}>
+                {denied ? "You don't have access to this list." : "No results"}
+              </div>
             )}
           </div>
         </div>

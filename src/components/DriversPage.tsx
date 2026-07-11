@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { Status, STATUS_CONFIG, ALL_STATUSES } from "../lib/statuses";
-import { api, ApiError } from "../lib/api";
+import { api, ApiError, isForbidden } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { hasPerm } from "../lib/permissions";
 import { menuPosition } from "../lib/menuPosition";
@@ -308,6 +308,7 @@ function UnitSelect({ value, label, endpoint, onChange, error = false, disabled 
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [denied, setDenied] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const reqId = useRef(0);
@@ -333,8 +334,11 @@ function UnitSelect({ value, label, endpoint, onChange, error = false, disabled 
       setItems((prev) => (replace ? opts : [...prev, ...opts]));
       setTotal(t);
       setPage(pageNum);
-    } catch {
-      // leave whatever was already loaded in place
+      setDenied(false);
+    } catch (e) {
+      // A 403 means the caller lacks fleet access — surface that instead of a
+      // silently-empty list that reads as "no trucks exist".
+      if (id === reqId.current && isForbidden(e)) setDenied(true);
     } finally {
       if (id === reqId.current) setLoading(false);
     }
@@ -422,7 +426,9 @@ function UnitSelect({ value, label, endpoint, onChange, error = false, disabled 
               <div style={{ padding: "8px 12px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)" }}>Loading…</div>
             )}
             {!loading && items.length === 0 && (
-              <div style={{ padding: "10px 12px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)" }}>No results</div>
+              <div style={{ padding: "10px 12px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)" }}>
+                {denied ? "You don't have access to the fleet list." : "No results"}
+              </div>
             )}
           </div>
         </div>

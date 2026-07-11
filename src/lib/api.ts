@@ -5,11 +5,19 @@ const BASE = (import.meta.env.VITE_API_BASE ?? "http://localhost:8080") + "/api/
 // errors to specific form fields instead of just showing a toast.
 export class ApiError extends Error {
   code?: string;
-  constructor(message: string, code?: string) {
+  status?: number;
+  constructor(message: string, code?: string, status?: number) {
     super(message);
     this.name = "ApiError";
     this.code = code;
+    this.status = status;
   }
+}
+
+// A permission failure — the caller lacks the required key for this endpoint.
+// Used to tell "you can't see this list" apart from "this list is empty".
+export function isForbidden(e: unknown): boolean {
+  return e instanceof ApiError && (e.status === 403 || e.code === "forbidden");
 }
 
 function getToken(): string | null {
@@ -65,7 +73,7 @@ async function request<T>(
 
   if (!res.ok) {
     const msg = json?.error?.message ?? json?.error ?? `HTTP ${res.status}`;
-    throw new ApiError(msg, json?.error?.code);
+    throw new ApiError(msg, json?.error?.code, res.status);
   }
 
   // All success responses are wrapped: { "data": ... }
@@ -102,7 +110,7 @@ async function requestList<T>(
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {
     const msg = json?.error?.message ?? json?.error ?? `HTTP ${res.status}`;
-    throw new Error(msg);
+    throw new ApiError(msg, json?.error?.code, res.status);
   }
 
   const data = json.data ?? json;
@@ -125,7 +133,7 @@ async function requestPayouts<T>(
   if (res.status === 204) return { items: [], total: 0, totals: { rate: 0, added: 0, deducted: 0, net: 0 } };
 
   const json = await res.json().catch(() => ({}));
-  if (!res.ok) { throw new Error(json?.error?.message ?? json?.error ?? `HTTP ${res.status}`); }
+  if (!res.ok) { throw new ApiError(json?.error?.message ?? json?.error ?? `HTTP ${res.status}`, json?.error?.code, res.status); }
 
   return {
     items: Array.isArray(json.data) ? json.data : [],
@@ -155,7 +163,7 @@ async function upload<T>(path: string, file: File, field = "file"): Promise<T> {
     // Carry the machine-readable code (file_too_large, unsupported_media_type,
     // not_configured, ai_unavailable, …) so callers can map it to a specific message.
     const msg = json?.error?.message ?? json?.error ?? `HTTP ${res.status}`;
-    throw new ApiError(msg, json?.error?.code);
+    throw new ApiError(msg, json?.error?.code, res.status);
   }
   return (json.data ?? json) as T;
 }
