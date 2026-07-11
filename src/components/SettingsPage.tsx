@@ -241,12 +241,13 @@ const TD = ({ children, mono = false, center = false, style: extra }: { children
 // ─── CustomSelect ─────────────────────────────────────────────────────────────
 
 function CustomSelect({
-  value, options, onChange, width, compact = false, dropUp = false, portal = false,
+  value, options, onChange, width, compact = false, dropUp = false, portal = false, clearable = false,
 }: {
   value: string; options: { value: string; label: string }[];
   onChange: (v: string) => void; width?: number | string;
   compact?: boolean; dropUp?: boolean;
   portal?: boolean; // escape overflow:hidden containers (use inside modals)
+  clearable?: boolean; // show an × to reset back to "" when a value is selected
 }) {
   const [open, setOpen] = useState(false);
   const [fixedPos, setFixedPos] = useState<{ top: number; left: number; width: number } | null>(null);
@@ -338,6 +339,18 @@ function CustomSelect({
         <span style={{ flex: 1, textAlign: "left", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {selected?.label ?? "Select…"}
         </span>
+        {clearable && value && (
+          <span
+            role="button"
+            title="Clear"
+            onClick={(e) => { e.stopPropagation(); onChange(""); setOpen(false); }}
+            style={{ display: "flex", flexShrink: 0, color: "var(--muted-foreground)", cursor: "pointer" }}
+            onMouseEnter={(e) => { (e.currentTarget as HTMLSpanElement).style.color = "#EF4444"; }}
+            onMouseLeave={(e) => { (e.currentTarget as HTMLSpanElement).style.color = "var(--muted-foreground)"; }}
+          >
+            <X size={13} />
+          </span>
+        )}
         <ChevronDown size={13} style={{ color: "var(--muted-foreground)", flexShrink: 0, transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s" }} />
       </button>
       {portal ? dropList : !portal && dropList}
@@ -492,7 +505,7 @@ function UserModal({ user, roles, teams, saving, error, onClose, onSave }: {
   });
 
   const roleOpts  = roles.map((r) => ({ value: r.id, label: r.name }));
-  const teamOpts  = [{ value: "", label: "No Team" }, ...teams.map((t) => ({ value: t.id, label: t.name }))];
+  const teamOpts  = teams.map((t) => ({ value: t.id, label: t.name }));
   const statusOpts = [{ value: "Active", label: "Active" }, { value: "Suspended", label: "Suspended" }];
 
   // The backend may return a coarse role marker (e.g. "updater") with no role_id, so
@@ -564,8 +577,11 @@ function UserModal({ user, roles, teams, saving, error, onClose, onSave }: {
             <CustomSelect
               value={effectiveRoleId}
               options={roleOpts}
-              onChange={(v) => set("roleId", v)}
+              // Clearing must drop the coarse roleName fallback too — otherwise
+              // effectiveRoleId re-resolves from it and the clear has no effect.
+              onChange={(v) => setForm((f) => ({ ...f, roleId: v, roleName: v ? f.roleName : "" }))}
               portal
+              clearable
             />
           </div>
           {/* Team */}
@@ -576,6 +592,7 @@ function UserModal({ user, roles, teams, saving, error, onClose, onSave }: {
               options={teamOpts}
               onChange={(v) => set("teamId", v === "" ? null : v)}
               portal
+              clearable
             />
           </div>
 
@@ -874,6 +891,7 @@ function DropdownMultiSelect<T>({
   getKey,
   getLabel,
   onToggle,
+  onClear,
   placeholder,
   chipColor = "#1D4ED8",
   chipBg = "#DBEAFE",
@@ -884,6 +902,7 @@ function DropdownMultiSelect<T>({
   getKey: (item: T) => string;
   getLabel: (item: T) => string;
   onToggle: (item: T) => void;
+  onClear?: () => void; // clear the whole selection from the trigger, not just a chip at a time
   placeholder?: string;
   chipColor?: string;
   chipBg?: string;
@@ -932,6 +951,18 @@ function DropdownMultiSelect<T>({
                 ? getLabel(selected[0])
                 : `${selected.length} selected`}
           </span>
+          {onClear && selected.length > 0 && (
+            <span
+              role="button"
+              title="Clear all"
+              onClick={(e) => { e.stopPropagation(); onClear(); setOpen(false); }}
+              style={{ display: "flex", flexShrink: 0, color: "var(--muted-foreground)", cursor: "pointer" }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLSpanElement).style.color = "#EF4444"; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLSpanElement).style.color = "var(--muted-foreground)"; }}
+            >
+              <X size={13} />
+            </span>
+          )}
           <ChevronDown size={13} style={{ color: "var(--muted-foreground)", flexShrink: 0, transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s" }} />
         </button>
 
@@ -1165,6 +1196,7 @@ function TeamModal({ team, users, allDriverNames, driverLabels, saving, onClose,
             getKey={(u) => String(u.id)}
             getLabel={(u) => u.name}
             onToggle={toggleUser}
+            onClear={() => setForm((f) => ({ ...f, userIds: [] }))}
             placeholder="Select users…"
             chipColor="#1D4ED8"
             chipBg="#DBEAFE"
@@ -1177,6 +1209,7 @@ function TeamModal({ team, users, allDriverNames, driverLabels, saving, onClose,
             getKey={(d) => d.name}
             getLabel={(d) => driverLabels[d.name] ?? d.name}
             onToggle={toggleDriver}
+            onClear={() => setForm((f) => ({ ...f, driverNames: [] }))}
             placeholder="Select drivers…"
             chipColor="#374151"
             chipBg="var(--muted)"
