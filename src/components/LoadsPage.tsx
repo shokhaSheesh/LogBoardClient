@@ -104,7 +104,12 @@ function toBackend(l: Partial<Load>): Partial<BackendLoad> {
       done: s.done,
       ...(s.lat != null && s.lng != null ? { location: { lat: s.lat, lng: s.lng } } : {}),
     })),
-    status: l.status,
+    // A load's status is queue-driven once it has a driver — a queued/next load
+    // carries an empty status. Sending "" back on an edit makes the backend
+    // coerce it to the default ("reserved"), wrongly activating a queued load.
+    // Omit an empty status so the backend keeps it queue-driven; only a real,
+    // user-chosen status (or "completed") is sent.
+    status: l.status || undefined,
     payout: l.payout ?? 0,
     miles: l.totalMiles ?? 0,
     broker: l.broker,
@@ -1321,11 +1326,12 @@ function LoadModal({ load, onClose, onSave, saving = false }: {
             </label>
           </div>
 
-          {/* Status (hidden on create) */}
+          {/* Status (hidden on create). A queued/next load has no status — show it
+              blank rather than a fake "reserved", and only send one if the user picks it. */}
           {!isNew && (
             <label style={labelStyle}>
               <span style={capStyle}>Status</span>
-              <CustomSelect value={form.status ?? "reserved"} options={STATUS_MODAL_OPTS} onChange={(v) => set("status", v as Status)} />
+              <CustomSelect value={form.status ?? ""} options={STATUS_MODAL_OPTS} onChange={(v) => set("status", v as Status)} />
             </label>
           )}
 
