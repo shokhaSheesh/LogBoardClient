@@ -133,17 +133,6 @@ function fromTeam(d: Partial<TeamDriver>) {
   };
 }
 
-// POST /drivers only accepts the driver's own fields — truck_id/trailer_id are
-// documented as "settable on update", not create, so the backend silently drops
-// them if sent on the initial POST. Assigning equipment on a new driver is
-// therefore a required follow-up PUT once the driver exists.
-function equipmentAssignBody(d: { truckId?: string; trailerId?: string }): Record<string, string> {
-  const body: Record<string, string> = {};
-  if (d.truckId) body.truck_id = d.truckId;
-  if (d.trailerId) body.trailer_id = d.trailerId;
-  return body;
-}
-
 // Maps a truck/trailer assignment error to the offending equipment field, so the
 // modal can show it inline instead of (or in addition to) a generic toast.
 function equipmentFieldError(e: unknown): { truck?: string; trailer?: string } | null {
@@ -2267,24 +2256,7 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
     setFieldErrors({});
     try {
       if (modal === "create") {
-        const created = await api.post<{ id: string }>("/drivers", fromSolo(d));
-        const assignBody = equipmentAssignBody(d);
-        if (created?.id && Object.keys(assignBody).length > 0) {
-          try {
-            await api.put(`/drivers/${created.id}`, assignBody);
-          } catch (assignErr) {
-            // Driver exists but the equipment assignment failed — switch to
-            // editing that driver rather than closing, so a retry doesn't
-            // create a second (duplicate) driver.
-            setEditing({ ...d, id: created.id });
-            setModal("edit");
-            const fieldErr = equipmentFieldError(assignErr);
-            if (fieldErr) setFieldErrors(fieldErr);
-            else setToast({ type: "error", msg: assignErr instanceof Error ? assignErr.message : "Driver created, but couldn't assign the truck/trailer." });
-            setFetchKey((k) => k + 1);
-            return;
-          }
-        }
+        await api.post<any>("/drivers", fromSolo(d));
         setToast({ type: "success", msg: `${d.name} added successfully` });
       } else {
         await api.put<any>(`/drivers/${d.id}`, fromSolo(d));
@@ -2556,24 +2528,7 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
     setFieldErrors({});
     try {
       if (modal === "create") {
-        const created = await api.post<{ id: string }>("/drivers", fromTeam(d));
-        const assignBody = equipmentAssignBody(d);
-        if (created?.id && Object.keys(assignBody).length > 0) {
-          try {
-            await api.put(`/drivers/${created.id}`, assignBody);
-          } catch (assignErr) {
-            // Team exists but the equipment assignment failed — switch to
-            // editing it rather than closing, so a retry doesn't create a
-            // second (duplicate) team.
-            setEditing({ ...d, id: created.id });
-            setModal("edit");
-            const fieldErr = equipmentFieldError(assignErr);
-            if (fieldErr) setFieldErrors(fieldErr);
-            else setToast({ type: "error", msg: assignErr instanceof Error ? assignErr.message : "Team created, but couldn't assign the truck/trailer." });
-            setFetchKey((k) => k + 1);
-            return;
-          }
-        }
+        await api.post<any>("/drivers", fromTeam(d));
         setToast({ type: "success", msg: `${d.name1} & ${d.name2} added successfully` });
       } else {
         await api.put<any>(`/drivers/${d.id}`, fromTeam(d));
