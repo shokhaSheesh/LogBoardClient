@@ -8,6 +8,8 @@ import {
 } from "lucide-react";
 import { Status, STATUS_CONFIG as SHARED_STATUS_CONFIG, ALL_STATUSES as SHARED_ALL_STATUSES } from "../lib/statuses";
 import { api, ApiError, getCompanyId } from "../lib/api";
+import { useAuth } from "../lib/auth";
+import { hasPerm } from "../lib/permissions";
 import { menuPosition } from "../lib/menuPosition";
 import { driverDisplayName } from "../lib/driverName";
 import { geocodeCity, routeMiles } from "../lib/geo";
@@ -310,7 +312,7 @@ function StatusBadge({ status }: { status: Status }) {
   );
 }
 
-function StatusDropdown({ value, onChange }: { value: Status; onChange: (s: Status) => void | Promise<void> }) {
+function StatusDropdown({ value, onChange, readOnly = false }: { value: Status; onChange: (s: Status) => void | Promise<void>; readOnly?: boolean }) {
   const [open, setOpen] = useState(false);
   const [rect, setRect] = useState<DOMRect | null>(null);
   const [busy, setBusy] = useState(false);
@@ -339,10 +341,11 @@ function StatusDropdown({ value, onChange }: { value: Status; onChange: (s: Stat
   }, [open]);
 
   const cfg = SHARED_STATUS_CONFIG[value];
+  const interactive = cfg && !busy && !readOnly;
 
   return (
     <>
-      <div ref={anchorRef} onClick={cfg && !busy ? toggle : undefined} style={{ cursor: cfg && !busy ? "pointer" : "default", display: "inline-flex" }}>
+      <div ref={anchorRef} onClick={interactive ? toggle : undefined} style={{ cursor: interactive ? "pointer" : "default", display: "inline-flex" }}>
         {cfg ? (
           <span style={{
             display: "inline-flex", alignItems: "center", gap: 5,
@@ -353,7 +356,7 @@ function StatusDropdown({ value, onChange }: { value: Status; onChange: (s: Stat
             {cfg.label}
             {busy
               ? <span style={{ width: 9, height: 9, borderRadius: "50%", border: `1.5px solid ${cfg.color}55`, borderTopColor: cfg.color, animation: "spin 0.7s linear infinite", display: "inline-block", marginLeft: 1 }} />
-              : <ChevronDown size={10} style={{ opacity: 0.7, marginLeft: 1 }} />}
+              : !readOnly && <ChevronDown size={10} style={{ opacity: 0.7, marginLeft: 1 }} />}
           </span>
         ) : (
           <span style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)", userSelect: "none" }}>—</span>
@@ -1732,6 +1735,10 @@ function LoadDetail({ load, onBack }: { load: Load; onBack: () => void }) {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export function LoadsPage() {
+  const { user } = useAuth();
+  const canCreate = hasPerm(user, "loads", "create");
+  const canUpdate = hasPerm(user, "loads", "update");
+  const canDelete = hasPerm(user, "loads", "delete");
   const [loads, setLoads]           = useState<Load[]>([]);
   const [total, setTotal]           = useState(0);
   const [loading, setLoading]       = useState(true);
@@ -1910,7 +1917,7 @@ export function LoadsPage() {
 
             <div style={{ flex: 1 }} />
 
-            <AddLoadMenu onManual={openCreate} onExtract={() => setExtracting(true)} />
+            {canCreate && <AddLoadMenu onManual={openCreate} onExtract={() => setExtracting(true)} />}
           </div>
 
           {/* Table — dim existing rows while a page-change refetch is in flight */}
@@ -1961,7 +1968,7 @@ export function LoadsPage() {
                       </span>
                     </td>
                     <td style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", verticalAlign: "middle" }}>
-                      <StatusDropdown value={l.status} onChange={(s) => patchLoad(l.id, { status: s })} />
+                      <StatusDropdown value={l.status} onChange={(s) => patchLoad(l.id, { status: s })} readOnly={!canUpdate} />
                     </td>
                     {/* Route — origin + stops */}
                     <td style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", verticalAlign: "top", paddingTop: 12, paddingBottom: 12 }}>
@@ -2039,8 +2046,9 @@ export function LoadsPage() {
                     </td>
                     <td style={{ padding: "8px 10px", borderBottom: "1px solid var(--border)", verticalAlign: "middle", textAlign: "center" }}>
                       <div style={{ display: "inline-flex", gap: 5 }}>
-                        <ActionBtn icon={<Pencil size={13} />} color="#1D4ED8" bg="#DBEAFE" onClick={() => openEdit(l)} />
-                        <ActionBtn icon={<Trash2 size={13} />} color="#DC2626" bg="#FEE2E2" onClick={() => setDeleting(l)} />
+                        {canUpdate && <ActionBtn icon={<Pencil size={13} />} color="#1D4ED8" bg="#DBEAFE" onClick={() => openEdit(l)} />}
+                        {canDelete && <ActionBtn icon={<Trash2 size={13} />} color="#DC2626" bg="#FEE2E2" onClick={() => setDeleting(l)} />}
+                        {!canUpdate && !canDelete && <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)" }}>—</span>}
                       </div>
                     </td>
                   </tr>

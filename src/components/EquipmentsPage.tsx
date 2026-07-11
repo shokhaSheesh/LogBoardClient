@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect } from "react";
 import { Truck, Container, Plus, Pencil, Trash2, X, Check, Search, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, FileSpreadsheet, Upload, FileText, AlertCircle, User } from "lucide-react";
 import { api } from "../lib/api";
+import { useAuth } from "../lib/auth";
+import { hasPerm } from "../lib/permissions";
 import { driverDisplayName } from "../lib/driverName";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -843,6 +845,10 @@ function AddMenu({ entityLabel, onManual, onImport }: {
 // ─── Trucks tab ───────────────────────────────────────────────────────────────
 
 function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
+  const { user } = useAuth();
+  const canCreate = hasPerm(user, "equipments", "create");
+  const canUpdate = hasPerm(user, "equipments", "update");
+  const canDelete = hasPerm(user, "equipments", "delete");
   const [rows, setRows]           = useState<TruckRow[]>([]);
   const [total, setTotal]         = useState(0);
   const [loading, setLoading]     = useState(true);
@@ -949,7 +955,7 @@ function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
             />
           </div>
         </div>
-        <AddMenu entityLabel="Truck" onManual={openCreate} onImport={() => setImporting(true)} />
+        {canCreate && <AddMenu entityLabel="Truck" onManual={openCreate} onImport={() => setImporting(true)} />}
       </div>
 
       {/* Table — dim existing rows while a page-change refetch is in flight */}
@@ -990,8 +996,9 @@ function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
                 <TD mono>{r.vin || "—"}</TD>
                 <td style={{ padding: "8px 10px", borderBottom: "1px solid var(--border)", verticalAlign: "middle", textAlign: "center" }}>
                   <div style={{ display: "inline-flex", gap: 5 }}>
-                    <ActionBtn icon={<Pencil size={13} />} color="#1D4ED8" bg="#DBEAFE" onClick={() => openEdit(r)} />
-                    <ActionBtn icon={<Trash2 size={13} />} color="#DC2626" bg="#FEE2E2" onClick={() => setDeleting(r)} />
+                    {canUpdate && <ActionBtn icon={<Pencil size={13} />} color="#1D4ED8" bg="#DBEAFE" onClick={() => openEdit(r)} />}
+                    {canDelete && <ActionBtn icon={<Trash2 size={13} />} color="#DC2626" bg="#FEE2E2" onClick={() => setDeleting(r)} />}
+                    {!canUpdate && !canDelete && <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)" }}>—</span>}
                   </div>
                 </td>
               </tr>
@@ -1023,6 +1030,10 @@ function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
 // ─── Trailers tab ─────────────────────────────────────────────────────────────
 
 function TrailersTab({ onCountChange }: { onCountChange: (n: number) => void }) {
+  const { user } = useAuth();
+  const canCreate = hasPerm(user, "equipments", "create");
+  const canUpdate = hasPerm(user, "equipments", "update");
+  const canDelete = hasPerm(user, "equipments", "delete");
   const [rows, setRows]           = useState<TrailerRow[]>([]);
   const [total, setTotal]         = useState(0);
   const [loading, setLoading]     = useState(true);
@@ -1129,7 +1140,7 @@ function TrailersTab({ onCountChange }: { onCountChange: (n: number) => void }) 
             />
           </div>
         </div>
-        <AddMenu entityLabel="Trailer" onManual={openCreate} onImport={() => setImporting(true)} />
+        {canCreate && <AddMenu entityLabel="Trailer" onManual={openCreate} onImport={() => setImporting(true)} />}
       </div>
 
       {/* Table */}
@@ -1170,8 +1181,9 @@ function TrailersTab({ onCountChange }: { onCountChange: (n: number) => void }) 
                 <TD mono>{r.vin || "—"}</TD>
                 <td style={{ padding: "8px 10px", borderBottom: "1px solid var(--border)", verticalAlign: "middle", textAlign: "center" }}>
                   <div style={{ display: "inline-flex", gap: 5 }}>
-                    <ActionBtn icon={<Pencil size={13} />} color="#1D4ED8" bg="#DBEAFE" onClick={() => openEdit(r)} />
-                    <ActionBtn icon={<Trash2 size={13} />} color="#DC2626" bg="#FEE2E2" onClick={() => setDeleting(r)} />
+                    {canUpdate && <ActionBtn icon={<Pencil size={13} />} color="#1D4ED8" bg="#DBEAFE" onClick={() => openEdit(r)} />}
+                    {canDelete && <ActionBtn icon={<Trash2 size={13} />} color="#DC2626" bg="#FEE2E2" onClick={() => setDeleting(r)} />}
+                    {!canUpdate && !canDelete && <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)" }}>—</span>}
                   </div>
                 </td>
               </tr>

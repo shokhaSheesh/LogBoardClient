@@ -6,6 +6,8 @@ import {
   CalendarDays, FileText, AlertCircle,
 } from "lucide-react";
 import { api, getCompanyId } from "../lib/api";
+import { useAuth } from "../lib/auth";
+import { hasPerm } from "../lib/permissions";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -327,6 +329,8 @@ const PAGE_SIZES = [20, 40, 60, 100] as const;
 type PageSize = (typeof PAGE_SIZES)[number];
 
 export function PayoutsPage() {
+  const { user } = useAuth();
+  const canAdjust = hasPerm(user, "payouts", "update");
   const today = new Date(); today.setHours(0, 0, 0, 0);
 
   const [payouts, setPayouts]           = useState<Payout[]>([]);
@@ -625,12 +629,16 @@ export function PayoutsPage() {
                     </span>
                   </TD>
                   <TD align="center" noOverflow>
-                    <button onClick={() => setEditing(p)}
-                      style={{ width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "transparent", cursor: "pointer", color: "var(--muted-foreground)", outline: "none" }}
-                      onMouseEnter={(e) => { const b = e.currentTarget as HTMLButtonElement; b.style.backgroundColor = "var(--muted)"; b.style.color = "var(--foreground)"; }}
-                      onMouseLeave={(e) => { const b = e.currentTarget as HTMLButtonElement; b.style.backgroundColor = "transparent"; b.style.color = "var(--muted-foreground)"; }}>
-                      <Pencil size={12} />
-                    </button>
+                    {canAdjust ? (
+                      <button onClick={() => setEditing(p)}
+                        style={{ width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "transparent", cursor: "pointer", color: "var(--muted-foreground)", outline: "none" }}
+                        onMouseEnter={(e) => { const b = e.currentTarget as HTMLButtonElement; b.style.backgroundColor = "var(--muted)"; b.style.color = "var(--foreground)"; }}
+                        onMouseLeave={(e) => { const b = e.currentTarget as HTMLButtonElement; b.style.backgroundColor = "transparent"; b.style.color = "var(--muted-foreground)"; }}>
+                        <Pencil size={12} />
+                      </button>
+                    ) : (
+                      <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)" }}>—</span>
+                    )}
                   </TD>
                 </tr>
               );
