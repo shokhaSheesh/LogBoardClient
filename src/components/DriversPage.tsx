@@ -36,7 +36,7 @@ interface SoloDriver {
 
 interface TeamDriver {
   id: string; name1: string; name2: string; phone1: string; phone2: string;
-  type: DriverType; status: DriverStatus; truck: string; trailer: string; comment: string;
+  type: DriverType; status: DriverStatus; truck: string; trailer: string; location: string; comment: string;
   truckId?: string;
   trailerId?: string;
   weeklyGrossTarget?: number;
@@ -86,6 +86,7 @@ function toTeam(d: any): TeamDriver {
     trailer: d.trailer ?? "",
     truckId: d.truck_id ?? "",
     trailerId: d.trailer_id ?? "",
+    location: d.location ?? "",
     comment: d.comment ?? "",
     weeklyGrossTarget: d.weekly_gross_target || undefined,
     currentLoad:   d.current_load    || undefined,
@@ -127,6 +128,7 @@ function fromTeam(d: Partial<TeamDriver>) {
     status: d.status ?? "ready",
     truck_id: d.truckId ?? "",
     trailer_id: d.trailerId ?? "",
+    location: d.location ?? "",
     comment: d.comment ?? "",
     weekly_gross_target: d.weeklyGrossTarget ?? 0,
     next_load_id: d.nextLoadId || null,
@@ -1949,6 +1951,7 @@ function TeamDetail({ team, onBack }: { team: TeamDriver; onBack: () => void }) 
               { icon: <Package       size={13} />, label: "Next Load",    value: team.nextLoad    ?? "", mono: true },
               { icon: <Truck         size={13} />, label: "Truck",        value: team.truck,            mono: true  },
               { icon: <Truck         size={13} />, label: "Trailer",      value: team.trailer,          mono: true  },
+              { icon: <MapPin        size={13} />, label: "Location",     value: team.location                     },
               { icon: <MessageSquare size={13} />, label: "Note",         value: team.comment                       },
             ].map((row, i, arr) => (
               <div key={row.label} style={{
@@ -2602,6 +2605,7 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
               <TH width={120}>Next Load</TH>
               <TH width={110}>Truck</TH>
               <TH width={110}>Trailer</TH>
+              <TH width={160}>Location</TH>
               <TH width={240}>Comment</TH>
               <TH width={90} align="center">Actions</TH>
             </tr>
@@ -2664,6 +2668,12 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
                 <TD mono>{d.trailer || "—"}</TD>
                 <TD>
                   <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+                    <MapPin size={11} style={{ color: "var(--muted-foreground)", flexShrink: 0 }} />
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 130, display: "inline-block" }}>{d.location || "—"}</span>
+                  </span>
+                </TD>
+                <TD>
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
                     <MessageSquare size={11} style={{ color: "var(--muted-foreground)", flexShrink: 0 }} />
                     <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 200, display: "inline-block" }}>{d.comment || "—"}</span>
                   </span>
@@ -2679,7 +2689,7 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
             ))}
             {!loading && rows.length === 0 && (
               <tr>
-                <td colSpan={13} style={{ padding: "40px 20px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
+                <td colSpan={14} style={{ padding: "40px 20px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
                   No teams match your filters.
                 </td>
               </tr>
