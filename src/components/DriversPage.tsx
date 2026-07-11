@@ -2,6 +2,8 @@ import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { Status, STATUS_CONFIG, ALL_STATUSES } from "../lib/statuses";
 import { api, ApiError } from "../lib/api";
+import { useAuth } from "../lib/auth";
+import { hasPerm } from "../lib/permissions";
 import { menuPosition } from "../lib/menuPosition";
 import {
   User, Users, Plus, Pencil, Trash2, MapPin, MessageSquare,
@@ -426,6 +428,35 @@ function UnitSelect({ value, label, endpoint, onChange, error = false, disabled 
         </div>
       )}
     </div>
+  );
+}
+
+// Truck/Trailer picker that respects fleet access. Listing /trucks and /trailers
+// needs equipments.read; a role without it (e.g. Updater) would otherwise get a
+// silently-empty dropdown. When the user can't read the fleet, show the driver's
+// current assignment read-only instead of an empty, broken select.
+function EquipmentField({ canRead, value, label, endpoint, onChange, error }: {
+  canRead: boolean;
+  value: string; label: string;
+  endpoint: "/trucks" | "/trailers";
+  onChange: (id: string, label: string) => void;
+  error?: boolean;
+}) {
+  if (canRead) return <UnitSelect value={value} label={label} endpoint={endpoint} onChange={onChange} error={error} />;
+  return (
+    <>
+      <div style={{
+        height: 34, display: "flex", alignItems: "center", padding: "0 10px",
+        borderRadius: 7, border: "1px solid var(--border)", backgroundColor: "var(--muted)",
+        fontFamily: "var(--font-sans)", fontSize: 13,
+        color: label ? "var(--foreground)" : "var(--muted-foreground)",
+      }}>
+        {label || "—"}
+      </div>
+      <span style={{ fontFamily: "var(--font-sans)", fontSize: 10, color: "var(--muted-foreground)" }}>
+        Requires fleet access to change
+      </span>
+    </>
   );
 }
 
@@ -872,10 +903,11 @@ function QueueReorder({ driverId, queue, onReorder }: {
 
 // ─── Modals ───────────────────────────────────────────────────────────────────
 
-function SoloModal({ driver, onClose, onSave, saving, fieldErrors }: {
+function SoloModal({ driver, onClose, onSave, saving, fieldErrors, canEditEquipment }: {
   driver: Partial<SoloDriver>; onClose: () => void; onSave: (d: SoloDriver) => void;
   saving?: boolean;
   fieldErrors?: { truck?: string; trailer?: string };
+  canEditEquipment: boolean;
 }) {
   const [form, setForm] = useState<Partial<SoloDriver>>(driver);
   const [touched, setTouched] = useState<Partial<Record<keyof SoloDriver, boolean>>>({});
@@ -920,13 +952,13 @@ function SoloModal({ driver, onClose, onSave, saving, fieldErrors }: {
 
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
             <FieldLabel error={!!fieldErrors?.truck}>Truck Unit</FieldLabel>
-            <UnitSelect value={form.truckId ?? ""} label={form.truck ?? ""} endpoint="/trucks" onChange={(id, lbl) => setForm((f) => ({ ...f, truckId: id, truck: lbl }))} error={!!fieldErrors?.truck} />
+            <EquipmentField canRead={canEditEquipment} value={form.truckId ?? ""} label={form.truck ?? ""} endpoint="/trucks" onChange={(id, lbl) => setForm((f) => ({ ...f, truckId: id, truck: lbl }))} error={!!fieldErrors?.truck} />
             {fieldErrors?.truck && <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "#EF4444" }}>{fieldErrors.truck}</span>}
           </label>
 
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
             <FieldLabel error={!!fieldErrors?.trailer}>Trailer Unit</FieldLabel>
-            <UnitSelect value={form.trailerId ?? ""} label={form.trailer ?? ""} endpoint="/trailers" onChange={(id, lbl) => setForm((f) => ({ ...f, trailerId: id, trailer: lbl }))} error={!!fieldErrors?.trailer} />
+            <EquipmentField canRead={canEditEquipment} value={form.trailerId ?? ""} label={form.trailer ?? ""} endpoint="/trailers" onChange={(id, lbl) => setForm((f) => ({ ...f, trailerId: id, trailer: lbl }))} error={!!fieldErrors?.trailer} />
             {fieldErrors?.trailer && <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "#EF4444" }}>{fieldErrors.trailer}</span>}
           </label>
 
@@ -995,10 +1027,11 @@ function SoloModal({ driver, onClose, onSave, saving, fieldErrors }: {
   );
 }
 
-function TeamModal({ driver, onClose, onSave, saving, fieldErrors }: {
+function TeamModal({ driver, onClose, onSave, saving, fieldErrors, canEditEquipment }: {
   driver: Partial<TeamDriver>; onClose: () => void; onSave: (d: TeamDriver) => void;
   saving?: boolean;
   fieldErrors?: { truck?: string; trailer?: string };
+  canEditEquipment: boolean;
 }) {
   const [form, setForm] = useState<Partial<TeamDriver>>(driver);
   const [touched, setTouched] = useState<Partial<Record<keyof TeamDriver, boolean>>>({});
@@ -1053,13 +1086,13 @@ function TeamModal({ driver, onClose, onSave, saving, fieldErrors }: {
 
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
             <FieldLabel error={!!fieldErrors?.truck}>Truck Unit</FieldLabel>
-            <UnitSelect value={form.truckId ?? ""} label={form.truck ?? ""} endpoint="/trucks" onChange={(id, lbl) => setForm((f) => ({ ...f, truckId: id, truck: lbl }))} error={!!fieldErrors?.truck} />
+            <EquipmentField canRead={canEditEquipment} value={form.truckId ?? ""} label={form.truck ?? ""} endpoint="/trucks" onChange={(id, lbl) => setForm((f) => ({ ...f, truckId: id, truck: lbl }))} error={!!fieldErrors?.truck} />
             {fieldErrors?.truck && <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "#EF4444" }}>{fieldErrors.truck}</span>}
           </label>
 
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
             <FieldLabel error={!!fieldErrors?.trailer}>Trailer Unit</FieldLabel>
-            <UnitSelect value={form.trailerId ?? ""} label={form.trailer ?? ""} endpoint="/trailers" onChange={(id, lbl) => setForm((f) => ({ ...f, trailerId: id, trailer: lbl }))} error={!!fieldErrors?.trailer} />
+            <EquipmentField canRead={canEditEquipment} value={form.trailerId ?? ""} label={form.trailer ?? ""} endpoint="/trailers" onChange={(id, lbl) => setForm((f) => ({ ...f, trailerId: id, trailer: lbl }))} error={!!fieldErrors?.trailer} />
             {fieldErrors?.trailer && <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "#EF4444" }}>{fieldErrors.trailer}</span>}
           </label>
 
@@ -2062,12 +2095,12 @@ function TeamDetail({ team, onBack }: { team: TeamDriver; onBack: () => void }) 
 
 function Toolbar({
   search, onSearch, statusFilter, onStatus,
-  entityLabel, onManual, onImport, onEld, placeholder,
+  entityLabel, onManual, onImport, onEld, placeholder, canCreate = true,
 }: {
   search: string; onSearch: (v: string) => void;
   statusFilter: string; onStatus: (v: string) => void;
   entityLabel: string; onManual: () => void; onImport: () => void; onEld: () => void;
-  placeholder: string;
+  placeholder: string; canCreate?: boolean;
 }) {
   return (
     <div style={{
@@ -2108,7 +2141,7 @@ function Toolbar({
 
       <div style={{ flex: 1 }} />
 
-      <AddMenu entityLabel={entityLabel} onManual={onManual} onImport={onImport} onEld={onEld} />
+      {canCreate && <AddMenu entityLabel={entityLabel} onManual={onManual} onImport={onImport} onEld={onEld} />}
     </div>
   );
 }
@@ -2116,6 +2149,11 @@ function Toolbar({
 // ─── Solo Tab ─────────────────────────────────────────────────────────────────
 
 function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDriver) => void; onCountChange: (n: number) => void }) {
+  const { user } = useAuth();
+  const canCreate    = hasPerm(user, "drivers", "create");
+  const canUpdate    = hasPerm(user, "drivers", "update");
+  const canDelete    = hasPerm(user, "drivers", "delete");
+  const canReadFleet = hasPerm(user, "equipments", "read");
   const [rows, setRows]               = useState<SoloDriver[]>([]);
   const [total, setTotal]             = useState(0);
   const [loading, setLoading]         = useState(true);
@@ -2257,7 +2295,7 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
         search={search} onSearch={handleSearch}
         statusFilter={statusFilter} onStatus={handleStatus}
         entityLabel="Driver" onManual={openCreate} onImport={() => setImporting(true)} onEld={() => {}}
-        placeholder="Search drivers, trucks…"
+        placeholder="Search drivers, trucks…" canCreate={canCreate}
       />
 
       <div style={{ flex: 1, overflow: "auto", scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent" }}>
@@ -2345,8 +2383,9 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
                 </TD>
                 <td style={{ padding: "8px 10px", borderBottom: "1px solid var(--border)", verticalAlign: "middle", textAlign: "center" }}>
                   <div style={{ display: "inline-flex", gap: 5 }}>
-                    <ActionBtn icon={<Pencil size={13} />} color="#1D4ED8" bg="#DBEAFE" onClick={() => openEdit(d)} />
-                    <ActionBtn icon={<Trash2 size={13} />} color="#DC2626" bg="#FEE2E2" onClick={() => setDeleting(d)} />
+                    {canUpdate && <ActionBtn icon={<Pencil size={13} />} color="#1D4ED8" bg="#DBEAFE" onClick={() => openEdit(d)} />}
+                    {canDelete && <ActionBtn icon={<Trash2 size={13} />} color="#DC2626" bg="#FEE2E2" onClick={() => setDeleting(d)} />}
+                    {!canUpdate && !canDelete && <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)" }}>—</span>}
                   </div>
                 </td>
               </tr>
@@ -2368,7 +2407,7 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
       />
 
       {(modal === "create" || modal === "edit") && (
-        <SoloModal driver={editing} onClose={() => setModal(null)} onSave={save} saving={saving} fieldErrors={fieldErrors} />
+        <SoloModal driver={editing} onClose={() => setModal(null)} onSave={save} saving={saving} fieldErrors={fieldErrors} canEditEquipment={canReadFleet} />
       )}
       {deleting && (
         <DeleteConfirm label={deleting.name} busy={delBusy} error={delErr} onClose={() => { setDeleting(null); setDelErr(null); }} onConfirm={del} />
@@ -2384,6 +2423,11 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
 // ─── Team Tab ─────────────────────────────────────────────────────────────────
 
 function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver) => void; onCountChange: (n: number) => void }) {
+  const { user } = useAuth();
+  const canCreate    = hasPerm(user, "drivers", "create");
+  const canUpdate    = hasPerm(user, "drivers", "update");
+  const canDelete    = hasPerm(user, "drivers", "delete");
+  const canReadFleet = hasPerm(user, "equipments", "read");
   const [rows, setRows]               = useState<TeamDriver[]>([]);
   const [total, setTotal]             = useState(0);
   const [loading, setLoading]         = useState(true);
@@ -2522,7 +2566,7 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
         search={search} onSearch={handleSearch}
         statusFilter={statusFilter} onStatus={handleStatus}
         entityLabel="Team" onManual={openCreate} onImport={() => setImporting(true)} onEld={() => {}}
-        placeholder="Search teams, trucks…"
+        placeholder="Search teams, trucks…" canCreate={canCreate}
       />
 
       <div style={{ flex: 1, overflow: "auto", scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent" }}>
@@ -2608,8 +2652,9 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
                 </TD>
                 <td style={{ padding: "8px 10px", borderBottom: "1px solid var(--border)", verticalAlign: "middle", textAlign: "center" }}>
                   <div style={{ display: "inline-flex", gap: 5 }}>
-                    <ActionBtn icon={<Pencil size={13} />} color="#1D4ED8" bg="#DBEAFE" onClick={() => openEdit(d)} />
-                    <ActionBtn icon={<Trash2 size={13} />} color="#DC2626" bg="#FEE2E2" onClick={() => setDeleting(d)} />
+                    {canUpdate && <ActionBtn icon={<Pencil size={13} />} color="#1D4ED8" bg="#DBEAFE" onClick={() => openEdit(d)} />}
+                    {canDelete && <ActionBtn icon={<Trash2 size={13} />} color="#DC2626" bg="#FEE2E2" onClick={() => setDeleting(d)} />}
+                    {!canUpdate && !canDelete && <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)" }}>—</span>}
                   </div>
                 </td>
               </tr>
@@ -2631,7 +2676,7 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
       />
 
       {(modal === "create" || modal === "edit") && (
-        <TeamModal driver={editing} onClose={() => setModal(null)} onSave={save} saving={saving} fieldErrors={fieldErrors} />
+        <TeamModal driver={editing} onClose={() => setModal(null)} onSave={save} saving={saving} fieldErrors={fieldErrors} canEditEquipment={canReadFleet} />
       )}
       {deleting && (
         <DeleteConfirm label={`${deleting.name1} & ${deleting.name2}`} busy={delBusy} error={delErr} onClose={() => { setDeleting(null); setDelErr(null); }} onConfirm={del} />
