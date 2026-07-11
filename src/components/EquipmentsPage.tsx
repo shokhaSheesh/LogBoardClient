@@ -281,7 +281,10 @@ function AsyncSearchableSelect({ value, valueLabel, fetchPage, onChange, placeho
 
       {open && (
         <div style={{
-          position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, zIndex: 600,
+          // Grow to fit the option + "taken" tag instead of clipping to the trigger
+          // width; anchor the right edge so it expands leftward and stays on-screen.
+          position: "absolute", top: "calc(100% + 4px)", right: 0, left: "auto", zIndex: 600,
+          minWidth: "100%", width: "max-content", maxWidth: 340,
           backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 8,
           boxShadow: "0 8px 24px rgba(0,0,0,0.12)", overflow: "hidden",
         }}>
