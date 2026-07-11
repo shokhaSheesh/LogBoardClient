@@ -4,6 +4,7 @@ import { Status, STATUS_CONFIG, ALL_STATUSES } from "../lib/statuses";
 import { api, ApiError, isForbidden } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { hasPerm } from "../lib/permissions";
+import { driverDisplayName } from "../lib/driverName";
 import { menuPosition } from "../lib/menuPosition";
 import {
   User, Users, Plus, Pencil, Trash2, MapPin, MessageSquare,
@@ -146,7 +147,7 @@ function equipmentFieldError(e: unknown): { truck?: string; trailer?: string } |
 
 // ─── Custom Select ────────────────────────────────────────────────────────────
 
-interface SelectOpt { value: string; label: string; dot?: string }
+interface SelectOpt { value: string; label: string; dot?: string; takenBy?: string }
 
 function CustomSelect({
   value, options, onChange, width, compact = false, dropUp = false, searchable = false, disabled = false, error = false,
@@ -330,9 +331,15 @@ function UnitSelect({ value, label, endpoint, onChange, error = false, disabled 
     const id = ++reqId.current; // guards against a slower stale request clobbering a newer one
     setLoading(true);
     try {
-      const { items: rows, total: t } = await api.getList<{ id: string; unit?: string }>(endpoint, { q: q || undefined, page: pageNum, page_size: 20 });
+      const { items: rows, total: t } = await api.getList<{ id: string; unit?: string; driver?: string; driver_name2?: string; driver_team?: boolean }>(endpoint, { q: q || undefined, page: pageNum, page_size: 20 });
       if (id !== reqId.current) return;
-      const opts = (rows ?? []).map((u) => ({ value: u.id, label: u.unit ?? u.id }));
+      // The /trucks & /trailers rows already carry their assigned driver (LEFT JOIN),
+      // so we can flag "taken" units for free — no extra request.
+      const opts = (rows ?? []).map((u) => ({
+        value: u.id,
+        label: u.unit ?? u.id,
+        takenBy: u.driver ? driverDisplayName({ name: u.driver, name2: u.driver_name2, team: u.driver_team }) : undefined,
+      }));
       setItems((prev) => (replace ? opts : [...prev, ...opts]));
       setTotal(t);
       setPage(pageNum);
@@ -431,7 +438,15 @@ function UnitSelect({ value, label, endpoint, onChange, error = false, disabled 
                   onMouseEnter={(e) => { if (!isActive) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--muted)"; }}
                   onMouseLeave={(e) => { if (!isActive) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "transparent"; }}
                 >
-                  <span style={{ flex: 1 }}>{opt.label}</span>
+                  <span style={{ flexShrink: 0 }}>{opt.label}</span>
+                  {/* Taken by another driver — informational; still selectable (mark + allow).
+                      Skip it on the active option, which is this driver's own unit. */}
+                  {opt.takenBy && !isActive && (
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontFamily: "var(--font-sans)", fontSize: 10, fontWeight: 500, color: "#B45309", backgroundColor: "#FEF3C7", borderRadius: 4, padding: "1px 6px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 150 }}>
+                      <User size={9} style={{ flexShrink: 0 }} /> {opt.takenBy}
+                    </span>
+                  )}
+                  <span style={{ flex: 1 }} />
                   {isActive && <Check size={13} style={{ color: "var(--primary)", flexShrink: 0 }} />}
                 </button>
               );
