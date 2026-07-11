@@ -59,7 +59,7 @@ function Toast({ msg, type, onClose }: { msg: string; type: "success" | "error";
 
 // ─── CustomSelect ─────────────────────────────────────────────────────────────
 
-interface SelectOpt { value: string; label: string }
+interface SelectOpt { value: string; label: string; takenBy?: string }
 
 function CustomSelect({
   value, options, onChange, width, compact = false, dropUp = false, searchable = false,
@@ -310,8 +310,16 @@ function AsyncSearchableSelect({ value, valueLabel, fetchPage, onChange, placeho
                   onMouseEnter={e => { if (!active) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--muted)"; }}
                   onMouseLeave={e => { if (!active) (e.currentTarget as HTMLButtonElement).style.backgroundColor = active ? "var(--accent)" : "transparent"; }}
                 >
-                  <span style={{ flex: 1 }}>{opt.label}</span>
-                  {active && <Check size={13} style={{ color: "var(--primary)" }} />}
+                  <span style={{ flexShrink: 0 }}>{opt.label}</span>
+                  {/* This driver already holds a unit of this kind — informational; still
+                      selectable (mark + allow). Hidden on the active option (the unit's own driver). */}
+                  {opt.takenBy && !active && (
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontFamily: "var(--font-sans)", fontSize: 10, fontWeight: 500, color: "#B45309", backgroundColor: "#FEF3C7", borderRadius: 4, padding: "1px 6px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 130 }}>
+                      {opt.takenBy}
+                    </span>
+                  )}
+                  <span style={{ flex: 1 }} />
+                  {active && <Check size={13} style={{ color: "var(--primary)", flexShrink: 0 }} />}
                 </button>
               );
             })}
@@ -469,12 +477,13 @@ function ActionBtn({ icon, color, bg, onClick }: { icon: React.ReactNode; color:
 
 type EquipRow = TruckRow | TrailerRow;
 
-function EquipModal({ title, row, onClose, onSave, saving = false }: {
+function EquipModal({ title, row, onClose, onSave, saving = false, equipKind }: {
   title: string;
   row: Partial<EquipRow>;
   onClose: () => void;
   onSave: (r: EquipRow) => void;
   saving?: boolean;
+  equipKind: "truck" | "trailer"; // which unit a driver already holding one gets flagged for
 }) {
   const [form, setForm] = useState<Partial<EquipRow>>(row);
   const [touched, setTouched] = useState<Partial<Record<keyof EquipRow, boolean>>>({});
@@ -529,7 +538,12 @@ function EquipModal({ title, row, onClose, onSave, saving = false }: {
                     valueLabel={form.driver ?? ""}
                     fetchPage={async (q, p) => {
                       const { items, total } = await api.getList<any>("/drivers", { q: q || undefined, page: p, page_size: 20 });
-                      return { items: (items ?? []).map((d: any) => ({ value: d.id, label: driverDisplayName(d) })), total };
+                      // The /drivers rows already carry each driver's truck/trailer, so flag
+                      // drivers who already hold a unit of THIS kind — for free, no extra call.
+                      return { items: (items ?? []).map((d: any) => {
+                        const held = equipKind === "truck" ? d.truck : d.trailer;
+                        return { value: d.id, label: driverDisplayName(d), takenBy: held || undefined };
+                      }), total };
                     }}
                     onChange={(id, label) => setForm((f) => ({ ...f, driver_id: id, driver: label }))}
                     placeholder="Select driver…"
@@ -1037,7 +1051,7 @@ function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
       <Pagination total={total} page={page} pageSize={pageSize} loading={loading} onPage={setPage} onPageSize={(s) => { setPageSize(s); setPage(1); }} />
 
       {(modal === "create" || modal === "edit") && (
-        <EquipModal title={modal === "create" ? "Add Truck" : "Edit Truck"} row={editing} onClose={() => setModal(null)} onSave={save} saving={saving} />
+        <EquipModal title={modal === "create" ? "Add Truck" : "Edit Truck"} row={editing} onClose={() => setModal(null)} onSave={save} saving={saving} equipKind="truck" />
       )}
       {deleting && <DeleteConfirm label={deleting.unit} busy={delBusy} error={delErr} onClose={() => { setDeleting(null); setDelErr(null); }} onConfirm={del} />}
       {importing && <ImportModal entityLabel="Truck" endpoint="/trucks/import" onClose={() => setImporting(false)} onImported={() => setFetchKey((k) => k + 1)} />}
@@ -1222,7 +1236,7 @@ function TrailersTab({ onCountChange }: { onCountChange: (n: number) => void }) 
       <Pagination total={total} page={page} pageSize={pageSize} loading={loading} onPage={setPage} onPageSize={(s) => { setPageSize(s); setPage(1); }} />
 
       {(modal === "create" || modal === "edit") && (
-        <EquipModal title={modal === "create" ? "Add Trailer" : "Edit Trailer"} row={editing} onClose={() => setModal(null)} onSave={save} saving={saving} />
+        <EquipModal title={modal === "create" ? "Add Trailer" : "Edit Trailer"} row={editing} onClose={() => setModal(null)} onSave={save} saving={saving} equipKind="trailer" />
       )}
       {deleting && <DeleteConfirm label={deleting.unit} busy={delBusy} error={delErr} onClose={() => { setDeleting(null); setDelErr(null); }} onConfirm={del} />}
       {importing && <ImportModal entityLabel="Trailer" endpoint="/trailers/import" onClose={() => setImporting(false)} onImported={() => setFetchKey((k) => k + 1)} />}
