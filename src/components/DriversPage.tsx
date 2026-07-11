@@ -383,6 +383,18 @@ function UnitSelect({ value, label, endpoint, onChange, error = false, disabled 
         <span style={{ flex: 1, textAlign: "left", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: value ? "var(--foreground)" : "var(--muted-foreground)" }}>
           {value ? (label || value) : "Select…"}
         </span>
+        {value && !disabled && (
+          <span
+            role="button"
+            title="Clear"
+            onClick={(e) => { e.stopPropagation(); onChange("", ""); setOpen(false); }}
+            style={{ display: "flex", flexShrink: 0, color: "var(--muted-foreground)", cursor: "pointer", borderRadius: 4 }}
+            onMouseEnter={(e) => { (e.currentTarget as HTMLSpanElement).style.color = "#EF4444"; }}
+            onMouseLeave={(e) => { (e.currentTarget as HTMLSpanElement).style.color = "var(--muted-foreground)"; }}
+          >
+            <X size={13} />
+          </span>
+        )}
         <ChevronDown size={13} style={{ color: "var(--muted-foreground)", flexShrink: 0, transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s" }} />
       </button>
 

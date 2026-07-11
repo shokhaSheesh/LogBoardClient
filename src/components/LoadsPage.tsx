@@ -1016,6 +1016,18 @@ function AsyncSearchableSelect({ value, valueLabel, fetchPage, onChange, placeho
         <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {value ? (selectedLabel || value) : <span style={{ color: "var(--muted-foreground)" }}>{placeholder ?? "Select…"}</span>}
         </span>
+        {value && (
+          <span
+            role="button"
+            title="Clear"
+            onClick={(e) => { e.stopPropagation(); onChange("", ""); setSelectedLabel(""); setOpen(false); }}
+            style={{ display: "flex", flexShrink: 0, color: "var(--muted-foreground)", cursor: "pointer" }}
+            onMouseEnter={(e) => { (e.currentTarget as HTMLSpanElement).style.color = "#EF4444"; }}
+            onMouseLeave={(e) => { (e.currentTarget as HTMLSpanElement).style.color = "var(--muted-foreground)"; }}
+          >
+            <X size={13} />
+          </span>
+        )}
         <ChevronDown size={13} style={{ color: "var(--muted-foreground)", flexShrink: 0, transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s" }} />
       </button>
 
