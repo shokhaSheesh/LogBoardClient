@@ -1152,13 +1152,16 @@ export function GrossMatrix() {
                     // Target may be unset (0/undefined) — keep the same layout regardless: $0 / 0% / empty bar.
                     const targetPct = driver.weeklyTarget ? Math.min(100, Math.round((total / driver.weeklyTarget) * 100)) : 0;
                     const barColor  = targetPct >= 100 ? "#10B981" : targetPct >= 70 ? "#F59E0B" : "#3B82F6";
-                    // Blue/neutral/green/red column tints as low-alpha overlays (not flat pastel
-                    // hex) so they read correctly over either rowBg, light or dark.
-                    const totalBg   = isEven ? "rgba(59,130,246,0.07)" : "rgba(59,130,246,0.13)";
-                    const targetBg  = isEven ? "rgba(148,163,184,0.05)" : "rgba(148,163,184,0.10)";
+                    // Blue/neutral/green/red column tints, as low-alpha overlays so they read
+                    // over either rowBg, light or dark. They ride as a background *image* on an
+                    // opaque background *color*: these three columns are sticky-right, and a
+                    // translucent backgroundColor would let the scrolled day cells bleed through.
+                    const tint      = (c: string) => `linear-gradient(${c}, ${c})`;
+                    const totalBg   = isEven ? tint("rgba(59,130,246,0.07)") : tint("rgba(59,130,246,0.13)");
+                    const targetBg  = isEven ? tint("rgba(148,163,184,0.05)") : tint("rgba(148,163,184,0.10)");
                     const profitBg  = driver.companyProfit >= 0
-                      ? (isEven ? "rgba(16,185,129,0.07)" : "rgba(16,185,129,0.13)")
-                      : (isEven ? "rgba(239,68,68,0.06)"  : "rgba(239,68,68,0.11)");
+                      ? (isEven ? tint("rgba(16,185,129,0.07)") : tint("rgba(16,185,129,0.13)"))
+                      : (isEven ? tint("rgba(239,68,68,0.06)")  : tint("rgba(239,68,68,0.11)"));
 
                     return (
                       <tr key={driver.id}>
@@ -1204,7 +1207,7 @@ export function GrossMatrix() {
                         })}
 
                         {/* Total */}
-                        <td style={{ width: 110, minWidth: 110, padding: "0 12px", textAlign: "right", verticalAlign: "middle", borderLeft: "2px solid var(--border)", borderBottom: "1px solid var(--border)", backgroundColor: totalBg, position: "sticky", right: R.total, zIndex: 10 }}>
+                        <td style={{ width: 110, minWidth: 110, padding: "0 12px", textAlign: "right", verticalAlign: "middle", borderLeft: "2px solid var(--border)", borderBottom: "1px solid var(--border)", backgroundColor: rowBg, backgroundImage: totalBg, position: "sticky", right: R.total, zIndex: 10 }}>
                           <div style={{ fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 700, color: "#3B82F6", whiteSpace: "nowrap" }}>{fmt(total)}</div>
                           <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: driverRpm !== null ? "#10B981" : "var(--muted-foreground)", marginTop: 2, whiteSpace: "nowrap" }}
                             title={driverRpm !== null ? `${driver.miles.toLocaleString()} mi` : "No recorded mileage"}>
@@ -1213,7 +1216,7 @@ export function GrossMatrix() {
                         </td>
 
                         {/* Target — inline editable */}
-                        <td style={{ width: 120, minWidth: 120, padding: "6px 12px", verticalAlign: "middle", borderLeft: "1px solid var(--border)", borderBottom: "1px solid var(--border)", backgroundColor: targetBg, position: "sticky", right: R.target, zIndex: 10 }}>
+                        <td style={{ width: 120, minWidth: 120, padding: "6px 12px", verticalAlign: "middle", borderLeft: "1px solid var(--border)", borderBottom: "1px solid var(--border)", backgroundColor: rowBg, backgroundImage: targetBg, position: "sticky", right: R.target, zIndex: 10 }}>
                           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                               <InlineNumberEdit value={driver.weeklyTarget ?? 0} readOnly />
@@ -1226,7 +1229,7 @@ export function GrossMatrix() {
                         </td>
 
                         {/* Co. Profit — inline editable */}
-                        <td style={{ width: 120, minWidth: 120, padding: "0 12px", textAlign: "right", verticalAlign: "middle", borderLeft: "1px solid var(--border)", borderBottom: "1px solid var(--border)", borderRight: "none", backgroundColor: profitBg, position: "sticky", right: R.profit, zIndex: 10 }}>
+                        <td style={{ width: 120, minWidth: 120, padding: "0 12px", textAlign: "right", verticalAlign: "middle", borderLeft: "1px solid var(--border)", borderBottom: "1px solid var(--border)", borderRight: "none", backgroundColor: rowBg, backgroundImage: profitBg, position: "sticky", right: R.profit, zIndex: 10 }}>
                           <div style={{ display: "flex", justifyContent: "flex-end" }}>
                             <InlineNumberEdit value={driver.companyProfit} allowNeg readOnly />
                           </div>

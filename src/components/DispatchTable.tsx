@@ -1296,13 +1296,21 @@ export function DispatchTable() {
                 const lockColor = isLockedByOther ? "#8B5CF6" : isLockedByMe ? "#3B82F6" : undefined;
                 const isEven   = i % 2 === 0;
                 const kmColor  = etaColor(driver.etaKm);
-                const rowBg    = isLockedByOther ? "rgba(139,92,246,0.10)" : isLockedByMe ? "rgba(59,130,246,0.10)" : isEven ? "var(--card)" : "var(--background)";
+                // The lock highlight rides as a background *image* layer over an opaque
+                // background *color*. It must not be a translucent backgroundColor: td()
+                // paints the sticky Load ID / Driver Name columns too, and a see-through
+                // sticky cell lets the horizontally-scrolled cells bleed through it.
+                const rowBg    = isEven ? "var(--card)" : "var(--background)";
+                const tint     = (c: string) => `linear-gradient(${c}, ${c})`;
+                const rowTint  = isLockedByOther ? tint("rgba(139,92,246,0.14)")
+                               : isLockedByMe    ? tint("rgba(59,130,246,0.14)")
+                               : undefined;
                 const border   = "1px solid var(--border)";
                 // Claim the row lock on any edit interaction; release when it ends.
                 const lockOnOpen = (o: boolean) => (o ? claimLock(driver.driverId) : releaseLock(driver.driverId));
 
                 const td = (extra: React.CSSProperties = {}): React.CSSProperties => ({
-                  padding: "10px 14px", backgroundColor: rowBg,
+                  padding: "10px 14px", backgroundColor: rowBg, backgroundImage: rowTint,
                   borderBottom: border, verticalAlign: "middle", ...extra,
                 });
 
