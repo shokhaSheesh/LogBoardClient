@@ -705,6 +705,12 @@ export function DispatchTable() {
   const wsBackoff     = useRef(2000);
   const filterRef     = useRef<HTMLDivElement>(null);
   const teamRef       = useRef<HTMLDivElement>(null);
+  // Both filter menus render in a portal (see below), so they need their own panel
+  // refs for outside-click and an anchor rect to position against.
+  const filterPanelRef = useRef<HTMLDivElement>(null);
+  const teamPanelRef   = useRef<HTMLDivElement>(null);
+  const [filterRect, setFilterRect] = useState<DOMRect | null>(null);
+  const [teamRect,   setTeamRect]   = useState<DOMRect | null>(null);
   // Cache of full driver records (for PUT body construction)
   const driverCache   = useRef<Record<string, Record<string, unknown>>>({});
   // Heartbeat intervals per driverId
@@ -868,13 +874,19 @@ export function DispatchTable() {
   // ── Close filter on outside click ──────────────────────────────────────────
 
   useEffect(() => {
-    const h = (e: MouseEvent) => { if (filterRef.current && !filterRef.current.contains(e.target as Node)) setFilterOpen(false); };
+    const h = (e: MouseEvent) => {
+      if (!filterRef.current?.contains(e.target as Node) && !filterPanelRef.current?.contains(e.target as Node))
+        setFilterOpen(false);
+    };
     if (filterOpen) document.addEventListener("mousedown", h);
     return () => document.removeEventListener("mousedown", h);
   }, [filterOpen]);
 
   useEffect(() => {
-    const h = (e: MouseEvent) => { if (teamRef.current && !teamRef.current.contains(e.target as Node)) setTeamOpen(false); };
+    const h = (e: MouseEvent) => {
+      if (!teamRef.current?.contains(e.target as Node) && !teamPanelRef.current?.contains(e.target as Node))
+        setTeamOpen(false);
+    };
     if (teamOpen) document.addEventListener("mousedown", h);
     return () => document.removeEventListener("mousedown", h);
   }, [teamOpen]);
@@ -1124,13 +1136,15 @@ export function DispatchTable() {
 
           {/* Status filter */}
           <div ref={filterRef} style={{ position: "relative" }}>
-            <button onClick={() => setFilterOpen((p) => !p)}
+            <button onClick={() => { const r = filterRef.current?.getBoundingClientRect(); if (r) setFilterRect(r); setFilterOpen((p) => !p); }}
               style={{ display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "var(--font-sans)", fontSize: 12, color: statusFilter === "all" ? "var(--muted-foreground)" : STATUS_CONFIG[statusFilter].color, backgroundColor: statusFilter === "all" ? "var(--muted)" : STATUS_CONFIG[statusFilter].bg, border: "1px solid var(--border)", borderRadius: 7, padding: "5px 10px", cursor: "pointer", whiteSpace: "nowrap" }}>
               {statusFilter === "all" ? "All Statuses" : STATUS_CONFIG[statusFilter].label}
               <ChevronDown size={11} />
             </button>
-            {filterOpen && (
-              <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 100, backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 8, boxShadow: "0 8px 24px rgba(0,0,0,0.12)", minWidth: 180, padding: "4px 0" }}>
+            {/* Portal + fixed: the board card clips its overflow, so an absolutely-positioned
+                menu gets cut off whenever the table is short (e.g. a filter matched nothing). */}
+            {filterOpen && filterRect && createPortal(
+              <div ref={filterPanelRef} style={{ position: "fixed", ...menuPosition(filterRect, ALL_STATUSES.length + 1, 180), zIndex: 9999, backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 8, boxShadow: "0 8px 24px rgba(0,0,0,0.28)", minWidth: 180, padding: "4px 0", maxHeight: "min(60vh, 420px)", overflowY: "auto" }}>
                 <button onClick={() => { setStatusFilter("all"); setFilterOpen(false); }} style={{ width: "100%", textAlign: "left", padding: "7px 12px", fontFamily: "var(--font-sans)", fontSize: 12, color: statusFilter === "all" ? "var(--primary)" : "var(--foreground)", backgroundColor: statusFilter === "all" ? "var(--secondary)" : "transparent", border: "none", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <span>All Statuses</span>
                   <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--muted-foreground)" }}>{rows.length}</span>
@@ -1149,21 +1163,23 @@ export function DispatchTable() {
                     </button>
                   );
                 })}
-              </div>
+              </div>,
+              document.body
             )}
           </div>
 
           {/* Team filter (only shown when the company has dispatch pods) */}
           {teams.length > 0 && (
             <div ref={teamRef} style={{ position: "relative" }}>
-              <button onClick={() => setTeamOpen((p) => !p)}
+              <button onClick={() => { const r = teamRef.current?.getBoundingClientRect(); if (r) setTeamRect(r); setTeamOpen((p) => !p); }}
                 style={{ display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "var(--font-sans)", fontSize: 12, color: activeTeam ? "var(--primary)" : "var(--muted-foreground)", backgroundColor: activeTeam ? "var(--secondary)" : "var(--muted)", border: "1px solid var(--border)", borderRadius: 7, padding: "5px 10px", cursor: "pointer", whiteSpace: "nowrap" }}>
                 <Users size={12} />
                 {activeTeam ? activeTeam.name : "All Teams"}
                 <ChevronDown size={11} />
               </button>
-              {teamOpen && (
-                <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 100, backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 8, boxShadow: "0 8px 24px rgba(0,0,0,0.12)", minWidth: 180, padding: "4px 0", maxHeight: 320, overflowY: "auto" }}>
+              {/* Portalled for the same reason as the status filter — see above. */}
+              {teamOpen && teamRect && createPortal(
+                <div ref={teamPanelRef} style={{ position: "fixed", ...menuPosition(teamRect, teams.length + 1, 180), zIndex: 9999, backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 8, boxShadow: "0 8px 24px rgba(0,0,0,0.28)", minWidth: 180, padding: "4px 0", maxHeight: "min(60vh, 420px)", overflowY: "auto" }}>
                   <button onClick={() => { setTeamFilter("all"); setTeamOpen(false); }} style={{ width: "100%", textAlign: "left", padding: "7px 12px", fontFamily: "var(--font-sans)", fontSize: 12, color: teamFilter === "all" ? "var(--primary)" : "var(--foreground)", backgroundColor: teamFilter === "all" ? "var(--secondary)" : "transparent", border: "none", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <span>All Teams</span>
                     <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--muted-foreground)" }}>{rows.length}</span>
@@ -1179,7 +1195,8 @@ export function DispatchTable() {
                       </button>
                     );
                   })}
-                </div>
+                </div>,
+                document.body
               )}
             </div>
           )}
