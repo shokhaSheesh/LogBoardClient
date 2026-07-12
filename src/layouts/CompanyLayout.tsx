@@ -705,7 +705,7 @@ function NotificationBell() {
           {/* Header */}
           <div style={{ display: "flex", alignItems: "center", padding: "14px 16px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
             <span style={{ fontFamily: "var(--font-sans)", fontSize: 14, fontWeight: 700, color: "var(--foreground)", flex: 1 }}>
-              Notifications {unread > 0 && <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 700, color: "#EF4444", backgroundColor: "#FEE2E2", borderRadius: 10, padding: "1px 7px", marginLeft: 6 }}>{unread}</span>}
+              Notifications {unread > 0 && <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 700, color: "#EF4444", backgroundColor: "rgba(239,68,68,0.14)", borderRadius: 10, padding: "1px 7px", marginLeft: 6 }}>{unread}</span>}
             </span>
             {unread > 0 && (
               <button

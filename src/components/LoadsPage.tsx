@@ -488,8 +488,8 @@ function ExtractModal({ onClose, onExtracted }: {
         {/* Header */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderBottom: "1px solid var(--border)", backgroundColor: "var(--muted)", borderRadius: "12px 12px 0 0" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-            <div style={{ width: 30, height: 30, borderRadius: 8, backgroundColor: "#F5F3FF", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <Sparkles size={15} color="#7C3AED" />
+            <div style={{ width: 30, height: 30, borderRadius: 8, backgroundColor: "rgba(139,92,246,0.14)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <Sparkles size={15} color="#8B5CF6" />
             </div>
             <span style={{ fontFamily: "var(--font-sans)", fontSize: 14, fontWeight: 600, color: "var(--foreground)" }}>AI Smart Extract</span>
           </div>
@@ -505,20 +505,20 @@ function ExtractModal({ onClose, onExtracted }: {
             onDragLeave={() => setDragging(false)}
             onDrop={(e) => { e.preventDefault(); setDragging(false); if (!busy) pickFile(e.dataTransfer.files[0]); }}
             style={{
-              border: `2px dashed ${dragging ? "#7C3AED" : file ? "#10B981" : "var(--border)"}`,
+              border: `2px dashed ${dragging ? "#8B5CF6" : file ? "#10B981" : "var(--border)"}`,
               borderRadius: 10, padding: "34px 20px", textAlign: "center",
-              backgroundColor: dragging ? "#F5F3FF" : file ? "#F0FDF4" : "var(--input-background)",
+              backgroundColor: dragging ? "rgba(139,92,246,0.12)" : file ? "rgba(16,185,129,0.10)" : "var(--input-background)",
               cursor: busy ? "default" : "pointer", transition: "all 0.15s",
             }}
           >
             <input ref={inputRef} type="file" accept={EXTRACT_ACCEPT} onChange={(e) => pickFile(e.target.files?.[0])} style={{ display: "none" }} />
             {file ? (
               <>
-                <div style={{ width: 44, height: 44, borderRadius: 10, backgroundColor: "#D1FAE5", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 12px" }}>
-                  <FileText size={22} color="#059669" />
+                <div style={{ width: 44, height: 44, borderRadius: 10, backgroundColor: "rgba(16,185,129,0.16)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 12px" }}>
+                  <FileText size={22} color="#10B981" />
                 </div>
-                <div style={{ fontFamily: "var(--font-sans)", fontSize: 14, fontWeight: 600, color: "#065F46" }}>{file.name}</div>
-                <div style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "#6B7280", marginTop: 4 }}>
+                <div style={{ fontFamily: "var(--font-sans)", fontSize: 14, fontWeight: 600, color: "var(--foreground)" }}>{file.name}</div>
+                <div style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)", marginTop: 4 }}>
                   {(file.size / 1024).toFixed(1)} KB · Click to change
                 </div>
               </>
@@ -529,7 +529,7 @@ function ExtractModal({ onClose, onExtracted }: {
                 </div>
                 <div style={{ fontFamily: "var(--font-sans)", fontSize: 14, fontWeight: 500, color: "var(--foreground)" }}>Drop the rate confirmation here</div>
                 <div style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)", marginTop: 4 }}>
-                  or <span style={{ color: "#7C3AED", fontWeight: 500 }}>browse files</span> — PDF, photo/scan, or text (max 10 MB)
+                  or <span style={{ color: "#8B5CF6", fontWeight: 500 }}>browse files</span> — PDF, photo/scan, or text (max 10 MB)
                 </div>
               </>
             )}
@@ -542,18 +542,18 @@ function ExtractModal({ onClose, onExtracted }: {
           </div>
 
           {busy && (
-            <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", backgroundColor: "#F5F3FF", border: "1px solid #DDD6FE", borderRadius: 8 }}>
-              <span style={{ width: 15, height: 15, borderRadius: "50%", border: "2px solid #DDD6FE", borderTopColor: "#7C3AED", animation: "spin 0.7s linear infinite", flexShrink: 0 }} />
-              <div style={{ fontFamily: "var(--font-sans)", fontSize: 12.5, color: "#5B21B6", lineHeight: 1.45 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", backgroundColor: "rgba(139,92,246,0.10)", border: "1px solid rgba(139,92,246,0.35)", borderRadius: 8 }}>
+              <span style={{ width: 15, height: 15, borderRadius: "50%", border: "2px solid rgba(139,92,246,0.35)", borderTopColor: "#8B5CF6", animation: "spin 0.7s linear infinite", flexShrink: 0 }} />
+              <div style={{ fontFamily: "var(--font-sans)", fontSize: 12.5, color: "#8B5CF6", lineHeight: 1.45 }}>
                 Reading the document… this usually takes 10–35 seconds.
               </div>
             </div>
           )}
 
           {error && !busy && (
-            <div style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 14px", backgroundColor: "#FEF2F2", borderRadius: 8, border: "1px solid #FECACA" }}>
-              <AlertCircle size={15} color="#DC2626" style={{ flexShrink: 0, marginTop: 1 }} />
-              <div style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "#991B1B", lineHeight: 1.5 }}>{error}</div>
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 14px", backgroundColor: "rgba(239,68,68,0.08)", borderRadius: 8, border: "1px solid rgba(239,68,68,0.35)" }}>
+              <AlertCircle size={15} color="#EF4444" style={{ flexShrink: 0, marginTop: 1 }} />
+              <div style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "#EF4444", lineHeight: 1.5 }}>{error}</div>
             </div>
           )}
         </div>
@@ -606,7 +606,7 @@ function AddLoadMenu({ onManual, onExtract }: { onManual: () => void; onExtract:
     },
     {
       icon: <Sparkles size={16} />,
-      iconColor: "#7C3AED", iconBg: "#F5F3FF",
+      iconColor: "#8B5CF6", iconBg: "rgba(139,92,246,0.14)",
       label: "AI Smart Extract",
       desc: "Parse load info from a rate confirmation",
       comingSoon: false,
@@ -668,7 +668,7 @@ function AddLoadMenu({ onManual, onExtract }: { onManual: () => void; onExtract:
                   {item.comingSoon && (
                     <span style={{
                       fontFamily: "var(--font-sans)", fontSize: 10, fontWeight: 700,
-                      color: "#7C3AED", backgroundColor: "#F5F3FF",
+                      color: "#8B5CF6", backgroundColor: "rgba(139,92,246,0.14)",
                       borderRadius: 4, padding: "1px 6px", letterSpacing: "0.04em",
                     }}>
                       SOON
@@ -1434,7 +1434,7 @@ function LoadModal({ load, onClose, onSave, saving = false }: {
                           display: "flex", alignItems: "center", justifyContent: "center",
                           opacity: stops.length <= 2 ? 0.3 : 1, flexShrink: 0,
                         }}
-                        onMouseEnter={(e) => { if (stops.length > 2) { const b = e.currentTarget as HTMLButtonElement; b.style.backgroundColor="#FEE2E2"; b.style.color="#EF4444"; b.style.borderColor="#EF4444"; } }}
+                        onMouseEnter={(e) => { if (stops.length > 2) { const b = e.currentTarget as HTMLButtonElement; b.style.backgroundColor="rgba(239,68,68,0.14)"; b.style.color="#EF4444"; b.style.borderColor="#EF4444"; } }}
                         onMouseLeave={(e) => { const b = e.currentTarget as HTMLButtonElement; b.style.backgroundColor="var(--muted)"; b.style.color="var(--muted-foreground)"; b.style.borderColor="var(--border)"; }}
                       >
                         <X size={13} />
@@ -1480,7 +1480,7 @@ function LoadModal({ load, onClose, onSave, saving = false }: {
         {/* Footer */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 10, padding: "14px 20px", borderTop: "1px solid var(--border)" }}>
           {apptError && (
-            <span style={{ marginRight: "auto", display: "flex", alignItems: "center", gap: 6, fontFamily: "var(--font-sans)", fontSize: 12, color: "#DC2626" }}>
+            <span style={{ marginRight: "auto", display: "flex", alignItems: "center", gap: 6, fontFamily: "var(--font-sans)", fontSize: 12, color: "#EF4444" }}>
               <AlertCircle size={13} /> {apptError}
             </span>
           )}
@@ -1498,7 +1498,7 @@ function DeleteConfirm({ label, onClose, onConfirm, busy = false, error }: { lab
   return (
     <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div style={{ backgroundColor: "var(--card)", borderRadius: 12, width: 360, padding: 24, boxShadow: "0 20px 60px rgba(0,0,0,0.25)", textAlign: "center" }}>
-        <div style={{ width: 44, height: 44, borderRadius: "50%", backgroundColor: "#FEE2E2", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
+        <div style={{ width: 44, height: 44, borderRadius: "50%", backgroundColor: "rgba(239,68,68,0.14)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
           <Trash2 size={20} color="#EF4444" />
         </div>
         <div style={{ fontFamily: "var(--font-sans)", fontSize: 15, fontWeight: 600, color: "var(--foreground)", marginBottom: 6 }}>Delete load?</div>
@@ -1573,7 +1573,7 @@ function LoadDetail({ load, onBack }: { load: Load; onBack: () => void }) {
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <span style={{ fontFamily: "var(--font-mono)", fontWeight: 700 }}>{load.totalMiles.toLocaleString()} mi</span>
           {load.payout > 0 && (
-            <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "#10B981", backgroundColor: "#D1FAE5", borderRadius: 4, padding: "1px 6px" }}>
+            <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "#10B981", backgroundColor: "rgba(16,185,129,0.14)", borderRadius: 4, padding: "1px 6px" }}>
               ${(load.payout / load.totalMiles).toFixed(2)}/mi RPM
             </span>
           )}
@@ -1718,7 +1718,7 @@ function LoadDetail({ load, onBack }: { load: Load; onBack: () => void }) {
                 {log.map((entry) => {
                   const time = new Date(entry.created_at).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
                   const actionColor = entry.action === "create" ? "#10B981" : entry.action === "delete" ? "#EF4444" : "#3B82F6";
-                  const actionBg    = entry.action === "create" ? "#D1FAE5" : entry.action === "delete" ? "#FEE2E2" : "#DBEAFE";
+                  const actionBg    = entry.action === "create" ? "rgba(16,185,129,0.14)" : entry.action === "delete" ? "rgba(239,68,68,0.14)" : "rgba(59,130,246,0.14)";
                   return (
                     <div key={entry.id} style={{ backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 10, padding: "13px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
                       {/* Header */}
@@ -1737,11 +1737,11 @@ function LoadDetail({ load, onBack }: { load: Load; onBack: () => void }) {
                           {entry.changes.map((c, i) => (
                             <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, fontFamily: "var(--font-sans)", fontSize: 12 }}>
                               <span style={{ color: "var(--muted-foreground)", minWidth: 90, textTransform: "capitalize" }}>{c.field.replace(/_/g, " ")}</span>
-                              <span style={{ color: "#EF4444", backgroundColor: "#FEE2E2", borderRadius: 3, padding: "0 5px", fontFamily: "var(--font-mono)", fontSize: 11, textDecoration: "line-through" }}>
+                              <span style={{ color: "#EF4444", backgroundColor: "rgba(239,68,68,0.14)", borderRadius: 3, padding: "0 5px", fontFamily: "var(--font-mono)", fontSize: 11, textDecoration: "line-through" }}>
                                 {String(c.from ?? "—")}
                               </span>
                               <span style={{ color: "var(--muted-foreground)" }}>→</span>
-                              <span style={{ color: "#10B981", backgroundColor: "#D1FAE5", borderRadius: 3, padding: "0 5px", fontFamily: "var(--font-mono)", fontSize: 11 }}>
+                              <span style={{ color: "#10B981", backgroundColor: "rgba(16,185,129,0.14)", borderRadius: 3, padding: "0 5px", fontFamily: "var(--font-mono)", fontSize: 11 }}>
                                 {String(c.to ?? "—")}
                               </span>
                             </div>
@@ -2074,8 +2074,8 @@ export function LoadsPage() {
                     </td>
                     <td style={{ padding: "8px 10px", borderBottom: "1px solid var(--border)", verticalAlign: "middle", textAlign: "center" }}>
                       <div style={{ display: "inline-flex", gap: 5 }}>
-                        {canUpdate && <ActionBtn icon={<Pencil size={13} />} color="#1D4ED8" bg="#DBEAFE" onClick={() => openEdit(l)} />}
-                        {canDelete && <ActionBtn icon={<Trash2 size={13} />} color="#DC2626" bg="#FEE2E2" onClick={() => setDeleting(l)} />}
+                        {canUpdate && <ActionBtn icon={<Pencil size={13} />} color="#3B82F6" bg="rgba(59,130,246,0.14)" onClick={() => openEdit(l)} />}
+                        {canDelete && <ActionBtn icon={<Trash2 size={13} />} color="#EF4444" bg="rgba(239,68,68,0.14)" onClick={() => setDeleting(l)} />}
                         {!canUpdate && !canDelete && <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)" }}>—</span>}
                       </div>
                     </td>

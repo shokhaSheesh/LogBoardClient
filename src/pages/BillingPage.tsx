@@ -82,9 +82,9 @@ function toInvoice(b: BackendInvoice): Invoice {
 
 function invoiceStatusStyle(status: string): { color: string; bg: string } {
   const s = status.toLowerCase();
-  if (s === "active" || s === "paid") return { color: "#10B981", bg: "#D1FAE5" };
-  if (s === "failed" || s === "expired" || s === "suspended") return { color: "#EF4444", bg: "#FEE2E2" };
-  return { color: "#F59E0B", bg: "#FEF3C7" };
+  if (s === "active" || s === "paid") return { color: "#10B981", bg: "rgba(16,185,129,0.14)" };
+  if (s === "failed" || s === "expired" || s === "suspended") return { color: "#EF4444", bg: "rgba(239,68,68,0.14)" };
+  return { color: "#F59E0B", bg: "rgba(245,158,11,0.14)" };
 }
 
 // ─── Plan icon (fallback by name) ─────────────────────────────────────────────
@@ -172,7 +172,7 @@ export function BillingPage() {
                 <span style={{ fontFamily: "var(--font-sans)", fontSize: 16, fontWeight: 700, color: "var(--foreground)" }}>
                   {currentPlan.name} Plan
                 </span>
-                <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600, color: "#10B981", backgroundColor: "#D1FAE5", borderRadius: 20, padding: "2px 8px" }}>
+                <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600, color: "#10B981", backgroundColor: "rgba(16,185,129,0.14)", borderRadius: 20, padding: "2px 8px" }}>
                   {billing?.status ?? "Active"}
                 </span>
               </div>
@@ -196,9 +196,9 @@ export function BillingPage() {
             </div>
 
             {daysLeft != null && daysLeft <= 7 && (
-              <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 12px", backgroundColor: "#FEF3C7", borderRadius: 8, border: "1px solid #FDE68A" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 12px", backgroundColor: "rgba(245,158,11,0.14)", borderRadius: 8, border: "1px solid rgba(245,158,11,0.35)" }}>
                 <AlertCircle size={14} style={{ color: "#F59E0B" }} />
-                <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: 500, color: "#B45309" }}>Expiring soon</span>
+                <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: 500, color: "#F59E0B" }}>Expiring soon</span>
               </div>
             )}
 
@@ -272,7 +272,7 @@ export function BillingPage() {
                     <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
                       {plan.features.map((f) => (
                         <div key={f} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <span style={{ width: 16, height: 16, borderRadius: "50%", backgroundColor: "#D1FAE5", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                          <span style={{ width: 16, height: 16, borderRadius: "50%", backgroundColor: "rgba(16,185,129,0.14)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                             <Check size={9} style={{ color: "#10B981" }} />
                           </span>
                           <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--foreground)" }}>{f}</span>

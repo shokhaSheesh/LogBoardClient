@@ -442,7 +442,7 @@ function UnitSelect({ value, label, endpoint, onChange, error = false, disabled 
                   {/* Taken by another driver — informational; still selectable (mark + allow).
                       Skip it on the active option, which is this driver's own unit. */}
                   {opt.takenBy && !isActive && (
-                    <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontFamily: "var(--font-sans)", fontSize: 10, fontWeight: 500, color: "#B45309", backgroundColor: "#FEF3C7", borderRadius: 4, padding: "1px 6px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 150 }}>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontFamily: "var(--font-sans)", fontSize: 10, fontWeight: 500, color: "#B45309", backgroundColor: "rgba(245,158,11,0.14)", borderRadius: 4, padding: "1px 6px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 150 }}>
                       <User size={9} style={{ flexShrink: 0 }} /> {opt.takenBy}
                     </span>
                   )}
@@ -555,7 +555,7 @@ function Pagination({
           {loading && <span style={{ width: 12, height: 12, borderRadius: "50%", border: "2px solid var(--border)", borderTopColor: "var(--primary)", animation: "spin 0.7s linear infinite", display: "inline-block" }} />}
           {loading ? "Loading…" : total === 0 ? "No results" : `Showing ${from}–${to}`}
           {!loading && total > 0 && (totalPending
-            ? <span style={{ fontSize: 8, fontWeight: 700, color: "#D97706", backgroundColor: "#FEF3C7", border: "1px solid #FDE68A", borderRadius: 4, padding: "1px 4px", letterSpacing: "0.04em", textTransform: "uppercase" }}>total pending</span>
+            ? <span style={{ fontSize: 8, fontWeight: 700, color: "#F59E0B", backgroundColor: "rgba(245,158,11,0.14)", border: "1px solid rgba(245,158,11,0.35)", borderRadius: 4, padding: "1px 4px", letterSpacing: "0.04em", textTransform: "uppercase" }}>total pending</span>
             : <span>of {total}</span>
           )}
         </span>
@@ -727,8 +727,8 @@ function TypeBadge({ type }: { type: DriverType }) {
   return (
     <span style={{
       fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 600,
-      color: type === "O/O" ? "#1D4ED8" : "#5B21B6",
-      backgroundColor: type === "O/O" ? "#DBEAFE" : "#EDE9FE",
+      color: type === "O/O" ? "#3B82F6" : "#8B5CF6",
+      backgroundColor: type === "O/O" ? "rgba(59,130,246,0.14)" : "rgba(139,92,246,0.14)",
       borderRadius: 4, padding: "2px 7px",
     }}>
       {type}
@@ -796,7 +796,7 @@ function Toast({ msg, type, onClose }: { msg: string; type: "success" | "error";
 // ─── Field label ─────────────────────────────────────────────────────────────
 
 const PendingBadge = () => (
-  <span style={{ fontSize: 8, fontWeight: 700, color: "#D97706", backgroundColor: "#FEF3C7", border: "1px solid #FDE68A", borderRadius: 4, padding: "1px 4px", letterSpacing: "0.04em", textTransform: "uppercase" as const, marginLeft: 4 }}>
+  <span style={{ fontSize: 8, fontWeight: 700, color: "#F59E0B", backgroundColor: "rgba(245,158,11,0.14)", border: "1px solid rgba(245,158,11,0.35)", borderRadius: 4, padding: "1px 4px", letterSpacing: "0.04em", textTransform: "uppercase" as const, marginLeft: 4 }}>
     backend pending
   </span>
 );
@@ -1199,7 +1199,7 @@ function DeleteConfirm({ label, onClose, onConfirm, busy = false, error }: { lab
   return (
     <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div style={{ backgroundColor: "var(--card)", borderRadius: 12, width: 380, padding: 28, boxShadow: "0 20px 60px rgba(0,0,0,0.22)", textAlign: "center" }}>
-        <div style={{ width: 44, height: 44, borderRadius: "50%", backgroundColor: "#FEE2E2", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
+        <div style={{ width: 44, height: 44, borderRadius: "50%", backgroundColor: "rgba(239,68,68,0.14)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
           <Trash2 size={20} color="#EF4444" />
         </div>
         <div style={{ fontFamily: "var(--font-sans)", fontSize: 15, fontWeight: 600, color: "var(--foreground)", marginBottom: 6 }}>Delete driver?</div>
@@ -1266,8 +1266,8 @@ function ImportModal({ entityLabel, endpoint, onClose, onImported }: {
         {/* Header */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderBottom: "1px solid var(--border)", backgroundColor: "var(--muted)", borderRadius: "12px 12px 0 0" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-            <div style={{ width: 30, height: 30, borderRadius: 8, backgroundColor: "#ECFDF5", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <FileSpreadsheet size={15} color="#059669" />
+            <div style={{ width: 30, height: 30, borderRadius: 8, backgroundColor: "rgba(16,185,129,0.08)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <FileSpreadsheet size={15} color="#10B981" />
             </div>
             <span style={{ fontFamily: "var(--font-sans)", fontSize: 14, fontWeight: 600, color: "var(--foreground)" }}>
               Import {entityLabel}s
@@ -1289,18 +1289,18 @@ function ImportModal({ entityLabel, endpoint, onClose, onImported }: {
             style={{
               border: `2px dashed ${dragging ? "var(--primary)" : file ? "#10B981" : "var(--border)"}`,
               borderRadius: 10, padding: "36px 20px", textAlign: "center",
-              backgroundColor: dragging ? "var(--accent)" : file ? "#F0FDF4" : "var(--input-background)",
+              backgroundColor: dragging ? "var(--accent)" : file ? "rgba(16,185,129,0.10)" : "var(--input-background)",
               cursor: "pointer", transition: "all 0.15s",
             }}
           >
             <input ref={inputRef} type="file" accept=".csv" onChange={handleFile} style={{ display: "none" }} />
             {file ? (
               <>
-                <div style={{ width: 44, height: 44, borderRadius: 10, backgroundColor: "#D1FAE5", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 12px" }}>
-                  <FileText size={22} color="#059669" />
+                <div style={{ width: 44, height: 44, borderRadius: 10, backgroundColor: "rgba(16,185,129,0.14)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 12px" }}>
+                  <FileText size={22} color="#10B981" />
                 </div>
-                <div style={{ fontFamily: "var(--font-sans)", fontSize: 14, fontWeight: 600, color: "#065F46" }}>{file.name}</div>
-                <div style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "#6B7280", marginTop: 4 }}>
+                <div style={{ fontFamily: "var(--font-sans)", fontSize: 14, fontWeight: 600, color: "#10B981" }}>{file.name}</div>
+                <div style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)", marginTop: 4 }}>
                   {(file.size / 1024).toFixed(1)} KB · Click to change
                 </div>
               </>
@@ -1336,22 +1336,22 @@ function ImportModal({ entityLabel, endpoint, onClose, onImported }: {
 
           {/* Error */}
           {error && (
-            <div style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 14px", backgroundColor: "#FEF2F2", borderRadius: 8, border: "1px solid #FECACA" }}>
-              <AlertCircle size={15} color="#DC2626" style={{ flexShrink: 0, marginTop: 1 }} />
-              <div style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "#991B1B", lineHeight: 1.5 }}>{error}</div>
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 14px", backgroundColor: "rgba(239,68,68,0.08)", borderRadius: 8, border: "1px solid rgba(239,68,68,0.35)" }}>
+              <AlertCircle size={15} color="#EF4444" style={{ flexShrink: 0, marginTop: 1 }} />
+              <div style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "#EF4444", lineHeight: 1.5 }}>{error}</div>
             </div>
           )}
 
           {/* Result */}
           {result && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "12px 14px", backgroundColor: result.failed > 0 ? "#FFFBEB" : "#F0FDF4", borderRadius: 8, border: `1px solid ${result.failed > 0 ? "#FDE68A" : "#BBF7D0"}` }}>
-              <div style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, color: result.failed > 0 ? "#92400E" : "#065F46" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "12px 14px", backgroundColor: result.failed > 0 ? "rgba(245,158,11,0.08)" : "rgba(16,185,129,0.10)", borderRadius: 8, border: `1px solid ${result.failed > 0 ? "rgba(245,158,11,0.35)" : "rgba(16,185,129,0.35)"}` }}>
+              <div style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, color: result.failed > 0 ? "#F59E0B" : "#10B981" }}>
                 Imported {result.created} {entityLabel.toLowerCase()}{result.created !== 1 ? "s" : ""}{result.failed > 0 ? ` · ${result.failed} row${result.failed !== 1 ? "s" : ""} failed` : ""}
               </div>
               {result.errors.length > 0 && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 3, maxHeight: 140, overflowY: "auto" }}>
                   {result.errors.map((er, i) => (
-                    <div key={i} style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "#92400E" }}>
+                    <div key={i} style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "#F59E0B" }}>
                       <span style={{ fontFamily: "var(--font-mono)", fontWeight: 700 }}>Row {er.row}:</span> {er.message}
                     </div>
                   ))}
@@ -1373,7 +1373,7 @@ function ImportModal({ entityLabel, endpoint, onClose, onImported }: {
               style={{
                 fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 16px",
                 borderRadius: 6, border: "none",
-                backgroundColor: file && !submitting ? "#059669" : "var(--muted)",
+                backgroundColor: file && !submitting ? "#10B981" : "var(--muted)",
                 color: file && !submitting ? "#fff" : "var(--muted-foreground)",
                 cursor: file && !submitting ? "pointer" : "not-allowed",
                 display: "flex", alignItems: "center", gap: 6,
@@ -1419,7 +1419,7 @@ function AddMenu({ entityLabel, onManual, onImport, onEld }: {
     },
     {
       icon: <FileSpreadsheet size={16} />,
-      iconColor: "#059669", iconBg: "#ECFDF5",
+      iconColor: "#10B981", iconBg: "rgba(16,185,129,0.08)",
       label: "Import from File",
       desc: "Upload a CSV, Excel or PDF roster",
       comingSoon: false,
@@ -1427,7 +1427,7 @@ function AddMenu({ entityLabel, onManual, onImport, onEld }: {
     },
     {
       icon: <Radio size={16} />,
-      iconColor: "#0891B2", iconBg: "#ECFEFF",
+      iconColor: "#22D3EE", iconBg: "rgba(34,211,238,0.10)",
       label: "Sync from ELD",
       desc: "Pull driver records from your ELD provider",
       comingSoon: false,
@@ -1502,7 +1502,7 @@ function AddMenu({ entityLabel, onManual, onImport, onEld }: {
                   {item.comingSoon && (
                     <span style={{
                       fontFamily: "var(--font-sans)", fontSize: 10, fontWeight: 700,
-                      color: "#7C3AED", backgroundColor: "#F5F3FF",
+                      color: "#8B5CF6", backgroundColor: "rgba(139,92,246,0.10)",
                       borderRadius: 4, padding: "1px 6px", letterSpacing: "0.04em",
                     }}>
                       SOON
@@ -1546,10 +1546,10 @@ function DriverDetail({ driver, onBack }: { driver: SoloDriver; onBack: () => vo
   const initials = driver.name.split(" ").slice(0, 2).map((w) => w[0]).join("");
 
   const metrics = [
-    { label: "Week Gross",  value: `$${totalGross.toLocaleString()}`,                            icon: <DollarSign size={16} />, color: "#065F46", bg: "#D1FAE5" },
-    { label: "Total Miles", value: totalMiles > 0 ? totalMiles.toLocaleString() : "—",           icon: <Route      size={16} />, color: "#1D4ED8", bg: "#DBEAFE" },
-    { label: "Loads",       value: String(loads.length),                                          icon: <Package    size={16} />, color: "#5B21B6", bg: "#EDE9FE" },
-    { label: "Avg $/Mile",  value: totalMiles > 0 ? `$${avgRate.toFixed(2)}` : "—",              icon: <TrendingUp size={16} />, color: "#92400E", bg: "#FEF3C7" },
+    { label: "Week Gross",  value: `$${totalGross.toLocaleString()}`,                            icon: <DollarSign size={16} />, color: "#10B981", bg: "rgba(16,185,129,0.14)" },
+    { label: "Total Miles", value: totalMiles > 0 ? totalMiles.toLocaleString() : "—",           icon: <Route      size={16} />, color: "#3B82F6", bg: "rgba(59,130,246,0.14)" },
+    { label: "Loads",       value: String(loads.length),                                          icon: <Package    size={16} />, color: "#8B5CF6", bg: "rgba(139,92,246,0.14)" },
+    { label: "Avg $/Mile",  value: totalMiles > 0 ? `$${avgRate.toFixed(2)}` : "—",              icon: <TrendingUp size={16} />, color: "#F59E0B", bg: "rgba(245,158,11,0.14)" },
   ];
 
   const infoRows: { icon: React.ReactNode; label: string; value: string; mono?: boolean; highlight?: boolean }[] = [
@@ -1873,10 +1873,10 @@ function TeamDetail({ team, onBack }: { team: TeamDriver; onBack: () => void }) 
   const initials2 = team.name2.split(" ").slice(0, 2).map((w) => w[0]).join("");
 
   const metrics = [
-    { label: "Week Gross",  value: `$${totalGross.toLocaleString()}`,                   icon: <DollarSign size={16} />, color: "#065F46", bg: "#D1FAE5" },
-    { label: "Total Miles", value: totalMiles > 0 ? totalMiles.toLocaleString() : "—",  icon: <Route      size={16} />, color: "#1D4ED8", bg: "#DBEAFE" },
-    { label: "Loads",       value: String(loads.length),                                 icon: <Package    size={16} />, color: "#5B21B6", bg: "#EDE9FE" },
-    { label: "Avg $/Mile",  value: totalMiles > 0 ? `$${avgRate.toFixed(2)}` : "—",     icon: <TrendingUp size={16} />, color: "#92400E", bg: "#FEF3C7" },
+    { label: "Week Gross",  value: `$${totalGross.toLocaleString()}`,                   icon: <DollarSign size={16} />, color: "#10B981", bg: "rgba(16,185,129,0.14)" },
+    { label: "Total Miles", value: totalMiles > 0 ? totalMiles.toLocaleString() : "—",  icon: <Route      size={16} />, color: "#3B82F6", bg: "rgba(59,130,246,0.14)" },
+    { label: "Loads",       value: String(loads.length),                                 icon: <Package    size={16} />, color: "#8B5CF6", bg: "rgba(139,92,246,0.14)" },
+    { label: "Avg $/Mile",  value: totalMiles > 0 ? `$${avgRate.toFixed(2)}` : "—",     icon: <TrendingUp size={16} />, color: "#F59E0B", bg: "rgba(245,158,11,0.14)" },
   ];
 
   const avatarGradients = [
@@ -2394,7 +2394,7 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
                       {d.nextLoads!.map((q, i) => (
                         <span key={q.id} title={i === 0 ? "Next up" : `Queue position ${i + 1}`}
-                          style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 600, color: "#F59E0B", backgroundColor: "#FEF3C7", borderRadius: 4, padding: "2px 7px", opacity: i === 0 ? 1 : 0.6 }}>
+                          style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 600, color: "#F59E0B", backgroundColor: "rgba(245,158,11,0.14)", borderRadius: 4, padding: "2px 7px", opacity: i === 0 ? 1 : 0.6 }}>
                           {q.loadId}
                         </span>
                       ))}
@@ -2419,8 +2419,8 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
                 </TD>
                 <td style={{ padding: "8px 10px", borderBottom: "1px solid var(--border)", verticalAlign: "middle", textAlign: "center" }}>
                   <div style={{ display: "inline-flex", gap: 5 }}>
-                    {canUpdate && <ActionBtn icon={<Pencil size={13} />} color="#1D4ED8" bg="#DBEAFE" onClick={() => openEdit(d)} />}
-                    {canDelete && <ActionBtn icon={<Trash2 size={13} />} color="#DC2626" bg="#FEE2E2" onClick={() => setDeleting(d)} />}
+                    {canUpdate && <ActionBtn icon={<Pencil size={13} />} color="#3B82F6" bg="rgba(59,130,246,0.14)" onClick={() => openEdit(d)} />}
+                    {canDelete && <ActionBtn icon={<Trash2 size={13} />} color="#EF4444" bg="rgba(239,68,68,0.14)" onClick={() => setDeleting(d)} />}
                     {!canUpdate && !canDelete && <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)" }}>—</span>}
                   </div>
                 </td>
@@ -2670,7 +2670,7 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
                       {d.nextLoads!.map((q, i) => (
                         <span key={q.id} title={i === 0 ? "Next up" : `Queue position ${i + 1}`}
-                          style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 600, color: "#F59E0B", backgroundColor: "#FEF3C7", borderRadius: 4, padding: "2px 7px", opacity: i === 0 ? 1 : 0.6 }}>
+                          style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 600, color: "#F59E0B", backgroundColor: "rgba(245,158,11,0.14)", borderRadius: 4, padding: "2px 7px", opacity: i === 0 ? 1 : 0.6 }}>
                           {q.loadId}
                         </span>
                       ))}
@@ -2695,8 +2695,8 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
                 </TD>
                 <td style={{ padding: "8px 10px", borderBottom: "1px solid var(--border)", verticalAlign: "middle", textAlign: "center" }}>
                   <div style={{ display: "inline-flex", gap: 5 }}>
-                    {canUpdate && <ActionBtn icon={<Pencil size={13} />} color="#1D4ED8" bg="#DBEAFE" onClick={() => openEdit(d)} />}
-                    {canDelete && <ActionBtn icon={<Trash2 size={13} />} color="#DC2626" bg="#FEE2E2" onClick={() => setDeleting(d)} />}
+                    {canUpdate && <ActionBtn icon={<Pencil size={13} />} color="#3B82F6" bg="rgba(59,130,246,0.14)" onClick={() => openEdit(d)} />}
+                    {canDelete && <ActionBtn icon={<Trash2 size={13} />} color="#EF4444" bg="rgba(239,68,68,0.14)" onClick={() => setDeleting(d)} />}
                     {!canUpdate && !canDelete && <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)" }}>—</span>}
                   </div>
                 </td>
@@ -2745,8 +2745,8 @@ export function DriversPage() {
   const inDetail = detailDriver !== null || detailTeam !== null;
 
   const tabs: { id: TabId; label: string; count: number | null; icon: React.ReactNode; color: string; bg: string }[] = [
-    { id: "solo", label: "Solo Drivers", count: soloCount, icon: <User size={15} />,  color: "#1D4ED8", bg: "#DBEAFE" },
-    { id: "team", label: "Team Drivers", count: teamCount, icon: <Users size={15} />, color: "#5B21B6", bg: "#EDE9FE" },
+    { id: "solo", label: "Solo Drivers", count: soloCount, icon: <User size={15} />,  color: "#3B82F6", bg: "rgba(59,130,246,0.14)" },
+    { id: "team", label: "Team Drivers", count: teamCount, icon: <Users size={15} />, color: "#8B5CF6", bg: "rgba(139,92,246,0.14)" },
   ];
 
   return (

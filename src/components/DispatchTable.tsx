@@ -106,8 +106,8 @@ interface BoardLock {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const TYPE_CONFIG: Record<DriverType, { color: string; bg: string }> = {
-  "O/O": { color: "#1D4ED8", bg: "#DBEAFE" },
-  "C/D": { color: "#5B21B6", bg: "#EDE9FE" },
+  "O/O": { color: "#3B82F6", bg: "rgba(59,130,246,0.14)" },
+  "C/D": { color: "#8B5CF6", bg: "rgba(139,92,246,0.14)" },
 };
 
 const LOAD_ID_LEFT   = 0;
@@ -397,7 +397,7 @@ function TickBtn({ done, isCurrent, canToggle, onToggle }: { done: boolean; isCu
       style={{ width: 16, height: 16, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, border: "none", background: "none", cursor: active ? "pointer" : "default", padding: 0, opacity: !done && !canToggle ? 0.5 : 1 }}
     >
       {done ? (
-        <span style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 16, height: 16, borderRadius: "50%", backgroundColor: "#D1FAE5" }}>
+        <span style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 16, height: 16, borderRadius: "50%", backgroundColor: "rgba(16,185,129,0.14)" }}>
           <Check size={9} style={{ color: "#10B981" }} />
         </span>
       ) : isCurrent ? (
@@ -504,12 +504,12 @@ function HistoryPanel({ events, loading, onClose, onRevert }: {
   };
 
   const actionColor = (a: string) => a === "create" ? "#10B981" : a === "delete" ? "#EF4444" : "#3B82F6";
-  const actionBg    = (a: string) => a === "create" ? "#D1FAE5" : a === "delete" ? "#FEE2E2" : "#DBEAFE";
+  const actionBg    = (a: string) => a === "create" ? "rgba(16,185,129,0.14)" : a === "delete" ? "rgba(239,68,68,0.14)" : "rgba(59,130,246,0.14)";
 
   const entityColor = (t: string) => {
-    if (t === "load")   return { color: "#7C3AED", bg: "#EDE9FE" };
-    if (t === "driver") return { color: "#0369A1", bg: "#E0F2FE" };
-    return { color: "#374151", bg: "var(--muted)" };
+    if (t === "load")   return { color: "#8B5CF6", bg: "rgba(139,92,246,0.14)" };
+    if (t === "driver") return { color: "#22D3EE", bg: "rgba(34,211,238,0.14)" };
+    return { color: "var(--foreground)", bg: "var(--muted)" };
   };
 
   const revertable = (ev: HistoryEvent) => ev.action === "update" && !!ev.changes && ev.changes.length > 0;
@@ -583,9 +583,9 @@ function HistoryPanel({ events, loading, onClose, onRevert }: {
                         {ev.changes.map((c, i) => (
                           <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, fontFamily: "var(--font-sans)", fontSize: 12 }}>
                             <span style={{ color: "var(--muted-foreground)", minWidth: 80, textTransform: "capitalize", fontSize: 11 }}>{c.field.replace(/_/g, " ")}</span>
-                            <span style={{ color: "#EF4444", backgroundColor: "#FEE2E2", borderRadius: 3, padding: "0 5px", fontFamily: "var(--font-mono)", fontSize: 11, textDecoration: "line-through" }}>{String(c.from ?? "—")}</span>
+                            <span style={{ color: "#EF4444", backgroundColor: "rgba(239,68,68,0.14)", borderRadius: 3, padding: "0 5px", fontFamily: "var(--font-mono)", fontSize: 11, textDecoration: "line-through" }}>{String(c.from ?? "—")}</span>
                             <span style={{ color: "var(--muted-foreground)", fontSize: 10 }}>→</span>
-                            <span style={{ color: "#10B981", backgroundColor: "#D1FAE5", borderRadius: 3, padding: "0 5px", fontFamily: "var(--font-mono)", fontSize: 11 }}>{String(c.to ?? "—")}</span>
+                            <span style={{ color: "#10B981", backgroundColor: "rgba(16,185,129,0.14)", borderRadius: 3, padding: "0 5px", fontFamily: "var(--font-mono)", fontSize: 11 }}>{String(c.to ?? "—")}</span>
                           </div>
                         ))}
                       </div>
@@ -631,14 +631,14 @@ function HistoryPanel({ events, loading, onClose, onRevert }: {
                     <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, fontFamily: "var(--font-sans)", fontSize: 12 }}>
                       <span style={{ color: "var(--muted-foreground)", minWidth: 74, textTransform: "capitalize", fontSize: 11 }}>{c.field.replace(/_/g, " ")}</span>
                       <span style={{ color: "var(--muted-foreground)", fontSize: 10 }}>→</span>
-                      <span style={{ color: "#10B981", backgroundColor: "#D1FAE5", borderRadius: 3, padding: "1px 6px", fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 600 }}>{String(c.from ?? "—")}</span>
+                      <span style={{ color: "#10B981", backgroundColor: "rgba(16,185,129,0.14)", borderRadius: 3, padding: "1px 6px", fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 600 }}>{String(c.from ?? "—")}</span>
                     </div>
                   ))}
                 </div>
                 {overrides.length > 0 && (
-                  <div style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "9px 12px", backgroundColor: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 8 }}>
-                    <AlertCircle size={14} color="#D97706" style={{ flexShrink: 0, marginTop: 1 }} />
-                    <div style={{ fontFamily: "var(--font-sans)", fontSize: 11.5, color: "#92400E", lineHeight: 1.5 }}>
+                  <div style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "9px 12px", backgroundColor: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.35)", borderRadius: 8 }}>
+                    <AlertCircle size={14} color="#F59E0B" style={{ flexShrink: 0, marginTop: 1 }} />
+                    <div style={{ fontFamily: "var(--font-sans)", fontSize: 11.5, color: "#F59E0B", lineHeight: 1.5 }}>
                       This also discards {overrides.length === 1 ? "a later change" : "later changes"} to{" "}
                       {overrides.map((o, i) => (
                         <span key={o.field}>
@@ -650,9 +650,9 @@ function HistoryPanel({ events, loading, onClose, onRevert }: {
                   </div>
                 )}
                 {revertErr && (
-                  <div style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "9px 12px", backgroundColor: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 8 }}>
-                    <AlertCircle size={14} color="#DC2626" style={{ flexShrink: 0, marginTop: 1 }} />
-                    <div style={{ fontFamily: "var(--font-sans)", fontSize: 11.5, color: "#991B1B", lineHeight: 1.5 }}>{revertErr}</div>
+                  <div style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "9px 12px", backgroundColor: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.35)", borderRadius: 8 }}>
+                    <AlertCircle size={14} color="#EF4444" style={{ flexShrink: 0, marginTop: 1 }} />
+                    <div style={{ fontFamily: "var(--font-sans)", fontSize: 11.5, color: "#EF4444", lineHeight: 1.5 }}>{revertErr}</div>
                   </div>
                 )}
               </div>
@@ -1296,7 +1296,7 @@ export function DispatchTable() {
                 const lockColor = isLockedByOther ? "#8B5CF6" : isLockedByMe ? "#3B82F6" : undefined;
                 const isEven   = i % 2 === 0;
                 const kmColor  = etaColor(driver.etaKm);
-                const rowBg    = isLockedByOther ? "#F5F3FF" : isLockedByMe ? "#EFF6FF" : isEven ? "var(--card)" : "var(--background)";
+                const rowBg    = isLockedByOther ? "rgba(139,92,246,0.10)" : isLockedByMe ? "rgba(59,130,246,0.10)" : isEven ? "var(--card)" : "var(--background)";
                 const border   = "1px solid var(--border)";
                 // Claim the row lock on any edit interaction; release when it ends.
                 const lockOnOpen = (o: boolean) => (o ? claimLock(driver.driverId) : releaseLock(driver.driverId));
@@ -1328,7 +1328,7 @@ export function DispatchTable() {
                         return (
                           <div style={{ marginTop: 2, display: "flex", flexDirection: "column", gap: 1 }}>
                             {shown.map((q) => (
-                              <span key={q.id} title={`Next up: ${q.loadId}${q.origin && q.destination ? ` (${q.origin} → ${q.destination})` : ""}`} style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 600, color: "#D97706", whiteSpace: "nowrap" }}>
+                              <span key={q.id} title={`Next up: ${q.loadId}${q.origin && q.destination ? ` (${q.origin} → ${q.destination})` : ""}`} style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 600, color: "#F59E0B", whiteSpace: "nowrap" }}>
                                 {q.loadId}
                               </span>
                             ))}

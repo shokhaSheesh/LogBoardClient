@@ -152,7 +152,7 @@ function AdjustModal({ payout, onSave, onClose, saving, error }: {
       <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)", zIndex: 401, width: 480, backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 14, boxShadow: "0 24px 64px rgba(0,0,0,0.22)", display: "flex", flexDirection: "column", maxHeight: "90vh", overflow: "hidden" }}>
         {/* Header */}
         <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "16px 20px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
-          <div style={{ width: 34, height: 34, borderRadius: 9, backgroundColor: "#D1FAE5", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ width: 34, height: 34, borderRadius: 9, backgroundColor: "rgba(16,185,129,0.14)", display: "flex", alignItems: "center", justifyContent: "center" }}>
             <DollarSign size={17} style={{ color: "#10B981" }} />
           </div>
           <div style={{ flex: 1 }}>

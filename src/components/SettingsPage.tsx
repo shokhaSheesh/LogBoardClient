@@ -454,7 +454,7 @@ function DeleteConfirm({ label, onClose, onConfirm, busy = false, error }: { lab
   return (
     <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div style={{ backgroundColor: "var(--card)", borderRadius: 12, width: 360, padding: 24, boxShadow: "0 20px 60px rgba(0,0,0,0.25)", textAlign: "center" }}>
-        <div style={{ width: 44, height: 44, borderRadius: "50%", backgroundColor: "#FEE2E2", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
+        <div style={{ width: 44, height: 44, borderRadius: "50%", backgroundColor: "rgba(239,68,68,0.14)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
           <Trash2 size={20} color="#EF4444" />
         </div>
         <div style={{ fontFamily: "var(--font-sans)", fontSize: 15, fontWeight: 600, color: "var(--foreground)", marginBottom: 6 }}>Are you sure?</div>
@@ -819,8 +819,8 @@ function UsersTab({ roles, teams, reloadTeams }: { roles: Role[]; teams: Team[];
                   <td style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", verticalAlign: "middle" }}>
                     <span style={{
                       fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600,
-                      color: role?.name?.toLowerCase() === "admin" ? "#1D4ED8" : role?.name?.toLowerCase() === "dispatcher" ? "#5B21B6" : "#374151",
-                      backgroundColor: role?.name?.toLowerCase() === "admin" ? "#DBEAFE" : role?.name?.toLowerCase() === "dispatcher" ? "#EDE9FE" : "#F3F4F6",
+                      color: role?.name?.toLowerCase() === "admin" ? "#3B82F6" : role?.name?.toLowerCase() === "dispatcher" ? "#8B5CF6" : "var(--foreground)",
+                      backgroundColor: role?.name?.toLowerCase() === "admin" ? "rgba(59,130,246,0.14)" : role?.name?.toLowerCase() === "dispatcher" ? "rgba(139,92,246,0.14)" : "var(--muted)",
                       borderRadius: 4, padding: "2px 8px",
                     }}>
                       {role?.name ?? (u.roleName || "—")}
@@ -832,8 +832,8 @@ function UsersTab({ roles, teams, reloadTeams }: { roles: Role[]; teams: Team[];
                     <span style={{
                       display: "inline-flex", alignItems: "center", gap: 5,
                       fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600,
-                      color: u.status === "Active" ? "#065F46" : "#991B1B",
-                      backgroundColor: u.status === "Active" ? "#D1FAE5" : "#FEE2E2",
+                      color: u.status === "Active" ? "#10B981" : "#EF4444",
+                      backgroundColor: u.status === "Active" ? "rgba(16,185,129,0.14)" : "rgba(239,68,68,0.14)",
                       borderRadius: 4, padding: "2px 8px",
                     }}>
                       <span style={{ width: 6, height: 6, borderRadius: "50%", backgroundColor: u.status === "Active" ? "#10B981" : "#EF4444", display: "inline-block" }} />
@@ -842,8 +842,8 @@ function UsersTab({ roles, teams, reloadTeams }: { roles: Role[]; teams: Team[];
                   </td>
                   <td style={{ padding: "8px 10px", borderBottom: "1px solid var(--border)", verticalAlign: "middle", textAlign: "center" }}>
                     <div style={{ display: "inline-flex", gap: 5 }}>
-                      <ActionBtn icon={<Pencil size={13} />} color="#1D4ED8" bg="#DBEAFE" onClick={() => { setEditing({ ...u, teamId: team?.id ?? null }); setModal("edit"); }} />
-                      <ActionBtn icon={<Trash2 size={13} />} color="#DC2626" bg="#FEE2E2" onClick={() => setDeleting(u)} />
+                      <ActionBtn icon={<Pencil size={13} />} color="#3B82F6" bg="rgba(59,130,246,0.14)" onClick={() => { setEditing({ ...u, teamId: team?.id ?? null }); setModal("edit"); }} />
+                      <ActionBtn icon={<Trash2 size={13} />} color="#EF4444" bg="rgba(239,68,68,0.14)" onClick={() => setDeleting(u)} />
                     </div>
                   </td>
                 </tr>
@@ -893,8 +893,8 @@ function DropdownMultiSelect<T>({
   onToggle,
   onClear,
   placeholder,
-  chipColor = "#1D4ED8",
-  chipBg = "#DBEAFE",
+  chipColor = "#3B82F6",
+  chipBg = "rgba(59,130,246,0.14)",
 }: {
   label: string;
   selected: T[];
@@ -1031,8 +1031,8 @@ function _MultiSelectSearch<T>({
   getLabel,
   onToggle,
   placeholder,
-  chipColor = "#1D4ED8",
-  chipBg = "#DBEAFE",
+  chipColor = "#3B82F6",
+  chipBg = "rgba(59,130,246,0.14)",
 }: {
   label: string;
   selected: T[];
@@ -1198,8 +1198,8 @@ function TeamModal({ team, users, allDriverNames, driverLabels, saving, onClose,
             onToggle={toggleUser}
             onClear={() => setForm((f) => ({ ...f, userIds: [] }))}
             placeholder="Select users…"
-            chipColor="#1D4ED8"
-            chipBg="#DBEAFE"
+            chipColor="#3B82F6"
+            chipBg="rgba(59,130,246,0.14)"
           />
 
           <DropdownMultiSelect
@@ -1211,7 +1211,7 @@ function TeamModal({ team, users, allDriverNames, driverLabels, saving, onClose,
             onToggle={toggleDriver}
             onClear={() => setForm((f) => ({ ...f, driverNames: [] }))}
             placeholder="Select drivers…"
-            chipColor="#374151"
+            chipColor="var(--foreground)"
             chipBg="var(--muted)"
           />
         </div>
@@ -1371,7 +1371,7 @@ function TeamsTab({ users: _users }: { users: User[] }) {
                       {teamUsers.length === 0
                         ? <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)", fontStyle: "italic" }}>No users</span>
                         : teamUsers.map((u) => (
-                          <span key={u.id} style={{ fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 500, color: "#1D4ED8", backgroundColor: "#DBEAFE", borderRadius: 4, padding: "2px 8px" }}>{u.name}</span>
+                          <span key={u.id} style={{ fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 500, color: "#3B82F6", backgroundColor: "rgba(59,130,246,0.14)", borderRadius: 4, padding: "2px 8px" }}>{u.name}</span>
                         ))}
                     </div>
                   </td>
@@ -1380,14 +1380,14 @@ function TeamsTab({ users: _users }: { users: User[] }) {
                       {t.driverNames.length === 0
                         ? <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)", fontStyle: "italic" }}>No drivers</span>
                         : t.driverNames.map((d) => (
-                          <span key={d} style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "#374151", backgroundColor: "var(--muted)", border: "1px solid var(--border)", borderRadius: 4, padding: "2px 8px" }}>{driverLabels[d] ?? d}</span>
+                          <span key={d} style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "var(--foreground)", backgroundColor: "var(--muted)", border: "1px solid var(--border)", borderRadius: 4, padding: "2px 8px" }}>{driverLabels[d] ?? d}</span>
                         ))}
                     </div>
                   </td>
                   <td style={{ padding: "8px 10px", borderBottom: "1px solid var(--border)", verticalAlign: "middle", textAlign: "center" }}>
                     <div style={{ display: "inline-flex", gap: 5 }}>
-                      <ActionBtn icon={<Pencil size={13} />} color="#1D4ED8" bg="#DBEAFE" onClick={() => { setEditing(t); setModal("edit"); }} />
-                      <ActionBtn icon={<Trash2 size={13} />} color="#DC2626" bg="#FEE2E2" onClick={() => setDeleting(t)} />
+                      <ActionBtn icon={<Pencil size={13} />} color="#3B82F6" bg="rgba(59,130,246,0.14)" onClick={() => { setEditing(t); setModal("edit"); }} />
+                      <ActionBtn icon={<Trash2 size={13} />} color="#EF4444" bg="rgba(239,68,68,0.14)" onClick={() => setDeleting(t)} />
                     </div>
                   </td>
                 </tr>
@@ -1557,12 +1557,12 @@ function RoleModal({ role, entries: catalogEntries, saving, error, onClose, onSa
 }
 
 const ACTION_COLOR: Record<string, { on: string; bg: string; label: string }> = {
-  read:   { on: "#3B82F6", bg: "#DBEAFE", label: "R" },
-  create: { on: "#10B981", bg: "#D1FAE5", label: "C" },
-  update: { on: "#F59E0B", bg: "#FEF3C7", label: "U" },
-  delete: { on: "#EF4444", bg: "#FEE2E2", label: "D" },
+  read:   { on: "#3B82F6", bg: "rgba(59,130,246,0.14)", label: "R" },
+  create: { on: "#10B981", bg: "rgba(16,185,129,0.14)", label: "C" },
+  update: { on: "#F59E0B", bg: "rgba(245,158,11,0.14)", label: "U" },
+  delete: { on: "#EF4444", bg: "rgba(239,68,68,0.14)", label: "D" },
 };
-const defaultActionColor = { on: "#6B7280", bg: "#F3F4F6", label: "?" };
+const defaultActionColor = { on: "var(--muted-foreground)", bg: "var(--muted)", label: "?" };
 const ACTION_ORDER = ["read", "create", "update", "delete"];
 
 function RolesTab({ onRolesChange }: { onRolesChange: (roles: Role[]) => void }) {
@@ -1677,10 +1677,10 @@ function RolesTab({ onRolesChange }: { onRolesChange: (roles: Role[]) => void })
             {!loading && roles.map((r, i) => {
               const isEven = i % 2 === 0;
               const ROLE_COLOR: Record<string, { color: string; bg: string }> = {
-                Admin:      { color: "#1D4ED8", bg: "#DBEAFE" },
-                Dispatcher: { color: "#5B21B6", bg: "#EDE9FE" },
+                Admin:      { color: "#3B82F6", bg: "rgba(59,130,246,0.14)" },
+                Dispatcher: { color: "#8B5CF6", bg: "rgba(139,92,246,0.14)" },
               };
-              const rc = ROLE_COLOR[r.name] ?? { color: "#374151", bg: "#F3F4F6" };
+              const rc = ROLE_COLOR[r.name] ?? { color: "var(--foreground)", bg: "var(--muted)" };
               return (
                 <tr key={r.id} style={{ backgroundColor: isEven ? "var(--card)" : "var(--background)" }}
                   onMouseEnter={(e) => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = "rgba(59,130,246,0.03)"; }}
@@ -1715,8 +1715,8 @@ function RolesTab({ onRolesChange }: { onRolesChange: (roles: Role[]) => void })
                   })}
                   <td style={{ padding: "8px 10px", borderBottom: "1px solid var(--border)", verticalAlign: "middle", textAlign: "center" }}>
                     <div style={{ display: "inline-flex", gap: 5 }}>
-                      <ActionBtn icon={<Pencil size={13} />} color="#1D4ED8" bg="#DBEAFE" onClick={() => { setEditing(r); setModal("edit"); }} />
-                      <ActionBtn icon={<Trash2 size={13} />} color="#DC2626" bg="#FEE2E2" onClick={() => setDeleting(r)} />
+                      <ActionBtn icon={<Pencil size={13} />} color="#3B82F6" bg="rgba(59,130,246,0.14)" onClick={() => { setEditing(r); setModal("edit"); }} />
+                      <ActionBtn icon={<Trash2 size={13} />} color="#EF4444" bg="rgba(239,68,68,0.14)" onClick={() => setDeleting(r)} />
                     </div>
                   </td>
                 </tr>
@@ -1890,10 +1890,10 @@ export function SettingsPage() {
   }, []);
 
   const tabs: { id: TabId; label: string; icon: React.ReactNode; color: string; bg: string }[] = [
-    { id: "users",  label: "Users",              icon: <Users        size={15} />, color: "#1D4ED8", bg: "#DBEAFE" },
-    { id: "teams",  label: "Teams",              icon: <UsersRound   size={15} />, color: "#5B21B6", bg: "#EDE9FE" },
-    { id: "roles",  label: "Roles & Permissions",icon: <ShieldCheck  size={15} />, color: "#065F46", bg: "#D1FAE5" },
-    { id: "week",   label: "Work Week",          icon: <CalendarDays size={15} />, color: "#0369A1", bg: "#E0F2FE" },
+    { id: "users",  label: "Users",              icon: <Users        size={15} />, color: "#3B82F6", bg: "rgba(59,130,246,0.14)" },
+    { id: "teams",  label: "Teams",              icon: <UsersRound   size={15} />, color: "#8B5CF6", bg: "rgba(139,92,246,0.14)" },
+    { id: "roles",  label: "Roles & Permissions",icon: <ShieldCheck  size={15} />, color: "#10B981", bg: "rgba(16,185,129,0.14)" },
+    { id: "week",   label: "Work Week",          icon: <CalendarDays size={15} />, color: "#22D3EE", bg: "rgba(34,211,238,0.14)" },
   ];
 
   return (

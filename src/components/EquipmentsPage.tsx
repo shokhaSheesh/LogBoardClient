@@ -317,7 +317,7 @@ function AsyncSearchableSelect({ value, valueLabel, fetchPage, onChange, placeho
                   {/* This driver already holds a unit of this kind — informational; still
                       selectable (mark + allow). Hidden on the active option (the unit's own driver). */}
                   {opt.takenBy && !active && (
-                    <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontFamily: "var(--font-sans)", fontSize: 10, fontWeight: 500, color: "#B45309", backgroundColor: "#FEF3C7", borderRadius: 4, padding: "1px 6px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 130 }}>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontFamily: "var(--font-sans)", fontSize: 10, fontWeight: 500, color: "#F59E0B", backgroundColor: "rgba(245,158,11,0.14)", borderRadius: 4, padding: "1px 6px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 130 }}>
                       {opt.takenBy}
                     </span>
                   )}
@@ -397,7 +397,7 @@ function Pagination({
           {loading && <span style={{ width: 12, height: 12, borderRadius: "50%", border: "2px solid var(--border)", borderTopColor: "var(--primary)", animation: "spin 0.7s linear infinite", display: "inline-block" }} />}
           {loading ? "Loading…" : total === 0 ? "No results" : `Showing ${from}–${to}`}
           {loading ? null : totalPending ? (
-            <span style={{ fontSize: 9, fontWeight: 700, color: "#D97706", backgroundColor: "#FEF3C7", border: "1px solid #FDE68A", borderRadius: 4, padding: "1px 5px", letterSpacing: "0.04em", textTransform: "uppercase" }}>
+            <span style={{ fontSize: 9, fontWeight: 700, color: "#F59E0B", backgroundColor: "rgba(245,158,11,0.14)", border: "1px solid rgba(245,158,11,0.35)", borderRadius: 4, padding: "1px 5px", letterSpacing: "0.04em", textTransform: "uppercase" }}>
               total pending
             </span>
           ) : (
@@ -596,7 +596,7 @@ function DeleteConfirm({ label, onClose, onConfirm, busy = false, error }: { lab
   return (
     <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div style={{ backgroundColor: "var(--card)", borderRadius: 12, width: 360, padding: 24, boxShadow: "0 20px 60px rgba(0,0,0,0.25)", textAlign: "center" }}>
-        <div style={{ width: 44, height: 44, borderRadius: "50%", backgroundColor: "#FEE2E2", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
+        <div style={{ width: 44, height: 44, borderRadius: "50%", backgroundColor: "rgba(239,68,68,0.14)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
           <Trash2 size={20} color="#EF4444" />
         </div>
         <div style={{ fontFamily: "var(--font-sans)", fontSize: 15, fontWeight: 600, color: "var(--foreground)", marginBottom: 6 }}>Remove equipment?</div>
@@ -662,8 +662,8 @@ function ImportModal({ entityLabel, endpoint, onClose, onImported }: {
       <div style={{ backgroundColor: "var(--card)", borderRadius: 12, width: 520, boxShadow: "0 20px 60px rgba(0,0,0,0.22)" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderBottom: "1px solid var(--border)", backgroundColor: "var(--muted)", borderRadius: "12px 12px 0 0" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-            <div style={{ width: 30, height: 30, borderRadius: 8, backgroundColor: "#ECFDF5", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <FileSpreadsheet size={15} color="#059669" />
+            <div style={{ width: 30, height: 30, borderRadius: 8, backgroundColor: "rgba(16,185,129,0.08)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <FileSpreadsheet size={15} color="#10B981" />
             </div>
             <span style={{ fontFamily: "var(--font-sans)", fontSize: 14, fontWeight: 600, color: "var(--foreground)" }}>
               Import {entityLabel}s
@@ -683,18 +683,18 @@ function ImportModal({ entityLabel, endpoint, onClose, onImported }: {
             style={{
               border: `2px dashed ${dragging ? "var(--primary)" : file ? "#10B981" : "var(--border)"}`,
               borderRadius: 10, padding: "36px 20px", textAlign: "center",
-              backgroundColor: dragging ? "var(--accent)" : file ? "#F0FDF4" : "var(--input-background)",
+              backgroundColor: dragging ? "var(--accent)" : file ? "rgba(16,185,129,0.10)" : "var(--input-background)",
               cursor: "pointer", transition: "all 0.15s",
             }}
           >
             <input ref={inputRef} type="file" accept=".csv" onChange={handleFile} style={{ display: "none" }} />
             {file ? (
               <>
-                <div style={{ width: 44, height: 44, borderRadius: 10, backgroundColor: "#D1FAE5", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 12px" }}>
-                  <FileText size={22} color="#059669" />
+                <div style={{ width: 44, height: 44, borderRadius: 10, backgroundColor: "rgba(16,185,129,0.14)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 12px" }}>
+                  <FileText size={22} color="#10B981" />
                 </div>
                 <div style={{ fontFamily: "var(--font-sans)", fontSize: 14, fontWeight: 600, color: "#065F46" }}>{file.name}</div>
-                <div style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "#6B7280", marginTop: 4 }}>
+                <div style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)", marginTop: 4 }}>
                   {(file.size / 1024).toFixed(1)} KB · Click to change
                 </div>
               </>
@@ -724,14 +724,14 @@ function ImportModal({ entityLabel, endpoint, onClose, onImported }: {
           </div>
 
           {error && (
-            <div style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 14px", backgroundColor: "#FEF2F2", borderRadius: 8, border: "1px solid #FECACA" }}>
-              <AlertCircle size={15} color="#DC2626" style={{ flexShrink: 0, marginTop: 1 }} />
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 14px", backgroundColor: "rgba(239,68,68,0.08)", borderRadius: 8, border: "1px solid rgba(239,68,68,0.35)" }}>
+              <AlertCircle size={15} color="#EF4444" style={{ flexShrink: 0, marginTop: 1 }} />
               <div style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "#991B1B", lineHeight: 1.5 }}>{error}</div>
             </div>
           )}
 
           {result && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "12px 14px", backgroundColor: result.failed > 0 ? "#FFFBEB" : "#F0FDF4", borderRadius: 8, border: `1px solid ${result.failed > 0 ? "#FDE68A" : "#BBF7D0"}` }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "12px 14px", backgroundColor: result.failed > 0 ? "rgba(245,158,11,0.08)" : "rgba(16,185,129,0.10)", borderRadius: 8, border: `1px solid ${result.failed > 0 ? "rgba(245,158,11,0.35)" : "rgba(16,185,129,0.35)"}` }}>
               <div style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, color: result.failed > 0 ? "#92400E" : "#065F46" }}>
                 Imported {result.created} {entityLabel.toLowerCase()}{result.created !== 1 ? "s" : ""}{result.failed > 0 ? ` · ${result.failed} row${result.failed !== 1 ? "s" : ""} failed` : ""}
               </div>
@@ -759,7 +759,7 @@ function ImportModal({ entityLabel, endpoint, onClose, onImported }: {
               style={{
                 fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 16px",
                 borderRadius: 6, border: "none",
-                backgroundColor: file && !submitting ? "#059669" : "var(--muted)",
+                backgroundColor: file && !submitting ? "#10B981" : "var(--muted)",
                 color: file && !submitting ? "#fff" : "var(--muted-foreground)",
                 cursor: file && !submitting ? "pointer" : "not-allowed",
                 display: "flex", alignItems: "center", gap: 6,
@@ -804,7 +804,7 @@ function AddMenu({ entityLabel, onManual, onImport }: {
     },
     {
       icon: <FileSpreadsheet size={16} />,
-      iconColor: "#059669", iconBg: "#ECFDF5",
+      iconColor: "#10B981", iconBg: "rgba(16,185,129,0.08)",
       label: "Import from File",
       desc: "Upload a CSV, Excel or PDF roster",
       comingSoon: false,
@@ -1032,8 +1032,8 @@ function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
                 <TD mono>{r.vin || "—"}</TD>
                 <td style={{ padding: "8px 10px", borderBottom: "1px solid var(--border)", verticalAlign: "middle", textAlign: "center" }}>
                   <div style={{ display: "inline-flex", gap: 5 }}>
-                    {canUpdate && <ActionBtn icon={<Pencil size={13} />} color="#1D4ED8" bg="#DBEAFE" onClick={() => openEdit(r)} />}
-                    {canDelete && <ActionBtn icon={<Trash2 size={13} />} color="#DC2626" bg="#FEE2E2" onClick={() => setDeleting(r)} />}
+                    {canUpdate && <ActionBtn icon={<Pencil size={13} />} color="#3B82F6" bg="rgba(59,130,246,0.14)" onClick={() => openEdit(r)} />}
+                    {canDelete && <ActionBtn icon={<Trash2 size={13} />} color="#EF4444" bg="rgba(239,68,68,0.14)" onClick={() => setDeleting(r)} />}
                     {!canUpdate && !canDelete && <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)" }}>—</span>}
                   </div>
                 </td>
@@ -1207,7 +1207,7 @@ function TrailersTab({ onCountChange }: { onCountChange: (n: number) => void }) 
               >
                 <TD mono center>{(page - 1) * pageSize + i + 1}</TD>
                 <td style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", verticalAlign: "middle" }}>
-                  <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 600, color: "#5B21B6", backgroundColor: "#EDE9FE", borderRadius: 4, padding: "2px 8px" }}>
+                  <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 600, color: "#8B5CF6", backgroundColor: "rgba(139,92,246,0.14)", borderRadius: 4, padding: "2px 8px" }}>
                     {r.unit}
                   </span>
                 </td>
@@ -1217,8 +1217,8 @@ function TrailersTab({ onCountChange }: { onCountChange: (n: number) => void }) 
                 <TD mono>{r.vin || "—"}</TD>
                 <td style={{ padding: "8px 10px", borderBottom: "1px solid var(--border)", verticalAlign: "middle", textAlign: "center" }}>
                   <div style={{ display: "inline-flex", gap: 5 }}>
-                    {canUpdate && <ActionBtn icon={<Pencil size={13} />} color="#1D4ED8" bg="#DBEAFE" onClick={() => openEdit(r)} />}
-                    {canDelete && <ActionBtn icon={<Trash2 size={13} />} color="#DC2626" bg="#FEE2E2" onClick={() => setDeleting(r)} />}
+                    {canUpdate && <ActionBtn icon={<Pencil size={13} />} color="#3B82F6" bg="rgba(59,130,246,0.14)" onClick={() => openEdit(r)} />}
+                    {canDelete && <ActionBtn icon={<Trash2 size={13} />} color="#EF4444" bg="rgba(239,68,68,0.14)" onClick={() => setDeleting(r)} />}
                     {!canUpdate && !canDelete && <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)" }}>—</span>}
                   </div>
                 </td>
@@ -1258,8 +1258,8 @@ export function EquipmentsPage() {
   const [trailerCount, setTrailerCount] = useState<number | null>(null);
 
   const tabs: { id: TabId; label: string; count: number | null; icon: React.ReactNode; color: string; bg: string }[] = [
-    { id: "trucks",   label: "Trucks",   count: truckCount,   icon: <Truck     size={15} />, color: "#1D4ED8", bg: "#DBEAFE" },
-    { id: "trailers", label: "Trailers", count: trailerCount, icon: <Container size={15} />, color: "#5B21B6", bg: "#EDE9FE" },
+    { id: "trucks",   label: "Trucks",   count: truckCount,   icon: <Truck     size={15} />, color: "#3B82F6", bg: "rgba(59,130,246,0.14)" },
+    { id: "trailers", label: "Trailers", count: trailerCount, icon: <Container size={15} />, color: "#8B5CF6", bg: "rgba(139,92,246,0.14)" },
   ];
 
   return (
