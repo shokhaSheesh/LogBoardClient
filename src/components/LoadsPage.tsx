@@ -1262,8 +1262,11 @@ function LoadModal({ load, onClose, onSave, saving = false }: {
 
   return (
     <div
+      // Deliberately NOT closed by a backdrop click. This form can hold an AI-extracted
+      // draft (8-35s to produce) or a half-filled load, and a stray click on the backdrop
+      // — e.g. the one you make clicking back into the browser window — would silently
+      // discard it. Close via the X / Cancel button, like every other modal in the app.
       style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: 300, overflowY: "auto", display: "flex", justifyContent: "center", alignItems: "flex-start", padding: "40px 20px" }}
-      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div style={{ backgroundColor: "var(--card)", borderRadius: 12, width: 660, boxShadow: "0 20px 60px rgba(0,0,0,0.25)", flexShrink: 0 }}>
 

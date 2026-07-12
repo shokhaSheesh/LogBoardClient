@@ -223,6 +223,15 @@ function StatusDropdown({ value, onChange, disabled = false, onOpenChange }: { v
   const didMount = useRef(false);
   useEffect(() => { if (!didMount.current) { didMount.current = true; return; } onOpenChange?.(open); }, [open]);
 
+  // If this unmounts while still open (e.g. the table re-renders into a different
+  // shape), the "closed" event never fires and the row's lock would leak — held
+  // alive forever by its heartbeat. Hand it back on the way out.
+  const openRef = useRef(open);
+  openRef.current = open;
+  const onOpenChangeRef = useRef(onOpenChange);
+  onOpenChangeRef.current = onOpenChange;
+  useEffect(() => () => { if (openRef.current) onOpenChangeRef.current?.(false); }, []);
+
   const select = (s: Status) => {
     setOpen(false);
     setBusy(true);
@@ -276,6 +285,15 @@ function TypeDropdown({ value, onChange, disabled = false, onOpenChange }: { val
   // Skip the initial mount so we don't fire a spurious lock-release for every row.
   const didMount = useRef(false);
   useEffect(() => { if (!didMount.current) { didMount.current = true; return; } onOpenChange?.(open); }, [open]);
+
+  // If this unmounts while still open (e.g. the table re-renders into a different
+  // shape), the "closed" event never fires and the row's lock would leak — held
+  // alive forever by its heartbeat. Hand it back on the way out.
+  const openRef = useRef(open);
+  openRef.current = open;
+  const onOpenChangeRef = useRef(onOpenChange);
+  onOpenChangeRef.current = onOpenChange;
+  useEffect(() => () => { if (openRef.current) onOpenChangeRef.current?.(false); }, []);
 
   const select = (t: DriverType) => {
     setOpen(false);
@@ -691,6 +709,7 @@ export function DispatchTable() {
   const driverCache   = useRef<Record<string, Record<string, unknown>>>({});
   // Heartbeat intervals per driverId
   const heartbeats    = useRef<Record<string, ReturnType<typeof setInterval>>>({});
+  const lockWanted    = useRef<Record<string, boolean>>({}); // intent, so a release can cancel an in-flight claim
 
   // Auto-dismiss the error banner.
   useEffect(() => {
@@ -835,8 +854,14 @@ export function DispatchTable() {
     return () => {
       if (wsRef.current) { wsRef.current.close(); wsRef.current = null; }
       if (reconnectRef.current) clearTimeout(reconnectRef.current);
-      Object.values(heartbeats.current).forEach(clearInterval);
+      // Actually hand back any locks we still hold — stopping the heartbeat alone
+      // would leave the row looking "locked" to everyone else until it expires.
+      Object.keys(heartbeats.current).forEach((driverId) => {
+        clearInterval(heartbeats.current[driverId]);
+        api.delete("/board/locks", { entity_type: "driver", entity_id: driverId }).catch(() => {});
+      });
       heartbeats.current = {};
+      lockWanted.current = {};
     };
   }, [companyId]);
 
@@ -857,8 +882,19 @@ export function DispatchTable() {
   // ── Claim / release lock ───────────────────────────────────────────────────
 
   const claimLock = async (driverId: string) => {
+    // Record the intent BEFORE awaiting. Without this, releasing while the POST is
+    // still in flight leaves an orphaned heartbeat: release's clearInterval finds
+    // nothing (the interval isn't created yet), then the POST resolves and starts a
+    // 20s heartbeat that renews the lock forever — the row shows as "being edited"
+    // indefinitely and /board/locks fires on a loop.
+    lockWanted.current[driverId] = true;
     try {
       await api.post("/board/locks", { entity_type: "driver", entity_id: driverId });
+      if (!lockWanted.current[driverId]) {
+        // Released while we were awaiting — drop the lock we just took, no heartbeat.
+        api.delete("/board/locks", { entity_type: "driver", entity_id: driverId }).catch(() => {});
+        return;
+      }
       // Start heartbeat (re-POST every 20s)
       if (!heartbeats.current[driverId]) {
         heartbeats.current[driverId] = setInterval(() => {
@@ -869,6 +905,7 @@ export function DispatchTable() {
   };
 
   const releaseLock = async (driverId: string) => {
+    delete lockWanted.current[driverId]; // cancels an in-flight claim (see above)
     clearInterval(heartbeats.current[driverId]);
     delete heartbeats.current[driverId];
     try { await api.delete("/board/locks", { entity_type: "driver", entity_id: driverId }); } catch { /* ignore */ }
