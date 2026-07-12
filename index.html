@@ -9,7 +9,18 @@
       <meta name="description" content="Log Board — freight dispatch management platform with real-time tracking, driver management, and load operations." />
       <meta name="robots" content="noindex, nofollow" />
       <style>html, body { height: 100%; margin: 0; } #root { height: 100%; }</style>
-      
+      <script>
+        // Apply the stored (or system) theme before first paint, so there's no
+        // light-mode flash for a user who has dark mode saved.
+        (function () {
+          try {
+            var t = localStorage.getItem("theme");
+            var dark = t === "dark" || (!t && window.matchMedia("(prefers-color-scheme: dark)").matches);
+            if (dark) document.documentElement.classList.add("dark");
+          } catch (e) {}
+        })();
+      </script>
+
     </head>
 
     <body>

@@ -272,18 +272,18 @@ export function DashboardPage() {
           {/* ── Stat cards ── */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 }}>
             <StatCard label="Completed Loads" value={String(week.completedLoads)} sub={`Week of ${week.label}`}
-              icon={<Package size={20} />} color="#3B82F6" bg="#DBEAFE" trend={trendDir(week.loadsDelta)} trendVal={trendStr(week.loadsDelta)} />
+              icon={<Package size={20} />} color="#3B82F6" bg="rgba(59,130,246,0.14)" trend={trendDir(week.loadsDelta)} trendVal={trendStr(week.loadsDelta)} />
             <StatCard label="Total Gross Revenue" value={`$${week.totalGross.toLocaleString()}`} sub="All drivers combined"
-              icon={<DollarSign size={20} />} color="#10B981" bg="#D1FAE5" trend={trendDir(week.grossDelta)} trendVal={trendStr(week.grossDelta)} />
+              icon={<DollarSign size={20} />} color="#10B981" bg="rgba(16,185,129,0.14)" trend={trendDir(week.grossDelta)} trendVal={trendStr(week.grossDelta)} />
             <StatCard label="Dispatcher Payout" value={`$${week.dispatcherPayout.toLocaleString()}`} sub="~20% of total gross"
-              icon={<Zap size={20} />} color="#F59E0B" bg="#FEF3C7" trend="neutral" trendVal="No prior data" />
+              icon={<Zap size={20} />} color="#F59E0B" bg="rgba(245,158,11,0.14)" trend="neutral" trendVal="No prior data" />
           </div>
 
           {/* ── Row 1: Top drivers gross + RPM ── */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
 
               {/* Top 5 by Gross */}
-              <ChartCard title="Top 5 Drivers by Gross" subtitle="Total revenue earned this week" icon={<Trophy size={16} />} color="#3B82F6" bg="#DBEAFE">
+              <ChartCard title="Top 5 Drivers by Gross" subtitle="Total revenue earned this week" icon={<Trophy size={16} />} color="#3B82F6" bg="rgba(59,130,246,0.14)">
                 <>
                   <svg width={0} height={0} style={{ position: "absolute" }}>
                     <defs>
@@ -326,7 +326,7 @@ export function DashboardPage() {
               </ChartCard>
 
               {/* Top 5 by RPM */}
-              <ChartCard title="Top 5 Drivers by RPM" subtitle="Rate per mile — efficiency metric" icon={<Gauge size={16} />} color="#F59E0B" bg="#FEF3C7">
+              <ChartCard title="Top 5 Drivers by RPM" subtitle="Rate per mile — efficiency metric" icon={<Gauge size={16} />} color="#F59E0B" bg="rgba(245,158,11,0.14)">
                 <>
                   <svg width={0} height={0} style={{ position: "absolute" }}>
                     <defs>
@@ -374,7 +374,7 @@ export function DashboardPage() {
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
 
             {/* Top Dispatchers */}
-            <ChartCard title="Top Dispatchers by Payout" subtitle="Total load value dispatched this week" icon={<TrendingUp size={16} />} color="#10B981" bg="#D1FAE5">
+            <ChartCard title="Top Dispatchers by Payout" subtitle="Total load value dispatched this week" icon={<TrendingUp size={16} />} color="#10B981" bg="rgba(16,185,129,0.14)">
               <>
                 <svg width={0} height={0} style={{ position: "absolute" }}>
                   <defs>
@@ -417,7 +417,7 @@ export function DashboardPage() {
             </ChartCard>
 
             {/* Daily Gross Trend — one point per day of the selected week */}
-            <ChartCard title="Gross Revenue by Day" subtitle="Daily earnings across the selected week" icon={<TrendingUp size={16} />} color="#6366F1" bg="#EEF2FF">
+            <ChartCard title="Gross Revenue by Day" subtitle="Daily earnings across the selected week" icon={<TrendingUp size={16} />} color="#6366F1" bg="rgba(99,102,241,0.14)">
               <ResponsiveContainer width="100%" height={280}>
                 <AreaChart
                   data={daily.map((d) => ({ dayLabel: fmtDayLabel(d.date), gross: d.gross, loads: d.completedLoads }))}
@@ -455,7 +455,7 @@ export function DashboardPage() {
 
           {/* ── Row 3: Completed loads per day ── */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 16 }}>
-            <ChartCard title="Completed Loads by Day" subtitle="Daily load volume across the selected week" icon={<Package size={16} />} color="#3B82F6" bg="#DBEAFE">
+            <ChartCard title="Completed Loads by Day" subtitle="Daily load volume across the selected week" icon={<Package size={16} />} color="#3B82F6" bg="rgba(59,130,246,0.14)">
               <ResponsiveContainer width="100%" height={220}>
                 <AreaChart
                   data={daily.map((d) => ({ dayLabel: fmtDayLabel(d.date), loads: d.completedLoads }))}

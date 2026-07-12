@@ -102,8 +102,8 @@ function fmt(n: number) { return `$${n.toLocaleString()}`; }
 // ─── Cell display styles ──────────────────────────────────────────────────────
 
 function cellStyle(type: CellType): { bg: string; color: string; label?: string } {
-  if (type === "load")  return { bg: "#ffffff", color: "#111827" };
-  if (type === "empty") return { bg: "#F9FAFB", color: "#9CA3AF" };
+  if (type === "load")  return { bg: "var(--card)", color: "var(--foreground)" };
+  if (type === "empty") return { bg: "var(--muted)", color: "var(--muted-foreground)" };
   const s = STATUS_CONFIG[type as Status];
   return { bg: s.bg, color: s.color, label: s.label.toUpperCase() };
 }
@@ -123,11 +123,11 @@ function DayCellContent({ cell }: { cell: DayCell }) {
   if (cell.type === "load") {
     return cell.amount !== undefined ? (
       <>
-        <div style={{ fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: 700, color: "#111827", lineHeight: 1.2 }}>{fmt(cell.amount)}</div>
-        <div title={cell.loadId} style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "#6B7280", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: DAY_W - 12 }}>{cell.loadId}</div>
+        <div style={{ fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: 700, color: "var(--foreground)", lineHeight: 1.2 }}>{fmt(cell.amount)}</div>
+        <div title={cell.loadId} style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "var(--muted-foreground)", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: DAY_W - 12 }}>{cell.loadId}</div>
       </>
     ) : (
-      <div title={cell.loadId} style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "#9CA3AF" }}>{cell.loadId ?? "—"}</div>
+      <div title={cell.loadId} style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--muted-foreground)" }}>{cell.loadId ?? "—"}</div>
     );
   }
   if (cell.type === "empty") return null;
@@ -208,12 +208,12 @@ function LoadMultiSelect({ selected, driverId, onChange }: {
       {selected.length > 0 && (
         <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 6 }}>
           {selected.map((id) => (
-            <span key={id} style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 6px", borderRadius: 5, backgroundColor: "#EFF6FF", border: "1px solid #BFDBFE", fontFamily: "var(--font-mono)", fontSize: 11, color: "#1D4ED8" }}>
+            <span key={id} style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 6px", borderRadius: 5, backgroundColor: "var(--secondary)", border: "1px solid var(--border)", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--secondary-foreground)" }}>
               {id}
               <button
                 type="button"
                 onMouseDown={(e) => { e.preventDefault(); toggle(id); }}
-                style={{ border: "none", background: "none", cursor: "pointer", color: "#1D4ED8", display: "flex", padding: 0 }}
+                style={{ border: "none", background: "none", cursor: "pointer", color: "var(--secondary-foreground)", display: "flex", padding: 0 }}
               >
                 <X size={10} />
               </button>
@@ -222,7 +222,7 @@ function LoadMultiSelect({ selected, driverId, onChange }: {
         </div>
       )}
       <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
-        <Search size={12} style={{ position: "absolute", left: 8, color: "#9CA3AF", pointerEvents: "none" }} />
+        <Search size={12} style={{ position: "absolute", left: 8, color: "var(--muted-foreground)", pointerEvents: "none" }} />
         <input
           type="text"
           placeholder="Search load ID…"
@@ -230,8 +230,9 @@ function LoadMultiSelect({ selected, driverId, onChange }: {
           onChange={(e) => setQuery(e.target.value)}
           style={{
             width: "100%", paddingLeft: 26, paddingRight: 8, height: 30,
-            borderRadius: 6, border: "1px solid #D1D5DB",
-            fontFamily: "var(--font-mono)", fontSize: 12, color: "#374151",
+            borderRadius: 6, border: "1px solid var(--border)",
+            fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--foreground)",
+            backgroundColor: "var(--input-background)",
             outline: "none", boxSizing: "border-box",
           }}
           onMouseDown={(e) => e.stopPropagation()}
@@ -247,8 +248,8 @@ function LoadMultiSelect({ selected, driverId, onChange }: {
         ref={listRef}
         onScroll={onScroll}
         style={{
-          marginTop: 4, border: "1px solid #E5E7EB", borderRadius: 6, backgroundColor: "#fff",
-          maxHeight: 150, overflowY: "auto", scrollbarWidth: "thin", scrollbarColor: "#D1D5DB transparent",
+          marginTop: 4, border: "1px solid var(--border)", borderRadius: 6, backgroundColor: "var(--card)",
+          maxHeight: 150, overflowY: "auto", scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent",
         }}
         onMouseDown={(e) => e.stopPropagation()}
       >
@@ -261,16 +262,16 @@ function LoadMultiSelect({ selected, driverId, onChange }: {
               style={{
                 display: "flex", alignItems: "center", gap: 8,
                 width: "100%", padding: "6px 10px", border: "none",
-                backgroundColor: isSel ? "#EFF6FF" : "transparent",
+                backgroundColor: isSel ? "var(--secondary)" : "transparent",
                 cursor: "pointer", textAlign: "left",
               }}
-              onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = isSel ? "#DBEAFE" : "#F0F9FF"; }}
-              onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = isSel ? "#EFF6FF" : "transparent"; }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = isSel ? "var(--accent)" : "var(--muted)"; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = isSel ? "var(--secondary)" : "transparent"; }}
             >
-              <span style={{ width: 14, height: 14, borderRadius: 3, border: `1.5px solid ${isSel ? "#3B82F6" : "#D1D5DB"}`, backgroundColor: isSel ? "#3B82F6" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              <span style={{ width: 14, height: 14, borderRadius: 3, border: `1.5px solid ${isSel ? "var(--primary)" : "var(--border)"}`, backgroundColor: isSel ? "var(--primary)" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                 {isSel && <Check size={10} color="#fff" />}
               </span>
-              <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "#374151", flex: 1 }}>{load.id}</span>
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--foreground)", flex: 1 }}>{load.id}</span>
               <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 600, color: "#10B981" }}>${load.payout.toLocaleString()}</span>
             </button>
           );
@@ -362,8 +363,8 @@ function CellEditPanel({
         onKeyDown={handleKey}
         style={{
           position: "fixed", top, left, zIndex: 9999, width: PANEL_W,
-          backgroundColor: "#fff", border: "1.5px solid #3B82F6",
-          borderRadius: 10, boxShadow: "0 8px 32px rgba(0,0,0,0.18)",
+          backgroundColor: "var(--card)", border: "1.5px solid var(--primary)",
+          borderRadius: 10, boxShadow: "0 8px 32px rgba(0,0,0,0.35)",
           padding: 10, display: "flex", flexDirection: "column", gap: 8,
           maxHeight: panelMaxHeight, overflowY: "auto",
         }}
@@ -378,12 +379,12 @@ function CellEditPanel({
                 key={opt.type}
                 onMouseDown={(e) => { e.preventDefault(); onType(opt.type); }}
                 style={{
-                  padding: "3px 8px", borderRadius: 5, border: active ? "1.5px solid transparent" : "1px solid #E5E7EB",
-                  backgroundColor: active ? s(opt.type).bg : "#F9FAFB",
-                  color: active ? s(opt.type).color : "#374151",
+                  padding: "3px 8px", borderRadius: 5, border: active ? "1.5px solid transparent" : "1px solid var(--border)",
+                  backgroundColor: active ? s(opt.type).bg : "var(--muted)",
+                  color: active ? s(opt.type).color : "var(--foreground)",
                   fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: active ? 700 : 400,
                   cursor: "pointer", outline: "none",
-                  boxShadow: active ? "0 0 0 2px #3B82F6" : "none",
+                  boxShadow: active ? "0 0 0 2px var(--primary)" : "none",
                 }}
               >
                 {opt.label}
@@ -396,7 +397,7 @@ function CellEditPanel({
         {edit.type === "load" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <div style={{ position: "relative" }}>
-              <span style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", fontFamily: "var(--font-mono)", fontSize: 12, color: "#6B7280", pointerEvents: "none" }}>$</span>
+              <span style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--muted-foreground)", pointerEvents: "none" }}>$</span>
               <input
                 ref={amountRef}
                 type="number"
@@ -404,9 +405,9 @@ function CellEditPanel({
                 placeholder="Amount"
                 value={edit.amount}
                 onChange={(e) => onAmount(e.target.value)}
-                style={{ width: "100%", paddingLeft: 20, paddingRight: 8, height: 30, borderRadius: 6, border: "1px solid #D1D5DB", fontFamily: "var(--font-mono)", fontSize: 13, color: "#111827", outline: "none", boxSizing: "border-box" }}
-                onFocus={(e) => { e.currentTarget.style.borderColor = "#3B82F6"; }}
-                onBlur={(e)  => { e.currentTarget.style.borderColor = "#D1D5DB"; }}
+                style={{ width: "100%", paddingLeft: 20, paddingRight: 8, height: 30, borderRadius: 6, border: "1px solid var(--border)", fontFamily: "var(--font-mono)", fontSize: 13, color: "var(--foreground)", backgroundColor: "var(--input-background)", outline: "none", boxSizing: "border-box" }}
+                onFocus={(e) => { e.currentTarget.style.borderColor = "var(--primary)"; }}
+                onBlur={(e)  => { e.currentTarget.style.borderColor = "var(--border)"; }}
               />
             </div>
             <LoadMultiSelect
@@ -418,22 +419,22 @@ function CellEditPanel({
         )}
 
         {/* Actions — sticky to the panel bottom so they stay reachable if it scrolls */}
-        <div style={{ position: "sticky", bottom: -10, backgroundColor: "#fff", paddingTop: 8, marginTop: -2, borderTop: "1px solid #F3F4F6" }}>
+        <div style={{ position: "sticky", bottom: -10, backgroundColor: "var(--card)", paddingTop: 8, marginTop: -2, borderTop: "1px solid var(--border)" }}>
           <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
             <button
               onMouseDown={(e) => { e.preventDefault(); onCancel(); }}
-              style={{ padding: "4px 12px", borderRadius: 5, border: "1px solid #E5E7EB", backgroundColor: "#F9FAFB", fontFamily: "var(--font-sans)", fontSize: 12, color: "#6B7280", cursor: "pointer", outline: "none" }}
+              style={{ padding: "4px 12px", borderRadius: 5, border: "1px solid var(--border)", backgroundColor: "var(--muted)", fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)", cursor: "pointer", outline: "none" }}
             >
               Cancel
             </button>
             <button
               onMouseDown={(e) => { e.preventDefault(); onSave(); }}
-              style={{ padding: "4px 12px", borderRadius: 5, border: "none", backgroundColor: "#3B82F6", fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: 600, color: "#fff", cursor: "pointer", outline: "none" }}
+              style={{ padding: "4px 12px", borderRadius: 5, border: "none", backgroundColor: "var(--primary)", fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: 600, color: "var(--primary-foreground)", cursor: "pointer", outline: "none" }}
             >
               Save
             </button>
           </div>
-          <div style={{ fontFamily: "var(--font-sans)", fontSize: 10, color: "#9CA3AF", textAlign: "right", marginTop: 4 }}>
+          <div style={{ fontFamily: "var(--font-sans)", fontSize: 10, color: "var(--muted-foreground)", textAlign: "right", marginTop: 4 }}>
             Enter to save · Esc to cancel
           </div>
         </div>
@@ -477,7 +478,7 @@ function InlineNumberEdit({ value, onSave, prefix = "$", allowNeg = false, readO
   if (editing) {
     return (
       <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
-        <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "#6B7280" }}>{prefix}</span>
+        <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--muted-foreground)" }}>{prefix}</span>
         <input
           ref={inputRef}
           type="number"
@@ -485,7 +486,7 @@ function InlineNumberEdit({ value, onSave, prefix = "$", allowNeg = false, readO
           onChange={(e) => setDraft(e.target.value)}
           onBlur={commit}
           onKeyDown={handleKey}
-          style={{ width: 72, height: 24, padding: "0 4px", borderRadius: 4, border: "1.5px solid #3B82F6", fontFamily: "var(--font-mono)", fontSize: 12, color: "#111827", outline: "none", textAlign: "right" }}
+          style={{ width: 72, height: 24, padding: "0 4px", borderRadius: 4, border: "1.5px solid var(--primary)", fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--foreground)", backgroundColor: "var(--input-background)", outline: "none", textAlign: "right" }}
         />
       </div>
     );
@@ -498,7 +499,7 @@ function InlineNumberEdit({ value, onSave, prefix = "$", allowNeg = false, readO
           {allowNeg && value < 0 ? `-$${Math.abs(value).toLocaleString()}` : fmt(value)}
         </span>
       ) : (
-        <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "#9CA3AF" }}>—</span>
+        <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--muted-foreground)" }}>—</span>
       )}
     </>
   );
@@ -563,11 +564,11 @@ function DateRangePicker({ from, to, onChange }: DateRangePickerProps) {
 
   const navBtn: React.CSSProperties = {
     width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center",
-    border: "1px solid #E5E7EB", borderRadius: 7, backgroundColor: "#F9FAFB",
-    color: "#374151", fontSize: 15, cursor: "pointer", lineHeight: 1, flexShrink: 0,
+    border: "1px solid var(--border)", borderRadius: 7, backgroundColor: "var(--muted)",
+    color: "var(--foreground)", fontSize: 15, cursor: "pointer", lineHeight: 1, flexShrink: 0,
   };
   const hdrBtn: React.CSSProperties = {
-    fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 700, color: "#111827",
+    fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 700, color: "var(--foreground)",
     background: "none", border: "none", cursor: "pointer", padding: "3px 10px",
     borderRadius: 6, transition: "background 0.1s",
   };
@@ -631,7 +632,7 @@ function DateRangePicker({ from, to, onChange }: DateRangePickerProps) {
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
           <button style={navBtn} onMouseDown={(e) => { e.preventDefault(); prevM(); }}>‹</button>
           <button style={hdrBtn} onMouseDown={(e) => { e.preventDefault(); setView("months"); }}
-            onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = "#F3F4F6"; }}
+            onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--muted)"; }}
             onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = "transparent"; }}>
             {MONTH_NAMES_FULL[dispMonth]} {dispYear}
           </button>
@@ -640,7 +641,7 @@ function DateRangePicker({ from, to, onChange }: DateRangePickerProps) {
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", marginBottom: 3 }}>
           {DAY_ABBR.map((d) => (
-            <div key={d} style={{ textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 10, fontWeight: 600, color: "#9CA3AF", padding: "0 0 4px", letterSpacing: "0.04em" }}>{d}</div>
+            <div key={d} style={{ textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 10, fontWeight: 600, color: "var(--muted-foreground)", padding: "0 0 4px", letterSpacing: "0.04em" }}>{d}</div>
           ))}
         </div>
 
@@ -650,8 +651,8 @@ function DateRangePicker({ from, to, onChange }: DateRangePickerProps) {
             const isE   = iso === re && re !== rs;
             const inRng = iso > rs && iso < re;
             const d     = Number(iso.slice(8));
-            let bg = "transparent", color = inMonth ? "#374151" : "#D1D5DB", br = "6px", fw: number | string = 400;
-            if (inRng) { bg = "#DBEAFE"; color = "#1D4ED8"; br = "0"; }
+            let bg = "transparent", color = inMonth ? "var(--foreground)" : "var(--muted-foreground)", br = "6px", fw: number | string = 400;
+            if (inRng) { bg = "var(--secondary)"; color = "var(--secondary-foreground)"; br = "0"; }
             if (isS)   { bg = "#3B82F6"; color = "#fff"; br = "6px 0 0 6px"; fw = 700; }
             if (isE)   { bg = "#3B82F6"; color = "#fff"; br = "0 6px 6px 0"; fw = 700; }
             if (isS && isE) br = "6px";
@@ -666,7 +667,7 @@ function DateRangePicker({ from, to, onChange }: DateRangePickerProps) {
         </div>
 
         {pending && (
-          <div style={{ marginTop: 8, fontFamily: "var(--font-sans)", fontSize: 10, color: "#9CA3AF", textAlign: "center" }}>
+          <div style={{ marginTop: 8, fontFamily: "var(--font-sans)", fontSize: 10, color: "var(--muted-foreground)", textAlign: "center" }}>
             Now click an end date
           </div>
         )}
@@ -680,7 +681,7 @@ function DateRangePicker({ from, to, onChange }: DateRangePickerProps) {
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
           <button style={navBtn} onMouseDown={(e) => { e.preventDefault(); setDispYear(y => y - 1); }}>‹</button>
           <button style={hdrBtn} onMouseDown={(e) => { e.preventDefault(); setView("years"); }}
-            onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = "#F3F4F6"; }}
+            onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--muted)"; }}
             onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = "transparent"; }}>
             {dispYear}
           </button>
@@ -692,9 +693,9 @@ function DateRangePicker({ from, to, onChange }: DateRangePickerProps) {
             return (
               <button key={m}
                 onMouseDown={(e) => { e.preventDefault(); setDispMonth(idx); setView("days"); }}
-                style={{ padding: "9px 0", borderRadius: 7, border: "none", fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: active ? 700 : 400, backgroundColor: active ? "#3B82F6" : "#F3F4F6", color: active ? "#fff" : "#374151", cursor: "pointer" }}
-                onMouseEnter={(e) => { if (!active) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "#E5E7EB"; }}
-                onMouseLeave={(e) => { if (!active) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "#F3F4F6"; }}>
+                style={{ padding: "9px 0", borderRadius: 7, border: "none", fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: active ? 700 : 400, backgroundColor: active ? "#3B82F6" : "var(--muted)", color: active ? "#fff" : "var(--foreground)", cursor: "pointer" }}
+                onMouseEnter={(e) => { if (!active) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--border)"; }}
+                onMouseLeave={(e) => { if (!active) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--muted)"; }}>
                 {m}
               </button>
             );
@@ -711,7 +712,7 @@ function DateRangePicker({ from, to, onChange }: DateRangePickerProps) {
       <>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
           <button style={navBtn} onMouseDown={(e) => { e.preventDefault(); setDispYear(y => y - 12); }}>‹</button>
-          <span style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 700, color: "#111827" }}>{base} – {base + 11}</span>
+          <span style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 700, color: "var(--foreground)" }}>{base} – {base + 11}</span>
           <button style={navBtn} onMouseDown={(e) => { e.preventDefault(); setDispYear(y => y + 12); }}>›</button>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 5 }}>
@@ -720,9 +721,9 @@ function DateRangePicker({ from, to, onChange }: DateRangePickerProps) {
             return (
               <button key={y}
                 onMouseDown={(e) => { e.preventDefault(); setDispYear(y); setView("months"); }}
-                style={{ padding: "9px 0", borderRadius: 7, border: "none", fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: active ? 700 : 400, backgroundColor: active ? "#3B82F6" : "#F3F4F6", color: active ? "#fff" : "#374151", cursor: "pointer" }}
-                onMouseEnter={(e) => { if (!active) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "#E5E7EB"; }}
-                onMouseLeave={(e) => { if (!active) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "#F3F4F6"; }}>
+                style={{ padding: "9px 0", borderRadius: 7, border: "none", fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: active ? 700 : 400, backgroundColor: active ? "#3B82F6" : "var(--muted)", color: active ? "#fff" : "var(--foreground)", cursor: "pointer" }}
+                onMouseEnter={(e) => { if (!active) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--border)"; }}
+                onMouseLeave={(e) => { if (!active) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--muted)"; }}>
                 {y}
               </button>
             );
@@ -760,8 +761,8 @@ function DateRangePicker({ from, to, onChange }: DateRangePickerProps) {
           onMouseDown={(e) => e.stopPropagation()}
           style={{
             position: "fixed", top: panelTop, left: panelLeft, zIndex: 9999,
-            width: PANEL_W, backgroundColor: "#fff",
-            border: "1.5px solid #3B82F6", borderRadius: 12,
+            width: PANEL_W, backgroundColor: "var(--card)",
+            border: "1.5px solid var(--primary)", borderRadius: 12,
             boxShadow: "0 8px 32px rgba(0,0,0,0.18)", padding: 14,
           }}
         >
@@ -1143,7 +1144,7 @@ export function GrossMatrix() {
                     </tr>
                   ) : driversList.map((driver, i) => {
                     const isEven   = i % 2 === 0;
-                    const rowBg    = isEven ? "#ffffff" : "#F9FAFB";
+                    const rowBg    = isEven ? "var(--card)" : "var(--background)";
                     const total    = driver.weekTotal ?? rangeTotal(driver);
                     // rpm is 0 when the driver earned with no recorded mileage — there's
                     // no meaningful quotient, so show "—" instead of $0.00/mi.
@@ -1151,16 +1152,23 @@ export function GrossMatrix() {
                     // Target may be unset (0/undefined) — keep the same layout regardless: $0 / 0% / empty bar.
                     const targetPct = driver.weeklyTarget ? Math.min(100, Math.round((total / driver.weeklyTarget) * 100)) : 0;
                     const barColor  = targetPct >= 100 ? "#10B981" : targetPct >= 70 ? "#F59E0B" : "#3B82F6";
+                    // Blue/neutral/green/red column tints as low-alpha overlays (not flat pastel
+                    // hex) so they read correctly over either rowBg, light or dark.
+                    const totalBg   = isEven ? "rgba(59,130,246,0.07)" : "rgba(59,130,246,0.13)";
+                    const targetBg  = isEven ? "rgba(148,163,184,0.05)" : "rgba(148,163,184,0.10)";
+                    const profitBg  = driver.companyProfit >= 0
+                      ? (isEven ? "rgba(16,185,129,0.07)" : "rgba(16,185,129,0.13)")
+                      : (isEven ? "rgba(239,68,68,0.06)"  : "rgba(239,68,68,0.11)");
 
                     return (
                       <tr key={driver.id}>
                         {/* Driver Name */}
-                        <td style={{ width: 200, minWidth: 200, padding: "0 12px", verticalAlign: "middle", borderRight: "1px solid #E5E7EB", borderBottom: "1px solid #E5E7EB", backgroundColor: rowBg, position: "sticky", left: 0, zIndex: 10 }}>
-                          <div style={{ fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: 600, color: "#111827", whiteSpace: "nowrap" }}>{driver.name}</div>
-                          <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "#6B7280" }}>({driver.driverType})</div>
+                        <td style={{ width: 200, minWidth: 200, padding: "0 12px", verticalAlign: "middle", borderRight: "1px solid var(--border)", borderBottom: "1px solid var(--border)", backgroundColor: rowBg, position: "sticky", left: 0, zIndex: 10 }}>
+                          <div style={{ fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: 600, color: "var(--foreground)", whiteSpace: "nowrap" }}>{driver.name}</div>
+                          <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--muted-foreground)" }}>({driver.driverType})</div>
                         </td>
                         {/* Unit */}
-                        <td style={{ width: 72, minWidth: 72, padding: "0 8px", textAlign: "center", verticalAlign: "middle", borderRight: "2px solid #CBD5E1", borderBottom: "1px solid #E5E7EB", fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 500, color: "#374151", backgroundColor: rowBg, position: "sticky", left: 200, zIndex: 10 }}>
+                        <td style={{ width: 72, minWidth: 72, padding: "0 8px", textAlign: "center", verticalAlign: "middle", borderRight: "2px solid var(--border)", borderBottom: "1px solid var(--border)", fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 500, color: "var(--foreground)", backgroundColor: rowBg, position: "sticky", left: 200, zIndex: 10 }}>
                           {driver.unit}
                         </td>
 
@@ -1179,8 +1187,8 @@ export function GrossMatrix() {
                                 width: DAY_W, minWidth: DAY_W,
                                 padding: isLoad ? "6px 6px" : "6px 4px",
                                 textAlign: "center", verticalAlign: "middle",
-                                borderRight: isBg ? "1px solid rgba(255,255,255,0.15)" : "1px solid #E5E7EB",
-                                borderBottom: "1px solid #E5E7EB",
+                                borderRight: isBg ? "1px solid rgba(255,255,255,0.15)" : "1px solid var(--border)",
+                                borderBottom: "1px solid var(--border)",
                                 backgroundColor: cs.bg,
                                 cursor: "pointer",
                                 outline: isActive ? "2px solid #3B82F6" : "none",
@@ -1196,29 +1204,29 @@ export function GrossMatrix() {
                         })}
 
                         {/* Total */}
-                        <td style={{ width: 110, minWidth: 110, padding: "0 12px", textAlign: "right", verticalAlign: "middle", borderLeft: "2px solid #CBD5E1", borderBottom: "1px solid #E5E7EB", backgroundColor: isEven ? "#EFF6FF" : "#DBEAFE", position: "sticky", right: R.total, zIndex: 10 }}>
-                          <div style={{ fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 700, color: "#1D4ED8", whiteSpace: "nowrap" }}>{fmt(total)}</div>
-                          <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: driverRpm !== null ? "#10B981" : "#9CA3AF", marginTop: 2, whiteSpace: "nowrap" }}
+                        <td style={{ width: 110, minWidth: 110, padding: "0 12px", textAlign: "right", verticalAlign: "middle", borderLeft: "2px solid var(--border)", borderBottom: "1px solid var(--border)", backgroundColor: totalBg, position: "sticky", right: R.total, zIndex: 10 }}>
+                          <div style={{ fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 700, color: "#3B82F6", whiteSpace: "nowrap" }}>{fmt(total)}</div>
+                          <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: driverRpm !== null ? "#10B981" : "var(--muted-foreground)", marginTop: 2, whiteSpace: "nowrap" }}
                             title={driverRpm !== null ? `${driver.miles.toLocaleString()} mi` : "No recorded mileage"}>
                             {driverRpm !== null ? `$${driverRpm.toFixed(2)}/mi` : "—"}
                           </div>
                         </td>
 
                         {/* Target — inline editable */}
-                        <td style={{ width: 120, minWidth: 120, padding: "6px 12px", verticalAlign: "middle", borderLeft: "1px solid #E5E7EB", borderBottom: "1px solid #E5E7EB", backgroundColor: isEven ? "#FAFAFA" : "#F3F4F6", position: "sticky", right: R.target, zIndex: 10 }}>
+                        <td style={{ width: 120, minWidth: 120, padding: "6px 12px", verticalAlign: "middle", borderLeft: "1px solid var(--border)", borderBottom: "1px solid var(--border)", backgroundColor: targetBg, position: "sticky", right: R.target, zIndex: 10 }}>
                           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                               <InlineNumberEdit value={driver.weeklyTarget ?? 0} readOnly />
-                              <span style={{ fontFamily: "var(--font-sans)", fontSize: 10, color: targetPct >= 100 ? "#15803D" : "#6B7280", fontWeight: 600 }}>{targetPct}%</span>
+                              <span style={{ fontFamily: "var(--font-sans)", fontSize: 10, color: targetPct >= 100 ? "#10B981" : "var(--muted-foreground)", fontWeight: 600 }}>{targetPct}%</span>
                             </div>
-                            <div style={{ height: 4, borderRadius: 99, backgroundColor: "#E5E7EB", overflow: "hidden" }}>
+                            <div style={{ height: 4, borderRadius: 99, backgroundColor: "var(--border)", overflow: "hidden" }}>
                               <div style={{ height: "100%", borderRadius: 99, width: `${targetPct}%`, backgroundColor: barColor, transition: "width 0.3s ease" }} />
                             </div>
                           </div>
                         </td>
 
                         {/* Co. Profit — inline editable */}
-                        <td style={{ width: 120, minWidth: 120, padding: "0 12px", textAlign: "right", verticalAlign: "middle", borderLeft: "1px solid #E5E7EB", borderBottom: "1px solid #E5E7EB", borderRight: "none", backgroundColor: driver.companyProfit >= 0 ? (isEven ? "#F0FDF4" : "#DCFCE7") : (isEven ? "#FFF1F2" : "#FFE4E6"), position: "sticky", right: R.profit, zIndex: 10 }}>
+                        <td style={{ width: 120, minWidth: 120, padding: "0 12px", textAlign: "right", verticalAlign: "middle", borderLeft: "1px solid var(--border)", borderBottom: "1px solid var(--border)", borderRight: "none", backgroundColor: profitBg, position: "sticky", right: R.profit, zIndex: 10 }}>
                           <div style={{ display: "flex", justifyContent: "flex-end" }}>
                             <InlineNumberEdit value={driver.companyProfit} allowNeg readOnly />
                           </div>

@@ -18,9 +18,12 @@ import {
   Menu,
   Check,
   LogOut,
+  Sun,
+  Moon,
 } from "lucide-react";
 import { Avatar, AvatarFallback } from "../components/ui/avatar";
 import { useAuth } from "../lib/auth";
+import { useTheme } from "../lib/theme";
 import { hasPerm } from "../lib/permissions";
 import { api, setCompanyId, getCompanyId } from "../lib/api";
 import { useBoardPresence } from "../lib/useBoardPresence";
@@ -761,6 +764,25 @@ function NotificationBell() {
   );
 }
 
+// ─── Theme toggle ─────────────────────────────────────────────────────────────
+
+function ThemeToggle() {
+  const { theme, toggleTheme } = useTheme();
+  const isDark = theme === "dark";
+  return (
+    <button
+      onClick={toggleTheme}
+      title={isDark ? "Switch to light mode" : "Switch to dark mode"}
+      className="relative flex items-center justify-center rounded-lg transition-colors"
+      style={{ width: 34, height: 34, backgroundColor: "var(--muted)" }}
+      onMouseEnter={(e) => ((e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--accent)")}
+      onMouseLeave={(e) => ((e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--muted)")}
+    >
+      {isDark ? <Sun size={16} style={{ color: "var(--foreground)" }} /> : <Moon size={16} style={{ color: "var(--foreground)" }} />}
+    </button>
+  );
+}
+
 // ─── Top Header ──────────────────────────────────────────────────────────────
 
 function TopHeader({ onToggleSidebar, accounts, activeAccountId, onSwitch }: {
@@ -818,6 +840,8 @@ function TopHeader({ onToggleSidebar, accounts, activeAccountId, onSwitch }: {
       {/* Right: active users + bell + account switcher */}
       <div className="flex items-center gap-4">
         <ActiveUsers companyId={activeAccountId} />
+
+        <ThemeToggle />
 
         <NotificationBell />
 
@@ -913,7 +937,7 @@ export function CompanyLayout() {
         <main
           key={activeAccountId}
           className="flex-1 overflow-y-auto"
-          style={{ backgroundColor: "#F9FAFB" }}
+          style={{ backgroundColor: "var(--background)" }}
         >
           <Outlet />
         </main>
