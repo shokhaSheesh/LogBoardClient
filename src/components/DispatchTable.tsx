@@ -1135,7 +1135,16 @@ export function DispatchTable() {
     if (!driver || !load?.id) return;
     const raw = (load.stops ?? []) as Stop[];
     if (absIndex < 0 || absIndex >= raw.length) return;
-    const fullStops = raw.map((s, i) => (i === absIndex ? { ...s, ...changes } : s));
+    const fullStops = raw.map((s, i) => {
+      if (i !== absIndex) return s;
+      const next = { ...s, ...changes };
+      // A stop's `location` is the geocode of its city. Rename the city and those coords
+      // now point at the wrong place — and nothing on the board re-geocodes, so they'd
+      // stick and quietly skew the load's mileage. Drop them; the Loads page geocodes
+      // the stop again next time the load is opened.
+      if (changes.city !== undefined && changes.city !== s.city) delete next.location;
+      return next;
+    });
 
     const first = fullStops[0];
     const last  = fullStops.length > 1 ? fullStops[fullStops.length - 1] : undefined;
