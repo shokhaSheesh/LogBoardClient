@@ -20,13 +20,16 @@ import {
   LogOut,
   Sun,
   Moon,
+  AlertTriangle,
+  Lock,
 } from "lucide-react";
 import { Avatar, AvatarFallback } from "../components/ui/avatar";
 import { useAuth } from "../lib/auth";
 import { useTheme } from "../lib/theme";
-import { hasPerm } from "../lib/permissions";
+import { hasPerm, isOwnerPlanePage } from "../lib/permissions";
 import { api, setCompanyId, getCompanyId } from "../lib/api";
 import { useBoardPresence } from "../lib/useBoardPresence";
+import { useEntitlement, type EntitlementCopy } from "../lib/entitlement";
 
 // ─── Account types ──────────────────────────────────────────────────────────
 
@@ -857,6 +860,37 @@ function TopHeader({ onToggleSidebar, accounts, activeAccountId, onSwitch }: {
   );
 }
 
+// ─── Plan gate ────────────────────────────────────────────────────────────────
+
+// Shown in place of the page when the company isn't entitled. A dispatcher can't fix
+// this themselves — billing lives under /owner/* — so they get the reason and nothing
+// that would only 403. An owner gets a way through to Billing, which stays reachable.
+function EntitlementBlock({ copy, isOwner }: { copy: EntitlementCopy; isOwner: boolean }) {
+  return (
+    <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+      <div style={{ maxWidth: 420, textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: 14 }}>
+        <div style={{ width: 52, height: 52, borderRadius: 14, backgroundColor: "rgba(245,158,11,0.12)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <Lock size={24} color="#F59E0B" />
+        </div>
+        <div style={{ fontFamily: "var(--font-sans)", fontSize: 17, fontWeight: 700, color: "var(--foreground)" }}>
+          {copy.title}
+        </div>
+        <div style={{ fontFamily: "var(--font-sans)", fontSize: 13.5, color: "var(--muted-foreground)", lineHeight: 1.6 }}>
+          {copy.body}
+        </div>
+        {isOwner && (
+          <NavLink
+            to="/workspace/billing"
+            style={{ marginTop: 4, fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "8px 18px", borderRadius: 7, backgroundColor: "var(--primary)", color: "#fff", textDecoration: "none" }}
+          >
+            Go to Billing
+          </NavLink>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── CompanyLayout ────────────────────────────────────────────────────────────
 
 export function CompanyLayout() {
@@ -905,12 +939,22 @@ export function CompanyLayout() {
   }, [user]);
 
   const [switching, setSwitching] = useState(false);
+  const { blocked, readOnly, copy, clear: clearEntitlement } = useEntitlement();
+
+  // Billing and Settings run on /owner/* endpoints, which the backend deliberately
+  // keeps outside the plan gate so an unentitled company can still record a
+  // subscription. Locking an owner out of them would strand them with no way back in.
+  const currentPage = useLocation().pathname.replace(/^\/workspace\/?/, "");
+  const gateApplies = !isOwnerPlanePage(currentPage);
 
   const switchAccount = (id: string) => {
     if (id === activeAccountId) return;
     setSwitching(true);
     setActiveAccountId(id);
     setCompanyId(id);
+    // The plan gate is per-company: the one we just left being locked says nothing
+    // about this one. Drop the verdict and let the new company's requests speak.
+    clearEntitlement();
     // Permissions are resolved per-company — re-pull them for the new active company.
     void refresh();
     setTimeout(() => setSwitching(false), 800);
@@ -934,12 +978,27 @@ export function CompanyLayout() {
           onSwitch={switchAccount}
         />
 
+        {/* The board still reads during the grace window — say so once, at the top,
+            rather than letting every save fail with a bare error toast. */}
+        {readOnly && copy && (
+          <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 16px", backgroundColor: "rgba(245,158,11,0.10)", borderBottom: "1px solid rgba(245,158,11,0.35)", flexShrink: 0 }}>
+            <AlertTriangle size={15} color="#F59E0B" style={{ flexShrink: 0 }} />
+            <span style={{ fontFamily: "var(--font-sans)", fontSize: 12.5, color: "#F59E0B", lineHeight: 1.4 }}>
+              <strong style={{ fontWeight: 700 }}>{copy.title}.</strong> {copy.body}
+            </span>
+          </div>
+        )}
+
         <main
           key={activeAccountId}
           className="flex-1 overflow-y-auto"
           style={{ backgroundColor: "var(--background)" }}
         >
-          <Outlet />
+          {/* A hard gate 403s reads too, so there is nothing for the page to render —
+              show why instead of a shell full of failed widgets and error toasts. */}
+          {blocked && copy && gateApplies
+            ? <EntitlementBlock copy={copy} isOwner={user?.role === "owner"} />
+            : <Outlet />}
         </main>
       </div>
 

@@ -20,6 +20,52 @@ export function isForbidden(e: unknown): boolean {
   return e instanceof ApiError && (e.status === 403 || e.code === "forbidden");
 }
 
+// ─── Entitlement (the plan gate) ─────────────────────────────────────────────
+//
+// A board caller is cut off from every tenant route unless their company is
+// currently entitled — it has a plan, status Active, and an unexpired period.
+// These 403s are not the user doing anything wrong, so they must not surface as
+// "Update failed" toasts; the app tells them what happened and who can fix it.
+//
+// Three of them are total: reads 403 as well, so the whole workspace is dead.
+// grace_read_only is different — the board still READS for 7 days after the last
+// subscription lapses, and only writes are refused.
+export type EntitlementCode =
+  | "plan_required"
+  | "company_suspended"
+  | "subscription_expired"
+  | "grace_read_only";
+
+const ENTITLEMENT_CODES = new Set<string>([
+  "plan_required", "company_suspended", "subscription_expired", "grace_read_only",
+]);
+
+export function entitlementCode(e: unknown): EntitlementCode | null {
+  if (!(e instanceof ApiError) || e.status !== 403) return null;
+  return e.code && ENTITLEMENT_CODES.has(e.code) ? (e.code as EntitlementCode) : null;
+}
+
+// The gate can trip on ANY request, from any page, so it can't be handled at a call
+// site. Requests announce it here and the layout renders the block screen / banner.
+type EntitlementListener = (code: EntitlementCode, message: string) => void;
+const entitlementListeners = new Set<EntitlementListener>();
+
+export function onEntitlementError(fn: EntitlementListener): () => void {
+  entitlementListeners.add(fn);
+  return () => entitlementListeners.delete(fn);
+}
+
+// Every failed response goes through here, so the gate is caught no matter which
+// helper (request / requestList / requestPayouts / upload) made the call.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function apiError(json: any, status: number): ApiError {
+  const msg = json?.error?.message ?? json?.error ?? `HTTP ${status}`;
+  const err = new ApiError(msg, json?.error?.code, status);
+  const code = entitlementCode(err);
+  if (code) entitlementListeners.forEach((fn) => fn(code, err.message));
+  return err;
+}
+
 function getToken(): string | null {
   return localStorage.getItem("auth_token");
 }
@@ -71,10 +117,7 @@ async function request<T>(
 
   const json = await res.json().catch(() => ({}));
 
-  if (!res.ok) {
-    const msg = json?.error?.message ?? json?.error ?? `HTTP ${res.status}`;
-    throw new ApiError(msg, json?.error?.code, res.status);
-  }
+  if (!res.ok) throw apiError(json, res.status);
 
   // All success responses are wrapped: { "data": ... }
   return (json.data ?? json) as T;
@@ -108,10 +151,7 @@ async function requestList<T>(
   if (res.status === 204) return { items: [], total: 0 };
 
   const json = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    const msg = json?.error?.message ?? json?.error ?? `HTTP ${res.status}`;
-    throw new ApiError(msg, json?.error?.code, res.status);
-  }
+  if (!res.ok) throw apiError(json, res.status);
 
   const data = json.data ?? json;
   const items = Array.isArray(data) ? data : [];
@@ -133,7 +173,7 @@ async function requestPayouts<T>(
   if (res.status === 204) return { items: [], total: 0, totals: { rate: 0, added: 0, deducted: 0, net: 0 } };
 
   const json = await res.json().catch(() => ({}));
-  if (!res.ok) { throw new ApiError(json?.error?.message ?? json?.error ?? `HTTP ${res.status}`, json?.error?.code, res.status); }
+  if (!res.ok) throw apiError(json, res.status);
 
   return {
     items: Array.isArray(json.data) ? json.data : [],
@@ -159,12 +199,9 @@ async function upload<T>(path: string, file: File, field = "file"): Promise<T> {
   if (res.status === 401) { clearToken(); window.location.href = "/login"; throw new Error("Unauthorized"); }
 
   const json = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    // Carry the machine-readable code (file_too_large, unsupported_media_type,
-    // not_configured, ai_unavailable, …) so callers can map it to a specific message.
-    const msg = json?.error?.message ?? json?.error ?? `HTTP ${res.status}`;
-    throw new ApiError(msg, json?.error?.code, res.status);
-  }
+  // Carries the machine-readable code (file_too_large, unsupported_media_type,
+  // not_configured, ai_unavailable, …) so callers can map it to a specific message.
+  if (!res.ok) throw apiError(json, res.status);
   return (json.data ?? json) as T;
 }
 

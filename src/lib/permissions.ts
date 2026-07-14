@@ -55,3 +55,12 @@ export function firstAccessiblePath(user: AuthUser | null): string {
   const found = PAGE_PERMS.find((p) => canAccessPage(user, p.path));
   return found ? found.path : "dashboard";
 }
+
+// Whether a page is served entirely by /owner/* endpoints. Those sit OUTSIDE the plan
+// gate — the backend keeps them reachable precisely so an unentitled company can still
+// record a subscription — so they must stay open when the rest of the workspace is
+// locked out. Everything else is a tenant route and dies with the gate.
+export function isOwnerPlanePage(path: string): boolean {
+  const seg = path.split("/")[0];
+  return PAGE_PERMS.find((p) => p.path === seg)?.ownerOnly ?? false;
+}
