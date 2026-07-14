@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { MapPin, Lock, MessageSquare, ChevronDown, Search, Navigation, Check, ArrowRight, History, X, AlertCircle, RotateCcw, Users, Rows3 } from "lucide-react";
 import { Status, STATUS_CONFIG, ALL_STATUSES } from "../lib/statuses";
-import { api, getCompanyId } from "../lib/api";
+import { api, getCompanyId, ApiError } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { menuPosition } from "../lib/menuPosition";
 import { driverDisplayName } from "../lib/driverName";
@@ -81,7 +81,20 @@ interface Driver {
   lastUpdate: string;
 }
 
-// Backend history event
+// One field-level before→after on an update event. A load's `stops` change is
+// reported as a derived `route` label; `revert_field`/`revert_from` carry the
+// structured value the undo endpoint actually restores.
+interface HistoryChange {
+  field: string;
+  from: unknown;
+  to: unknown;
+  revert_field?: string;
+  revert_from?: unknown;
+}
+
+// Backend history event. The server decides whether an undo would work
+// (`revertable` + `revert_reason`) — all four limits including the stale check —
+// so the panel never has to discover a refusal on click.
 interface HistoryEvent {
   id: string;
   actor_name: string;
@@ -89,9 +102,46 @@ interface HistoryEvent {
   entity_id: string;
   entity_ref: string;
   action: "create" | "update" | "delete";
-  changes: { field: string; from: unknown; to: unknown }[] | null;
+  changes: HistoryChange[] | null;
   created_at: string;
+  revertable?: boolean;
+  revert_reason?: string;
+  reverted_at?: string | null;
+  reverted_by?: string | null;
+  revert_of?: string | null; // set when this event IS an undo (undoing it = redo)
 }
+
+// What POST /board/history/:id/revert gives back once the server has applied it.
+interface RevertResult {
+  entity_type: string;
+  entity_id: string;
+  entity_ref: string;
+  action: string;
+  applied: string[];  // fields actually restored
+  skipped: string[];  // what could not be put back (e.g. a truck someone else now holds)
+  event_id: string;   // the history event this undo recorded
+}
+
+// Why the server says an undo is unavailable → what we tell the user.
+const REVERT_REASON_TEXT: Record<string, string> = {
+  not_revertable: "There's nothing to undo on this change.",
+  expired:        "Too old to undo — the window is 24 hours.",
+  stale:          "Something changed since — undoing this would overwrite the newer edit.",
+  gone:           "That row has been deleted. Undo the delete first.",
+  restored:       "This delete has already been undone.",
+  forbidden:      "You don't have permission to undo this.",
+};
+
+// Failures the undo endpoint can return once it's actually running.
+const REVERT_ERROR_TEXT: Record<string, string> = {
+  revert_expired:   "Too old to undo — the window is 24 hours.",
+  already_reverted: "Someone else already undid this change.",
+  revert_stale:     "Something changed since you opened this. Undo was refused rather than overwrite it — reopen the panel to see what's different.",
+  revert_rejected:  "The undo was refused: the restored values are no longer valid.",
+  not_revertable:   "There's nothing to undo on this change.",
+  locked:           "Someone is editing this row right now. Try again in a moment.",
+  forbidden:        "You don't have permission to undo this.",
+};
 
 // Backend lock
 interface BoardLock {
@@ -488,11 +538,14 @@ function StopList({ origin, originDone, destination, destinationDone, stops, onT
 
 function HistoryPanel({ events, loading, onClose, onRevert }: {
   events: HistoryEvent[]; loading: boolean; onClose: () => void;
-  onRevert: (ev: HistoryEvent) => Promise<void>;
+  onRevert: (ev: HistoryEvent, fields?: string[]) => Promise<RevertResult>;
 }) {
   const [confirm, setConfirm]     = useState<HistoryEvent | null>(null);
   const [reverting, setReverting] = useState(false);
   const [revertErr, setRevertErr] = useState<string | null>(null);
+  const [skipped, setSkipped]     = useState<string[] | null>(null);
+  // Which of the event's fields to undo. Empty set = the whole event.
+  const [picked, setPicked]       = useState<Set<string>>(new Set());
 
   const fmtTime = (iso: string) => {
     const d = Date.now() - new Date(iso).getTime();
@@ -512,33 +565,56 @@ function HistoryPanel({ events, loading, onClose, onRevert }: {
     return { color: "var(--foreground)", bg: "var(--muted)" };
   };
 
-  const revertable = (ev: HistoryEvent) => ev.action === "update" && !!ev.changes && ev.changes.length > 0;
+  // The server works out whether an undo would actually succeed — the 24h window, the
+  // already-undone claim, the stale check, the permission of the undone action — and
+  // says so per event. Undoing an undo is a redo, so those are offered too. (Older
+  // payloads without the flag fall back to the previous update-only rule.)
+  const canUndo = (ev: HistoryEvent) =>
+    ev.revertable ?? (ev.action === "update" && !!ev.changes && ev.changes.length > 0);
 
-  // For each field the event changed, find the NEWEST later event (same entity) that
-  // touched the same field — reverting will overwrite that newer value, so warn.
-  const laterOverrides = (ev: HistoryEvent): { field: string; discarded: string }[] => {
-    const idx = events.findIndex((e) => e.id === ev.id);
-    const out: { field: string; discarded: string }[] = [];
-    for (const c of ev.changes ?? []) {
-      // Scan from the newest end down to ev; first hit is the current (to be discarded) value.
-      for (let j = 0; j < idx; j++) { // events[0..idx-1] are newer (list is newest-first)
-        const e2 = events[j];
-        if (e2.entity_id !== ev.entity_id) continue;
-        const hit = (e2.changes ?? []).find((x) => x.field === c.field);
-        if (hit) { out.push({ field: c.field, discarded: String(hit.to ?? "—") }); break; }
-      }
-    }
-    return out;
+  const undoLabel = (ev: HistoryEvent) =>
+    ev.revert_of ? "Redo" : ev.action === "delete" ? "Restore" : "Undo";
+
+  // Field name to send to the undo endpoint. A load's `stops` edit shows as a derived
+  // `route` label, but `revert_field` names the field the server actually restores.
+  const undoField = (c: HistoryChange) => c.revert_field ?? c.field;
+
+  const prettyField = (f: string) => f.replace(/_/g, " ");
+
+  const openConfirm = (ev: HistoryEvent) => {
+    setRevertErr(null);
+    setSkipped(null);
+    setPicked(new Set((ev.changes ?? []).map(undoField))); // default: the whole event
+    setConfirm(ev);
   };
+
+  const togglePicked = (f: string) => setPicked((prev) => {
+    const next = new Set(prev);
+    if (next.has(f)) next.delete(f); else next.add(f);
+    return next;
+  });
 
   const doRevert = async () => {
     if (!confirm) return;
-    setReverting(true); setRevertErr(null);
+    const all = (confirm.changes ?? []).map(undoField);
+    // Omit `fields` when every field is picked (or there are none, as on a delete):
+    // that asks the server to undo the whole event.
+    const partial = all.length > 0 && picked.size < all.length;
+    if (partial && picked.size === 0) { setRevertErr("Pick at least one field to undo."); return; }
+
+    setReverting(true); setRevertErr(null); setSkipped(null);
     try {
-      await onRevert(confirm);
+      const res = await onRevert(confirm, partial ? [...picked] : undefined);
+      // A restore can leave things behind — a truck a dispatcher has since handed to
+      // someone else stays put. Say so instead of silently claiming success.
+      if (res.skipped && res.skipped.length > 0) { setSkipped(res.skipped); return; }
       setConfirm(null);
     } catch (e) {
-      setRevertErr(e instanceof Error ? e.message : "Revert failed");
+      const code = e instanceof ApiError ? e.code : undefined;
+      setRevertErr(
+        (code && REVERT_ERROR_TEXT[code]) ||
+        (e instanceof Error ? e.message : "Undo failed")
+      );
     } finally {
       setReverting(false);
     }
@@ -575,6 +651,12 @@ function HistoryPanel({ events, loading, onClose, onRevert }: {
                       <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: 600, color: "var(--foreground)" }}>{ev.actor_name || "Unknown"}</span>
                       <span style={{ fontFamily: "var(--font-sans)", fontSize: 10, fontWeight: 700, color: actionColor(ev.action), backgroundColor: actionBg(ev.action), borderRadius: 4, padding: "1px 6px", textTransform: "uppercase", letterSpacing: "0.05em" }}>{ev.action}</span>
                       <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600, color: ec.color, backgroundColor: ec.bg, borderRadius: 4, padding: "1px 6px" }}>{ev.entity_ref || ev.entity_type}</span>
+                      {ev.revert_of && (
+                        <span style={{ fontFamily: "var(--font-sans)", fontSize: 10, fontWeight: 700, color: "#F59E0B", backgroundColor: "rgba(245,158,11,0.14)", borderRadius: 4, padding: "1px 6px", textTransform: "uppercase", letterSpacing: "0.05em" }}>Undo</span>
+                      )}
+                      {ev.reverted_at && (
+                        <span style={{ fontFamily: "var(--font-sans)", fontSize: 10, fontWeight: 700, color: "var(--muted-foreground)", backgroundColor: "var(--muted)", borderRadius: 4, padding: "1px 6px", textTransform: "uppercase", letterSpacing: "0.05em" }}>Undone</span>
+                      )}
                       <span style={{ marginLeft: "auto", fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--muted-foreground)", whiteSpace: "nowrap" }}>{fmtTime(ev.created_at)}</span>
                     </div>
                     {/* Changes */}
@@ -590,15 +672,20 @@ function HistoryPanel({ events, loading, onClose, onRevert }: {
                         ))}
                       </div>
                     )}
-                    {/* Revert */}
-                    {revertable(ev) && (
-                      <button onClick={() => { setRevertErr(null); setConfirm(ev); }}
+                    {/* Undo — enabled/disabled by the server, so it never discovers a refusal on click */}
+                    {canUndo(ev) ? (
+                      <button onClick={() => openConfirm(ev)}
                         style={{ alignSelf: "flex-start", display: "inline-flex", alignItems: "center", gap: 5, marginTop: 2, padding: "3px 9px", borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "transparent", cursor: "pointer", fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600, color: "var(--muted-foreground)" }}
                         onMouseEnter={(e) => { const b = e.currentTarget as HTMLButtonElement; b.style.borderColor = "var(--primary)"; b.style.color = "var(--primary)"; }}
                         onMouseLeave={(e) => { const b = e.currentTarget as HTMLButtonElement; b.style.borderColor = "var(--border)"; b.style.color = "var(--muted-foreground)"; }}>
-                        <RotateCcw size={11} /> Revert
+                        <RotateCcw size={11} /> {undoLabel(ev)}
                       </button>
-                    )}
+                    ) : ev.revert_reason && ev.revert_reason !== "not_revertable" ? (
+                      <button disabled title={REVERT_REASON_TEXT[ev.revert_reason] ?? ev.revert_reason}
+                        style={{ alignSelf: "flex-start", display: "inline-flex", alignItems: "center", gap: 5, marginTop: 2, padding: "3px 9px", borderRadius: 6, border: "1px dashed var(--border)", backgroundColor: "transparent", cursor: "not-allowed", fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600, color: "var(--muted-foreground)", opacity: 0.55 }}>
+                        <RotateCcw size={11} /> {undoLabel(ev)}
+                      </button>
+                    ) : null}
                   </div>
                 );
               })}
@@ -607,9 +694,10 @@ function HistoryPanel({ events, loading, onClose, onRevert }: {
         </div>
       </div>
 
-      {/* Revert confirm */}
+      {/* Undo confirm */}
       {confirm && (() => {
-        const overrides = laterOverrides(confirm);
+        const changes = confirm.changes ?? [];
+        const isRestore = confirm.action === "delete";
         return (
           <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: 9500, display: "flex", alignItems: "center", justifyContent: "center" }}
             onClick={(e) => { if (e.target === e.currentTarget && !reverting) setConfirm(null); }}>
@@ -619,33 +707,50 @@ function HistoryPanel({ events, loading, onClose, onRevert }: {
                   <RotateCcw size={15} style={{ color: "var(--primary)" }} />
                 </div>
                 <span style={{ fontFamily: "var(--font-sans)", fontSize: 14, fontWeight: 600, color: "var(--foreground)" }}>
-                  Revert this change?
+                  {isRestore ? "Restore this row?" : confirm.revert_of ? "Redo this change?" : "Undo this change?"}
                 </span>
               </div>
               <div style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: 12 }}>
                 <div style={{ fontFamily: "var(--font-sans)", fontSize: 12.5, color: "var(--muted-foreground)", lineHeight: 1.5 }}>
-                  On <strong style={{ color: "var(--foreground)" }}>{confirm.entity_ref || confirm.entity_type}</strong> this will restore:
+                  {isRestore ? (
+                    <>This brings <strong style={{ color: "var(--foreground)" }}>{confirm.entity_ref || confirm.entity_type}</strong> back, with whatever is still free. Anything since handed to someone else stays where it is.</>
+                  ) : changes.length > 1 ? (
+                    <>On <strong style={{ color: "var(--foreground)" }}>{confirm.entity_ref || confirm.entity_type}</strong>, restore these — untick any you want to leave alone:</>
+                  ) : (
+                    <>On <strong style={{ color: "var(--foreground)" }}>{confirm.entity_ref || confirm.entity_type}</strong> this will restore:</>
+                  )}
                 </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                  {(confirm.changes ?? []).map((c, i) => (
-                    <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, fontFamily: "var(--font-sans)", fontSize: 12 }}>
-                      <span style={{ color: "var(--muted-foreground)", minWidth: 74, textTransform: "capitalize", fontSize: 11 }}>{c.field.replace(/_/g, " ")}</span>
-                      <span style={{ color: "var(--muted-foreground)", fontSize: 10 }}>→</span>
-                      <span style={{ color: "#10B981", backgroundColor: "rgba(16,185,129,0.14)", borderRadius: 3, padding: "1px 6px", fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 600 }}>{String(c.from ?? "—")}</span>
-                    </div>
-                  ))}
-                </div>
-                {overrides.length > 0 && (
+                {changes.length > 0 && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                    {changes.map((c, i) => {
+                      const f = undoField(c);
+                      const on = picked.has(f);
+                      // One field can't be partially undone — with a single change the
+                      // tickbox would just be a way to disable the button. Show it plain.
+                      const pickable = changes.length > 1;
+                      return (
+                        <label key={i}
+                          style={{ display: "flex", alignItems: "center", gap: 7, fontFamily: "var(--font-sans)", fontSize: 12, cursor: pickable ? "pointer" : "default", opacity: pickable && !on ? 0.45 : 1 }}>
+                          {pickable && (
+                            <input type="checkbox" checked={on} disabled={reverting} onChange={() => togglePicked(f)}
+                              style={{ accentColor: "var(--primary)", cursor: "pointer", margin: 0 }} />
+                          )}
+                          <span style={{ color: "var(--muted-foreground)", minWidth: 74, textTransform: "capitalize", fontSize: 11 }}>{prettyField(c.field)}</span>
+                          <span style={{ color: "var(--muted-foreground)", fontSize: 10 }}>→</span>
+                          <span style={{ color: "#10B981", backgroundColor: "rgba(16,185,129,0.14)", borderRadius: 3, padding: "1px 6px", fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 600 }}>{String(c.from ?? "—")}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+                {skipped && skipped.length > 0 && (
                   <div style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "9px 12px", backgroundColor: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.35)", borderRadius: 8 }}>
                     <AlertCircle size={14} color="#F59E0B" style={{ flexShrink: 0, marginTop: 1 }} />
                     <div style={{ fontFamily: "var(--font-sans)", fontSize: 11.5, color: "#F59E0B", lineHeight: 1.5 }}>
-                      This also discards {overrides.length === 1 ? "a later change" : "later changes"} to{" "}
-                      {overrides.map((o, i) => (
-                        <span key={o.field}>
-                          {i > 0 && ", "}
-                          <strong style={{ textTransform: "capitalize" }}>{o.field.replace(/_/g, " ")}</strong> (now <strong>{o.discarded}</strong>)
-                        </span>
-                      ))}.
+                      Done, but {skipped.length === 1 ? "one thing" : `${skipped.length} things`} couldn't be put back — someone else holds{" "}
+                      {skipped.map((f, i) => (
+                        <span key={f}>{i > 0 && ", "}<strong style={{ textTransform: "capitalize" }}>{prettyField(f)}</strong></span>
+                      ))}{" "}now.
                     </div>
                   </div>
                 )}
@@ -656,15 +761,25 @@ function HistoryPanel({ events, loading, onClose, onRevert }: {
                   </div>
                 )}
               </div>
+              {/* Once it has run and left something behind, the only thing left to do is read it and close. */}
               <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, padding: "14px 20px", borderTop: "1px solid var(--border)" }}>
-                <button onClick={() => setConfirm(null)} disabled={reverting}
-                  style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 16px", borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "var(--muted)", color: "var(--foreground)", cursor: reverting ? "default" : "pointer" }}>
-                  Cancel
-                </button>
-                <button onClick={doRevert} disabled={reverting}
-                  style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 16px", borderRadius: 6, border: "none", backgroundColor: reverting ? "var(--muted)" : "var(--primary)", color: reverting ? "var(--muted-foreground)" : "#fff", cursor: reverting ? "default" : "pointer", display: "flex", alignItems: "center", gap: 6 }}>
-                  <RotateCcw size={13} /> {reverting ? "Reverting…" : "Revert"}
-                </button>
+                {skipped ? (
+                  <button onClick={() => setConfirm(null)}
+                    style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 16px", borderRadius: 6, border: "none", backgroundColor: "var(--primary)", color: "#fff", cursor: "pointer" }}>
+                    Close
+                  </button>
+                ) : (
+                  <>
+                    <button onClick={() => setConfirm(null)} disabled={reverting}
+                      style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 16px", borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "var(--muted)", color: "var(--foreground)", cursor: reverting ? "default" : "pointer" }}>
+                      Cancel
+                    </button>
+                    <button onClick={doRevert} disabled={reverting}
+                      style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 16px", borderRadius: 6, border: "none", backgroundColor: reverting ? "var(--muted)" : "var(--primary)", color: reverting ? "var(--muted-foreground)" : "#fff", cursor: reverting ? "default" : "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+                      <RotateCcw size={13} /> {reverting ? "Working…" : isRestore ? "Restore" : confirm.revert_of ? "Redo" : "Undo"}
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -701,6 +816,9 @@ export function DispatchTable() {
   const [toast,          setToast]          = useState<string | null>(null); // transient error banner
 
   const wsRef         = useRef<WebSocket | null>(null);
+  // The websocket handler is bound once; read the panel's open state through a ref
+  // rather than resubscribing the socket every time it opens.
+  const historyOpenRef = useRef(false);
   const reconnectRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
   const wsBackoff     = useRef(2000);
   const filterRef     = useRef<HTMLDivElement>(null);
@@ -716,6 +834,8 @@ export function DispatchTable() {
   // Heartbeat intervals per driverId
   const heartbeats    = useRef<Record<string, ReturnType<typeof setInterval>>>({});
   const lockWanted    = useRef<Record<string, boolean>>({}); // intent, so a release can cancel an in-flight claim
+
+  useEffect(() => { historyOpenRef.current = historyOpen; }, [historyOpen]);
 
   // Auto-dismiss the error banner.
   useEffect(() => {
@@ -751,22 +871,22 @@ export function DispatchTable() {
   };
 
   // ── Revert a history event ─────────────────────────────────────────────────
-  // The endpoint only RETURNS the prior field values (no server-side write); we
-  // re-apply them by merging into the entity's current record and PUTting it —
-  // which the board picks up via a board.snapshot push. Throws on failure so the
-  // panel can surface 409 locked / 400 not_revertable inline.
-  const revertEvent = async (ev: HistoryEvent) => {
-    const res = await api.post<{ entity_type: string; entity_id: string; fields: Record<string, unknown> }>(
-      `/board/history/${ev.id}/revert`
+  // The SERVER applies the undo, through the entity's own write path — it rotates
+  // the driver's queue and maintains the payout ledger exactly as a dispatcher's
+  // edit would. So we just call it: no read-modify-write here. (Re-applying the
+  // returned values with our own PUT would be a second write landing on top of the
+  // undo, and the server's compare-and-set would refuse it as `revert_stale`.)
+  //
+  // `fields` undoes only part of an event; omit it to undo all of it. Throws on
+  // failure so the panel can surface the refusal inline.
+  const revertEvent = async (ev: HistoryEvent, fields?: string[]) => {
+    const res = await api.post<RevertResult>(
+      `/board/history/${ev.id}/revert`,
+      fields && fields.length > 0 ? { fields } : undefined
     );
-    const fields = { ...(res.fields ?? {}) };
-    delete fields.route; // legacy label on old events — not applyable; stops carries the real route
-    if (Object.keys(fields).length === 0) return; // nothing to re-apply
-
-    const path = `/${res.entity_type}s/${res.entity_id}`;
-    const current = await api.get<Record<string, unknown>>(path);
-    await api.put(path, { ...current, ...fields });
-    fetchHistory(); // pull in the fresh "revert" audit entry
+    fetchHistory(); // pull in the fresh "undo" audit entry (and everyone's revertable flags)
+    fetchBoard();   // the board.snapshot push covers this too; refresh so it never lags
+    return res;
   };
 
   // ── Fetch locks ────────────────────────────────────────────────────────────
@@ -821,6 +941,12 @@ export function DispatchTable() {
           case "board.history":
             setHistoryBadge((n) => n + 1);
             setHistoryEvents((prev) => [msg.event, ...prev].slice(0, 200));
+            // A new change can make an OLDER event un-undoable (its field moved on, so
+            // undoing it would overwrite the newer edit). The push only carries the new
+            // event, so the rest of the list's `revertable` flags are now guesses — and
+            // the pushed one's own flag is computed without a viewer, so it ignores
+            // permissions. Refetch while the panel is open so what's greyed out is true.
+            if (historyOpenRef.current) fetchHistory();
             break;
           case "board.lock":
             setLocks((prev) => {
