@@ -11,7 +11,7 @@ import {
   X, Check, Search, ChevronDown, ChevronLeft, ChevronRight,
   ClipboardList, FileSpreadsheet, Radio, Upload, FileText,
   ArrowLeft, Phone, Truck, DollarSign, Route, Package, TrendingUp,
-  AlertCircle, GripVertical, Play,
+  AlertCircle, GripVertical,
 } from "lucide-react";
 
 type DriverStatus = Status;
@@ -849,121 +849,167 @@ const FieldInput = ({ value, onChange, onBlur, placeholder, error, disabled }: {
   />
 );
 
-// ─── Load queue reorder (drag & drop) ──────────────────────────────────────────
+// ─── Load queue (drag & drop) ─────────────────────────────────────────────────
 
-// Drag the driver's upcoming loads into any order. Persists immediately via
-// PUT /drivers/:id/queue (send the full ordered id array; new head = next load).
-// "Run now" promotes a queued load onto the deck — see onPromote.
-function QueueReorder({ driverId, queue, onReorder, onPromote }: {
-  driverId: string;
-  queue: QueueLoad[];
-  onReorder: (next: QueueLoad[]) => void;
-  onPromote?: (q: QueueLoad) => Promise<void>;
+// The driver's loads as one list: what they're running now, then what's queued.
+// An idle driver has no deck, so the list is just the queue.
+function deckOrder(d: { currentLoad?: string; currentLoadId?: string; nextLoads?: QueueLoad[] }): QueueLoad[] {
+  const queue = d.nextLoads ?? [];
+  if (!d.currentLoadId) return queue;
+  return [{ id: d.currentLoadId, loadId: d.currentLoad || d.currentLoadId }, ...queue];
+}
+
+// Take the one order the user dragged and turn it into the calls the server wants.
+// The list reads as one thing but the backend keeps the deck and the queue apart:
+//
+//   PUT /drivers/:id  { current_load_id }  — swap the deck. The named load becomes
+//     current and inherits the SLOT's status (a driver mid-enroute stays enroute, now
+//     running the other load); the load it replaces is demoted to the head of the queue.
+//   PUT /drivers/:id/queue  { load_ids }   — reorder the queue. load_ids must be an
+//     exact permutation of the queued loads, so the current load may never appear in it.
+//
+// Demote-to-head is why a plain drag maps so cleanly: dragging C to the top of
+// [A,B,C,D] leaves the server at [C, A,B,D] — exactly what the drag meant. The queue
+// call then fixes up the tail for the drags where it doesn't land right on its own
+// (e.g. dragging the current load to the bottom).
+//
+// The two writes aren't one transaction: if the second fails the deck has still
+// swapped. The caller refetches and shows the error, so what's on screen is what the
+// server actually holds.
+async function persistLoadOrder<T extends { id: string; currentLoadId?: string }>(
+  d: T,
+  ids: string[],
+  toBody: (d: Partial<T>) => Record<string, unknown>,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  fromBackend: (raw: any) => T,
+  setFetchKey: React.Dispatch<React.SetStateAction<number>>,
+  setToast: (t: { type: "success" | "error"; msg: string }) => void,
+): Promise<T> {
+  const hasDeck = !!d.currentLoadId;
+  const [head, ...tail] = ids;
+  // With no deck the whole list IS the queue — nothing gets promoted by a reorder.
+  const queueIds = hasDeck ? tail : ids;
+  const swapping = hasDeck && !!head && head !== d.currentLoadId;
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let updated: any = null;
+
+  if (swapping) {
+    // next_load_id is deliberately dropped: the server re-points it at the demoted load,
+    // so our now-stale value would override that — and if the promoted load happens to BE
+    // the current next load, naming it would contradict the swap outright.
+    const { next_load_id: _drop, ...body } = toBody(d);
+    updated = await api.put<any>(`/drivers/${d.id}`, { ...body, current_load_id: head });
+  }
+  if (queueIds.length > 0) {
+    updated = await api.put<any>(`/drivers/${d.id}/queue`, { load_ids: queueIds });
+  }
+
+  setFetchKey((k) => k + 1);
+  if (swapping) setToast({ type: "success", msg: "Now running this load" });
+  return updated ? fromBackend(updated) : d;
+}
+
+// One list: the load the driver is running (top) followed by the queue. Drag any
+// row anywhere. Dropping a row into the top slot makes it the current load.
+//
+// This reads as one list but is two server concepts, so `onSave` gets the whole
+// intended order and works out the calls — see saveLoadOrder in the tables below.
+function LoadQueue({ items, hasDeck, readOnly, onSave }: {
+  items: QueueLoad[];             // [current, ...queued] when hasDeck, else just the queue
+  hasDeck: boolean;               // is the driver running a load right now?
+  readOnly?: boolean;
+  onSave: (orderedIds: string[]) => Promise<void>;
 }) {
-  const [items,     setItems]     = useState<QueueLoad[]>(queue);
-  const [dragIdx,   setDragIdx]   = useState<number | null>(null);
-  const [overIdx,   setOverIdx]   = useState<number | null>(null);
-  const [saving,    setSaving]    = useState(false);
-  const [error,     setError]     = useState(false);
-  const [promoting, setPromoting] = useState<string | null>(null);
-  const [promoteErr, setPromoteErr] = useState<string | null>(null);
+  const [order,   setOrder]   = useState<QueueLoad[]>(items);
+  const [dragIdx, setDragIdx] = useState<number | null>(null);
+  const [overIdx, setOverIdx] = useState<number | null>(null);
+  const [saving,  setSaving]  = useState(false);
+  const [error,   setError]   = useState<string | null>(null);
 
-  useEffect(() => { setItems(queue); }, [queue]);
+  useEffect(() => { setOrder(items); }, [items]);
 
   const persist = async (next: QueueLoad[]) => {
-    const prev = items;
-    setItems(next);
-    onReorder(next);
-    setSaving(true); setError(false);
+    const prev = order;
+    setOrder(next);
+    setSaving(true); setError(null);
     try {
-      await api.put(`/drivers/${driverId}/queue`, { load_ids: next.map((q) => q.id) });
-    } catch {
-      setItems(prev); onReorder(prev); setError(true);
+      await onSave(next.map((q) => q.id));
+    } catch (e) {
+      setOrder(prev); // put the list back where it was; the server didn't take it
+      setError(e instanceof Error ? e.message : "Couldn't save the order.");
     } finally {
       setSaving(false);
-    }
-  };
-
-  // Swap the deck: this load becomes current (taking the status the old current load
-  // held — the status belongs to the slot, not the load), and the load it replaces is
-  // demoted to the head of the queue. The server does the whole rotation.
-  const promote = async (q: QueueLoad) => {
-    if (!onPromote || promoting) return;
-    setPromoting(q.id); setPromoteErr(null);
-    try {
-      await onPromote(q);
-    } catch (e) {
-      setPromoteErr(e instanceof Error ? e.message : "Couldn't switch load.");
-    } finally {
-      setPromoting(null);
     }
   };
 
   const handleDrop = (dropIdx: number) => {
     const from = dragIdx;
     setDragIdx(null); setOverIdx(null);
-    if (from === null || from === dropIdx) return;
-    // Swap the dragged item and the drop target, leaving everything else in place.
-    const next = [...items];
-    [next[from], next[dropIdx]] = [next[dropIdx], next[from]];
+    if (from === null || from === dropIdx || saving) return;
+    // MOVE, not swap: dragging a load to the top must mean "run this one now, and push
+    // the rest down" — which is exactly what the server does when it demotes the load
+    // being replaced to the head of the queue. A swap would reorder the others too.
+    const next = [...order];
+    const [moved] = next.splice(from, 1);
+    next.splice(dropIdx, 0, moved);
     persist(next);
   };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-      {items.map((q, idx) => {
+      {order.map((q, idx) => {
         const isDragging = dragIdx === idx;
         const isOver     = overIdx === idx && dragIdx !== idx;
-        const isNext     = idx === 0;
+        const isCurrent  = hasDeck && idx === 0;
+        const isNext     = hasDeck ? idx === 1 : idx === 0;
+        const draggable  = !readOnly && !saving && order.length > 1;
         return (
           <div
             key={q.id}
-            draggable
-            onDragStart={() => setDragIdx(idx)}
+            draggable={draggable}
+            onDragStart={() => draggable && setDragIdx(idx)}
             onDragEnd={() => { setDragIdx(null); setOverIdx(null); }}
-            onDragOver={(e) => { e.preventDefault(); setOverIdx(idx); }}
+            onDragOver={(e) => { if (draggable) { e.preventDefault(); setOverIdx(idx); } }}
             onDrop={() => handleDrop(idx)}
             style={{
               display: "flex", alignItems: "center", gap: 8,
               padding: "8px 10px", borderRadius: 6,
-              border: `1px solid ${isOver ? "var(--primary)" : "var(--border)"}`,
-              backgroundColor: isDragging ? "var(--muted)" : isOver ? "var(--secondary)" : "var(--input-background)",
+              border: `1px solid ${isOver ? "var(--primary)" : isCurrent ? "var(--primary)" : "var(--border)"}`,
+              backgroundColor: isDragging ? "var(--muted)" : isOver ? "var(--secondary)" : isCurrent ? "var(--secondary)" : "var(--input-background)",
               opacity: isDragging ? 0.5 : 1,
-              cursor: "grab", transition: "border-color 0.12s, background-color 0.12s, opacity 0.12s",
+              cursor: draggable ? "grab" : "default",
+              transition: "border-color 0.12s, background-color 0.12s, opacity 0.12s",
             }}
           >
-            <GripVertical size={14} style={{ color: "var(--muted-foreground)", flexShrink: 0 }} />
-            <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, fontWeight: 700, color: isNext ? "var(--primary)" : "var(--muted-foreground)", minWidth: 20 }}>
+            <GripVertical size={14} style={{ color: "var(--muted-foreground)", flexShrink: 0, opacity: draggable ? 1 : 0.3 }} />
+            <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, fontWeight: 700, color: isCurrent ? "var(--primary)" : "var(--muted-foreground)", minWidth: 20 }}>
               #{idx + 1}
             </span>
             <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--foreground)", flex: 1 }}>
               {q.loadId}
             </span>
-            {isNext && (
-              <span style={{ fontFamily: "var(--font-sans)", fontSize: 9, fontWeight: 700, color: "var(--primary)", backgroundColor: "var(--secondary)", borderRadius: 4, padding: "2px 6px", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                Next
+            {isCurrent && (
+              <span style={{ fontFamily: "var(--font-sans)", fontSize: 9, fontWeight: 700, color: "var(--primary)", backgroundColor: "var(--card)", border: "1px solid var(--primary)", borderRadius: 4, padding: "2px 6px", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                Current
               </span>
             )}
-            {onPromote && (
-              <button
-                type="button"
-                onClick={() => promote(q)}
-                disabled={promoting !== null}
-                title="Run this load now — it becomes the current load, and the one it replaces goes back to the head of the queue"
-                style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 7px", borderRadius: 5, border: "1px solid var(--border)", backgroundColor: "transparent", cursor: promoting ? "default" : "pointer", fontFamily: "var(--font-sans)", fontSize: 10, fontWeight: 600, color: "var(--muted-foreground)", opacity: promoting && promoting !== q.id ? 0.4 : 1, flexShrink: 0 }}
-                onMouseEnter={(e) => { if (promoting) return; const b = e.currentTarget; b.style.borderColor = "var(--primary)"; b.style.color = "var(--primary)"; }}
-                onMouseLeave={(e) => { const b = e.currentTarget; b.style.borderColor = "var(--border)"; b.style.color = "var(--muted-foreground)"; }}
-              >
-                <Play size={10} /> {promoting === q.id ? "Switching…" : "Run now"}
-              </button>
+            {isNext && (
+              <span style={{ fontFamily: "var(--font-sans)", fontSize: 9, fontWeight: 700, color: "var(--muted-foreground)", backgroundColor: "var(--muted)", borderRadius: 4, padding: "2px 6px", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                Next
+              </span>
             )}
           </div>
         );
       })}
       <div style={{ minHeight: 14, fontFamily: "var(--font-sans)", fontSize: 11 }}>
-        {saving     && <span style={{ color: "var(--muted-foreground)" }}>Saving order…</span>}
-        {error      && <span style={{ color: "#EF4444" }}>Couldn't save order — reverted.</span>}
-        {promoteErr && <span style={{ color: "#EF4444" }}>{promoteErr}</span>}
+        {saving && <span style={{ color: "var(--muted-foreground)" }}>Saving order…</span>}
+        {error  && <span style={{ color: "#EF4444" }}>{error}</span>}
+        {!saving && !error && !readOnly && order.length > 1 && (
+          <span style={{ color: "var(--muted-foreground)" }}>
+            {hasDeck ? "Drag a load to the top to run it now." : "Drag to reorder the queue."}
+          </span>
+        )}
       </div>
     </div>
   );
@@ -971,9 +1017,9 @@ function QueueReorder({ driverId, queue, onReorder, onPromote }: {
 
 // ─── Modals ───────────────────────────────────────────────────────────────────
 
-function SoloModal({ driver, onClose, onSave, onPromote, saving, fieldErrors, canEditEquipment }: {
+function SoloModal({ driver, onClose, onSave, onReorderLoads, saving, fieldErrors, canEditEquipment }: {
   driver: Partial<SoloDriver>; onClose: () => void; onSave: (d: SoloDriver) => void;
-  onPromote?: (d: SoloDriver, loadId: string) => Promise<SoloDriver>;
+  onReorderLoads?: (d: SoloDriver, orderedIds: string[]) => Promise<SoloDriver>;
   saving?: boolean;
   fieldErrors?: { truck?: string; trailer?: string };
   canEditEquipment: boolean;
@@ -992,10 +1038,13 @@ function SoloModal({ driver, onClose, onSave, onPromote, saving, fieldErrors, ca
     onSave(form as SoloDriver);
   };
 
-  // Run a queued load now. The server does the rotation, so re-read the deck and the
-  // queue from what it hands back rather than working them out here.
-  const promoteQueued = onPromote && (async (q: QueueLoad) => {
-    const updated = await onPromote(form as SoloDriver, q.id);
+  const loadOrder = deckOrder(form);
+
+  // The server owns the rotation, so re-read the deck and the queue from what it hands
+  // back rather than working them out here.
+  const saveOrder = async (ids: string[]) => {
+    if (!onReorderLoads) return;
+    const updated = await onReorderLoads(form as SoloDriver, ids);
     setForm((f) => ({
       ...f,
       currentLoad:   updated.currentLoad,
@@ -1004,7 +1053,7 @@ function SoloModal({ driver, onClose, onSave, onPromote, saving, fieldErrors, ca
       nextLoadId:    updated.nextLoadId,
       status:        updated.status,
     }));
-  });
+  };
 
   return (
     <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -1070,23 +1119,14 @@ function SoloModal({ driver, onClose, onSave, onPromote, saving, fieldErrors, ca
             </div>
           </label>
 
-          {!isNew && (
-            <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-              <FieldLabel>Current Load</FieldLabel>
-              <div style={{ height: 34, display: "flex", alignItems: "center", padding: "0 10px", borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "var(--muted)", fontFamily: "var(--font-mono)", fontSize: 12, color: form.currentLoad ? "var(--foreground)" : "var(--muted-foreground)" }}>
-                {form.currentLoad ?? "—"}
-              </div>
-            </label>
-          )}
-
-          {!isNew && (form.nextLoads?.length ?? 0) >= 1 && (
+          {!isNew && loadOrder.length > 0 && (
             <div style={{ display: "flex", flexDirection: "column", gap: 5, gridColumn: "1 / -1" }}>
-              <FieldLabel>{(form.nextLoads?.length ?? 0) >= 2 ? "Load Queue — drag to reorder" : "Next Load"}</FieldLabel>
-              <QueueReorder
-                driverId={form.id!}
-                queue={form.nextLoads ?? []}
-                onReorder={(next) => setForm((f) => ({ ...f, nextLoads: next, nextLoadId: next[0]?.id }))}
-                onPromote={promoteQueued}
+              <FieldLabel>Loads</FieldLabel>
+              <LoadQueue
+                items={loadOrder}
+                hasDeck={!!form.currentLoadId}
+                readOnly={!onReorderLoads}
+                onSave={saveOrder}
               />
             </div>
           )}
@@ -1111,9 +1151,9 @@ function SoloModal({ driver, onClose, onSave, onPromote, saving, fieldErrors, ca
   );
 }
 
-function TeamModal({ driver, onClose, onSave, onPromote, saving, fieldErrors, canEditEquipment }: {
+function TeamModal({ driver, onClose, onSave, onReorderLoads, saving, fieldErrors, canEditEquipment }: {
   driver: Partial<TeamDriver>; onClose: () => void; onSave: (d: TeamDriver) => void;
-  onPromote?: (d: TeamDriver, loadId: string) => Promise<TeamDriver>;
+  onReorderLoads?: (d: TeamDriver, orderedIds: string[]) => Promise<TeamDriver>;
   saving?: boolean;
   fieldErrors?: { truck?: string; trailer?: string };
   canEditEquipment: boolean;
@@ -1132,10 +1172,13 @@ function TeamModal({ driver, onClose, onSave, onPromote, saving, fieldErrors, ca
     onSave(form as TeamDriver);
   };
 
-  // Run a queued load now. The server does the rotation, so re-read the deck and the
-  // queue from what it hands back rather than working them out here.
-  const promoteQueued = onPromote && (async (q: QueueLoad) => {
-    const updated = await onPromote(form as TeamDriver, q.id);
+  const loadOrder = deckOrder(form);
+
+  // The server owns the rotation, so re-read the deck and the queue from what it hands
+  // back rather than working them out here.
+  const saveOrder = async (ids: string[]) => {
+    if (!onReorderLoads) return;
+    const updated = await onReorderLoads(form as TeamDriver, ids);
     setForm((f) => ({
       ...f,
       currentLoad:   updated.currentLoad,
@@ -1144,7 +1187,7 @@ function TeamModal({ driver, onClose, onSave, onPromote, saving, fieldErrors, ca
       nextLoadId:    updated.nextLoadId,
       status:        updated.status,
     }));
-  });
+  };
 
   return (
     <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -1220,23 +1263,14 @@ function TeamModal({ driver, onClose, onSave, onPromote, saving, fieldErrors, ca
             </div>
           </label>
 
-          {!isNew && (
-            <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-              <FieldLabel>Current Load</FieldLabel>
-              <div style={{ height: 34, display: "flex", alignItems: "center", padding: "0 10px", borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "var(--muted)", fontFamily: "var(--font-mono)", fontSize: 12, color: form.currentLoad ? "var(--foreground)" : "var(--muted-foreground)" }}>
-                {form.currentLoad ?? "—"}
-              </div>
-            </label>
-          )}
-
-          {!isNew && (form.nextLoads?.length ?? 0) >= 1 && (
+          {!isNew && loadOrder.length > 0 && (
             <div style={{ display: "flex", flexDirection: "column", gap: 5, gridColumn: "1 / -1" }}>
-              <FieldLabel>{(form.nextLoads?.length ?? 0) >= 2 ? "Load Queue — drag to reorder" : "Next Load"}</FieldLabel>
-              <QueueReorder
-                driverId={form.id!}
-                queue={form.nextLoads ?? []}
-                onReorder={(next) => setForm((f) => ({ ...f, nextLoads: next, nextLoadId: next[0]?.id }))}
-                onPromote={promoteQueued}
+              <FieldLabel>Loads</FieldLabel>
+              <LoadQueue
+                items={loadOrder}
+                hasDeck={!!form.currentLoadId}
+                readOnly={!onReorderLoads}
+                onSave={saveOrder}
               />
             </div>
           )}
@@ -2332,21 +2366,8 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
     }
   };
 
-  // Promote a queued load onto the driver's deck. `current_load_id` makes the server
-  // swap: the named load becomes current and inherits the status of the slot, and the
-  // load it replaces drops to the head of the queue.
-  //
-  // next_load_id is deliberately dropped from the body: the server re-points it at the
-  // demoted load, and sending our now-stale value would override that — and if the
-  // promoted load happens to BE the current next load, naming it would contradict the
-  // swap outright.
-  const promoteLoad = async (d: SoloDriver, loadId: string): Promise<SoloDriver> => {
-    const { next_load_id: _drop, ...body } = fromSolo(d);
-    const updated = await api.put<any>(`/drivers/${d.id}`, { ...body, current_load_id: loadId });
-    setFetchKey((k) => k + 1);
-    setToast({ type: "success", msg: "Now running this load" });
-    return toSolo(updated);
-  };
+  const saveLoadOrder = (d: SoloDriver, ids: string[]) =>
+    persistLoadOrder(d, ids, fromSolo, toSolo, setFetchKey, setToast);
 
   const openCreate = () => { setEditing({}); setFieldErrors({}); setModal("create"); };
   const openEdit   = (d: SoloDriver) => { setEditing(d); setFieldErrors({}); setModal("edit"); };
@@ -2524,7 +2545,7 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
       />
 
       {(modal === "create" || modal === "edit") && (
-        <SoloModal driver={editing} onClose={() => setModal(null)} onSave={save} onPromote={canUpdate ? promoteLoad : undefined} saving={saving} fieldErrors={fieldErrors} canEditEquipment={canReadFleet} />
+        <SoloModal driver={editing} onClose={() => setModal(null)} onSave={save} onReorderLoads={canUpdate ? saveLoadOrder : undefined} saving={saving} fieldErrors={fieldErrors} canEditEquipment={canReadFleet} />
       )}
       {deleting && (
         <DeleteConfirm label={deleting.name} busy={delBusy} error={delErr} onClose={() => { setDeleting(null); setDelErr(null); }} onConfirm={del} />
@@ -2620,14 +2641,8 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
     }
   };
 
-  // Same swap as the solo table — see promoteLoad there for why next_load_id is dropped.
-  const promoteLoad = async (d: TeamDriver, loadId: string): Promise<TeamDriver> => {
-    const { next_load_id: _drop, ...body } = fromTeam(d);
-    const updated = await api.put<any>(`/drivers/${d.id}`, { ...body, current_load_id: loadId });
-    setFetchKey((k) => k + 1);
-    setToast({ type: "success", msg: "Now running this load" });
-    return toTeam(updated);
-  };
+  const saveLoadOrder = (d: TeamDriver, ids: string[]) =>
+    persistLoadOrder(d, ids, fromTeam, toTeam, setFetchKey, setToast);
 
   const openCreate = () => { setEditing({}); setFieldErrors({}); setModal("create"); };
   const openEdit   = (d: TeamDriver) => { setEditing(d); setFieldErrors({}); setModal("edit"); };
@@ -2809,7 +2824,7 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
       />
 
       {(modal === "create" || modal === "edit") && (
-        <TeamModal driver={editing} onClose={() => setModal(null)} onSave={save} onPromote={canUpdate ? promoteLoad : undefined} saving={saving} fieldErrors={fieldErrors} canEditEquipment={canReadFleet} />
+        <TeamModal driver={editing} onClose={() => setModal(null)} onSave={save} onReorderLoads={canUpdate ? saveLoadOrder : undefined} saving={saving} fieldErrors={fieldErrors} canEditEquipment={canReadFleet} />
       )}
       {deleting && (
         <DeleteConfirm label={`${deleting.name1} & ${deleting.name2}`} busy={delBusy} error={delErr} onClose={() => { setDeleting(null); setDelErr(null); }} onConfirm={del} />
