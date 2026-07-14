@@ -859,8 +859,9 @@ function deckOrder(d: { currentLoad?: string; currentLoadId?: string; nextLoads?
   return [{ id: d.currentLoadId, loadId: d.currentLoad || d.currentLoadId }, ...queue];
 }
 
-// Take the one order the user dragged and turn it into the calls the server wants.
-// The list reads as one thing but the backend keeps the deck and the queue apart:
+// Compares a driver's edited load order against its original to work out what to send
+// on Save. The list reads as one thing but the backend keeps the deck and the queue
+// apart, and only Save should touch either — not the drag itself:
 //
 //   PUT /drivers/:id  { current_load_id }  — swap the deck. The named load becomes
 //     current and inherits the SLOT's status (a driver mid-enroute stays enroute, now
@@ -872,88 +873,46 @@ function deckOrder(d: { currentLoad?: string; currentLoadId?: string; nextLoads?
 // [A,B,C,D] leaves the server at [C, A,B,D] — exactly what the drag meant. The queue
 // call then fixes up the tail for the drags where it doesn't land right on its own
 // (e.g. dragging the current load to the bottom).
-//
-// The two writes aren't one transaction: if the second fails the deck has still
-// swapped. The caller refetches and shows the error, so what's on screen is what the
-// server actually holds.
-async function persistLoadOrder<T extends { id: string; currentLoadId?: string }>(
-  d: T,
-  ids: string[],
-  toBody: (d: Partial<T>) => Record<string, unknown>,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  fromBackend: (raw: any) => T,
-  setFetchKey: React.Dispatch<React.SetStateAction<number>>,
-  setToast: (t: { type: "success" | "error"; msg: string }) => void,
-): Promise<T> {
-  const hasDeck = !!d.currentLoadId;
-  const [head, ...tail] = ids;
-  // With no deck the whole list IS the queue — nothing gets promoted by a reorder.
-  const queueIds = hasDeck ? tail : ids;
-  const swapping = hasDeck && !!head && head !== d.currentLoadId;
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let updated: any = null;
-
-  if (swapping) {
-    // next_load_id is deliberately dropped: the server re-points it at the demoted load,
-    // so our now-stale value would override that — and if the promoted load happens to BE
-    // the current next load, naming it would contradict the swap outright.
-    const { next_load_id: _drop, ...body } = toBody(d);
-    updated = await api.put<any>(`/drivers/${d.id}`, { ...body, current_load_id: head });
-  }
-  if (queueIds.length > 0) {
-    updated = await api.put<any>(`/drivers/${d.id}/queue`, { load_ids: queueIds });
-  }
-
-  setFetchKey((k) => k + 1);
-  if (swapping) setToast({ type: "success", msg: "Now running this load" });
-  return updated ? fromBackend(updated) : d;
+function loadOrderPatch(
+  edited: { currentLoadId?: string; nextLoads?: QueueLoad[] },
+  original: { currentLoadId?: string; nextLoads?: QueueLoad[] } | undefined,
+) {
+  const swapped = !!original && edited.currentLoadId !== original.currentLoadId;
+  const origTailIds = (original?.nextLoads ?? []).map((q) => q.id);
+  const newTailIds  = (edited.nextLoads   ?? []).map((q) => q.id);
+  const queueChanged = newTailIds.length > 0 &&
+    (origTailIds.length !== newTailIds.length || origTailIds.some((id, i) => id !== newTailIds[i]));
+  return { swapped, queueChanged, newTailIds };
 }
 
-// One list: the load the driver is running (top) followed by the queue. Drag any
-// row anywhere. Dropping a row into the top slot makes it the current load.
-//
-// This reads as one list but is two server concepts, so `onSave` gets the whole
-// intended order and works out the calls — see saveLoadOrder in the tables below.
-function LoadQueue({ items, hasDeck, readOnly, onSave }: {
+// One list: the load the driver is running (top) followed by the queue. Drag any row
+// anywhere. Dropping a row into the top slot means "run this one now" — but nothing is
+// sent to the server until the modal's Save button is clicked; a drag only rearranges
+// local state, same as any other field in the form.
+function LoadQueue({ items, hasDeck, readOnly, onChange }: {
   items: QueueLoad[];             // [current, ...queued] when hasDeck, else just the queue
   hasDeck: boolean;               // is the driver running a load right now?
   readOnly?: boolean;
-  onSave: (orderedIds: string[]) => Promise<void>;
+  onChange: (next: QueueLoad[]) => void;
 }) {
   const [order,   setOrder]   = useState<QueueLoad[]>(items);
   const [dragIdx, setDragIdx] = useState<number | null>(null);
   const [overIdx, setOverIdx] = useState<number | null>(null);
-  const [saving,  setSaving]  = useState(false);
-  const [error,   setError]   = useState<string | null>(null);
 
   useEffect(() => { setOrder(items); }, [items]);
-
-  const persist = async (next: QueueLoad[]) => {
-    const prev = order;
-    setOrder(next);
-    setSaving(true); setError(null);
-    try {
-      await onSave(next.map((q) => q.id));
-    } catch (e) {
-      setOrder(prev); // put the list back where it was; the server didn't take it
-      setError(e instanceof Error ? e.message : "Couldn't save the order.");
-    } finally {
-      setSaving(false);
-    }
-  };
 
   const handleDrop = (dropIdx: number) => {
     const from = dragIdx;
     setDragIdx(null); setOverIdx(null);
-    if (from === null || from === dropIdx || saving) return;
+    if (from === null || from === dropIdx) return;
     // MOVE, not swap: dragging a load to the top must mean "run this one now, and push
     // the rest down" — which is exactly what the server does when it demotes the load
     // being replaced to the head of the queue. A swap would reorder the others too.
     const next = [...order];
     const [moved] = next.splice(from, 1);
     next.splice(dropIdx, 0, moved);
-    persist(next);
+    setOrder(next);
+    onChange(next);
   };
 
   return (
@@ -963,7 +922,7 @@ function LoadQueue({ items, hasDeck, readOnly, onSave }: {
         const isOver     = overIdx === idx && dragIdx !== idx;
         const isCurrent  = hasDeck && idx === 0;
         const isNext     = hasDeck ? idx === 1 : idx === 0;
-        const draggable  = !readOnly && !saving && order.length > 1;
+        const draggable  = !readOnly && order.length > 1;
         return (
           <div
             key={q.id}
@@ -1003,11 +962,9 @@ function LoadQueue({ items, hasDeck, readOnly, onSave }: {
         );
       })}
       <div style={{ minHeight: 14, fontFamily: "var(--font-sans)", fontSize: 11 }}>
-        {saving && <span style={{ color: "var(--muted-foreground)" }}>Saving order…</span>}
-        {error  && <span style={{ color: "#EF4444" }}>{error}</span>}
-        {!saving && !error && !readOnly && order.length > 1 && (
+        {!readOnly && order.length > 1 && (
           <span style={{ color: "var(--muted-foreground)" }}>
-            {hasDeck ? "Drag a load to the top to run it now." : "Drag to reorder the queue."}
+            {hasDeck ? "Drag a load to the top to run it now — applies when you Save." : "Drag to reorder — applies when you Save."}
           </span>
         )}
       </div>
@@ -1017,9 +974,9 @@ function LoadQueue({ items, hasDeck, readOnly, onSave }: {
 
 // ─── Modals ───────────────────────────────────────────────────────────────────
 
-function SoloModal({ driver, onClose, onSave, onReorderLoads, saving, fieldErrors, canEditEquipment }: {
+function SoloModal({ driver, onClose, onSave, canReorderLoads, saving, fieldErrors, canEditEquipment }: {
   driver: Partial<SoloDriver>; onClose: () => void; onSave: (d: SoloDriver) => void;
-  onReorderLoads?: (d: SoloDriver, orderedIds: string[]) => Promise<SoloDriver>;
+  canReorderLoads?: boolean;
   saving?: boolean;
   fieldErrors?: { truck?: string; trailer?: string };
   canEditEquipment: boolean;
@@ -1040,19 +997,15 @@ function SoloModal({ driver, onClose, onSave, onReorderLoads, saving, fieldError
 
   const loadOrder = deckOrder(form);
 
-  // The server owns the rotation, so re-read the deck and the queue from what it hands
-  // back rather than working them out here.
-  const saveOrder = async (ids: string[]) => {
-    if (!onReorderLoads) return;
-    const updated = await onReorderLoads(form as SoloDriver, ids);
-    setForm((f) => ({
-      ...f,
-      currentLoad:   updated.currentLoad,
-      currentLoadId: updated.currentLoadId,
-      nextLoads:     updated.nextLoads,
-      nextLoadId:    updated.nextLoadId,
-      status:        updated.status,
-    }));
+  // A drag only rearranges the modal's own state — nothing reaches the server until
+  // Save. Rewriting current/nextLoads from the dropped order covers both a swap (the
+  // head changed) and a plain reorder (the head is the same, the tail moved) alike.
+  const handleQueueChange = (next: QueueLoad[]) => {
+    setForm((f) => {
+      if (!f.currentLoadId) return { ...f, nextLoads: next, nextLoadId: next[0]?.id };
+      const [head, ...tail] = next;
+      return { ...f, currentLoad: head.loadId, currentLoadId: head.id, nextLoads: tail, nextLoadId: tail[0]?.id };
+    });
   };
 
   return (
@@ -1125,8 +1078,8 @@ function SoloModal({ driver, onClose, onSave, onReorderLoads, saving, fieldError
               <LoadQueue
                 items={loadOrder}
                 hasDeck={!!form.currentLoadId}
-                readOnly={!onReorderLoads}
-                onSave={saveOrder}
+                readOnly={!canReorderLoads}
+                onChange={handleQueueChange}
               />
             </div>
           )}
@@ -1151,9 +1104,9 @@ function SoloModal({ driver, onClose, onSave, onReorderLoads, saving, fieldError
   );
 }
 
-function TeamModal({ driver, onClose, onSave, onReorderLoads, saving, fieldErrors, canEditEquipment }: {
+function TeamModal({ driver, onClose, onSave, canReorderLoads, saving, fieldErrors, canEditEquipment }: {
   driver: Partial<TeamDriver>; onClose: () => void; onSave: (d: TeamDriver) => void;
-  onReorderLoads?: (d: TeamDriver, orderedIds: string[]) => Promise<TeamDriver>;
+  canReorderLoads?: boolean;
   saving?: boolean;
   fieldErrors?: { truck?: string; trailer?: string };
   canEditEquipment: boolean;
@@ -1174,19 +1127,15 @@ function TeamModal({ driver, onClose, onSave, onReorderLoads, saving, fieldError
 
   const loadOrder = deckOrder(form);
 
-  // The server owns the rotation, so re-read the deck and the queue from what it hands
-  // back rather than working them out here.
-  const saveOrder = async (ids: string[]) => {
-    if (!onReorderLoads) return;
-    const updated = await onReorderLoads(form as TeamDriver, ids);
-    setForm((f) => ({
-      ...f,
-      currentLoad:   updated.currentLoad,
-      currentLoadId: updated.currentLoadId,
-      nextLoads:     updated.nextLoads,
-      nextLoadId:    updated.nextLoadId,
-      status:        updated.status,
-    }));
+  // A drag only rearranges the modal's own state — nothing reaches the server until
+  // Save. Rewriting current/nextLoads from the dropped order covers both a swap (the
+  // head changed) and a plain reorder (the head is the same, the tail moved) alike.
+  const handleQueueChange = (next: QueueLoad[]) => {
+    setForm((f) => {
+      if (!f.currentLoadId) return { ...f, nextLoads: next, nextLoadId: next[0]?.id };
+      const [head, ...tail] = next;
+      return { ...f, currentLoad: head.loadId, currentLoadId: head.id, nextLoads: tail, nextLoadId: tail[0]?.id };
+    });
   };
 
   return (
@@ -1269,8 +1218,8 @@ function TeamModal({ driver, onClose, onSave, onReorderLoads, saving, fieldError
               <LoadQueue
                 items={loadOrder}
                 hasDeck={!!form.currentLoadId}
-                readOnly={!onReorderLoads}
-                onSave={saveOrder}
+                readOnly={!canReorderLoads}
+                onChange={handleQueueChange}
               />
             </div>
           )}
@@ -2366,9 +2315,6 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
     }
   };
 
-  const saveLoadOrder = (d: SoloDriver, ids: string[]) =>
-    persistLoadOrder(d, ids, fromSolo, toSolo, setFetchKey, setToast);
-
   const openCreate = () => { setEditing({}); setFieldErrors({}); setModal("create"); };
   const openEdit   = (d: SoloDriver) => { setEditing(d); setFieldErrors({}); setModal("edit"); };
   const save = async (d: SoloDriver) => {
@@ -2379,7 +2325,21 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
         await api.post<any>("/drivers", fromSolo(d));
         setToast({ type: "success", msg: `${d.name} added successfully` });
       } else {
-        await api.put<any>(`/drivers/${d.id}`, fromSolo(d));
+        // The modal only rearranges its own state on drag — the load order the user
+        // left it in reaches the server here, folded into the same Save click as
+        // every other field.
+        const { swapped, queueChanged, newTailIds } = loadOrderPatch(d, editing);
+        let body: Record<string, unknown> = fromSolo(d);
+        if (swapped) {
+          // next_load_id is deliberately dropped: the server re-points it at the
+          // demoted load, so our now-stale value would override that — and if the
+          // promoted load happens to BE the current next load, naming it would
+          // contradict the swap outright.
+          const { next_load_id: _drop, ...rest } = body;
+          body = { ...rest, current_load_id: d.currentLoadId };
+        }
+        await api.put<any>(`/drivers/${d.id}`, body);
+        if (queueChanged) await api.put(`/drivers/${d.id}/queue`, { load_ids: newTailIds });
         setToast({ type: "success", msg: `${d.name} updated successfully` });
       }
       setModal(null);
@@ -2545,7 +2505,7 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
       />
 
       {(modal === "create" || modal === "edit") && (
-        <SoloModal driver={editing} onClose={() => setModal(null)} onSave={save} onReorderLoads={canUpdate ? saveLoadOrder : undefined} saving={saving} fieldErrors={fieldErrors} canEditEquipment={canReadFleet} />
+        <SoloModal driver={editing} onClose={() => setModal(null)} onSave={save} canReorderLoads={canUpdate} saving={saving} fieldErrors={fieldErrors} canEditEquipment={canReadFleet} />
       )}
       {deleting && (
         <DeleteConfirm label={deleting.name} busy={delBusy} error={delErr} onClose={() => { setDeleting(null); setDelErr(null); }} onConfirm={del} />
@@ -2641,9 +2601,6 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
     }
   };
 
-  const saveLoadOrder = (d: TeamDriver, ids: string[]) =>
-    persistLoadOrder(d, ids, fromTeam, toTeam, setFetchKey, setToast);
-
   const openCreate = () => { setEditing({}); setFieldErrors({}); setModal("create"); };
   const openEdit   = (d: TeamDriver) => { setEditing(d); setFieldErrors({}); setModal("edit"); };
   const save = async (d: TeamDriver) => {
@@ -2654,7 +2611,16 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
         await api.post<any>("/drivers", fromTeam(d));
         setToast({ type: "success", msg: `${d.name1} & ${d.name2} added successfully` });
       } else {
-        await api.put<any>(`/drivers/${d.id}`, fromTeam(d));
+        // See the solo table's save() for why this reorder rides along with the field
+        // save instead of firing on drag.
+        const { swapped, queueChanged, newTailIds } = loadOrderPatch(d, editing);
+        let body: Record<string, unknown> = fromTeam(d);
+        if (swapped) {
+          const { next_load_id: _drop, ...rest } = body;
+          body = { ...rest, current_load_id: d.currentLoadId };
+        }
+        await api.put<any>(`/drivers/${d.id}`, body);
+        if (queueChanged) await api.put(`/drivers/${d.id}/queue`, { load_ids: newTailIds });
         setToast({ type: "success", msg: `Team updated successfully` });
       }
       setModal(null);
@@ -2824,7 +2790,7 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
       />
 
       {(modal === "create" || modal === "edit") && (
-        <TeamModal driver={editing} onClose={() => setModal(null)} onSave={save} onReorderLoads={canUpdate ? saveLoadOrder : undefined} saving={saving} fieldErrors={fieldErrors} canEditEquipment={canReadFleet} />
+        <TeamModal driver={editing} onClose={() => setModal(null)} onSave={save} canReorderLoads={canUpdate} saving={saving} fieldErrors={fieldErrors} canEditEquipment={canReadFleet} />
       )}
       {deleting && (
         <DeleteConfirm label={`${deleting.name1} & ${deleting.name2}`} busy={delBusy} error={delErr} onClose={() => { setDeleting(null); setDelErr(null); }} onConfirm={del} />
