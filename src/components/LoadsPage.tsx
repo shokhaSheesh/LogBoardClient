@@ -43,7 +43,7 @@ interface Load {
 interface BackendLoad {
   id: string;
   load_id: string;
-  driver_id: string;
+  driver_id: string | null; // null on write = clear the assignee (unassigned pool)
   driver?: string;         // read-only resolved driver name (primary for a team)
   driver_team?: boolean;
   driver_name2?: string;
@@ -92,12 +92,15 @@ function toLoad(b: BackendLoad): Load {
   };
 }
 
-function toBackend(l: Partial<Load>): Partial<BackendLoad> {
+function toBackend(l: Partial<Load>, opts: { create?: boolean; omitStatus?: boolean } = {}): Partial<BackendLoad> {
   // The route rides entirely in stops — no origin/destination/*_appt fields.
   // Coords go back as `location:{lat,lng}` (the backend's shape), not flat lat/lng.
   return {
     load_id: l.loadId,
-    driver_id: l.driver_id ?? "",
+    // An unassigned load is "" on create, but null on update — null is what returns a
+    // load to the unassigned pool (and rotates the old driver's deck). "" is only
+    // defined as "no assignee" at create time.
+    driver_id: l.driver_id || (opts.create ? "" : null),
     stops: (l.stops ?? []).map((s) => ({
       city: s.city,
       appt: s.appt,
@@ -108,8 +111,9 @@ function toBackend(l: Partial<Load>): Partial<BackendLoad> {
     // carries an empty status. Sending "" back on an edit makes the backend
     // coerce it to the default ("reserved"), wrongly activating a queued load.
     // Omit an empty status so the backend keeps it queue-driven; only a real,
-    // user-chosen status (or "completed") is sent.
-    status: l.status || undefined,
+    // user-chosen status (or "completed") is sent. omitStatus drops it entirely —
+    // see the reassign case in save().
+    status: opts.omitStatus ? undefined : (l.status || undefined),
     payout: l.payout ?? 0,
     miles: l.totalMiles ?? 0,
     broker: l.broker,
@@ -1848,10 +1852,20 @@ export function LoadsPage() {
     const load = withCompletedStops(l);
     try {
       if (modal === "create") {
-        await api.post<BackendLoad>("/loads", toBackend(load));
+        await api.post<BackendLoad>("/loads", toBackend(load, { create: true }));
         setToast({ type: "success", msg: `Load ${load.loadId || ""} created` });
       } else {
-        await api.put<BackendLoad>(`/loads/${load.id}`, toBackend(load));
+        // Changing driver_id is a queue move, not a field edit: the server detaches the
+        // old driver (rotating their deck) and slots the load onto the new one, where
+        // the slot — not us — decides the status. So don't re-assert the status we're
+        // looking at unless the user actually picked a new one. It matters most on a
+        // completed load: re-sending status:"completed" alongside a new driver_id is
+        // precisely the request that re-attributes the payout to the new driver, and a
+        // reassign shouldn't quietly move someone's money.
+        const reassigning = load.driver_id !== (editing.driver_id ?? "");
+        const pickedStatus = load.status !== editing.status;
+        const body = toBackend(load, { omitStatus: reassigning && !pickedStatus });
+        await api.put<BackendLoad>(`/loads/${load.id}`, body);
         setToast({ type: "success", msg: `Load ${load.loadId || ""} updated` });
       }
       setModal(null);
