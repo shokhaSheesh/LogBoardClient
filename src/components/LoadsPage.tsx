@@ -14,6 +14,7 @@ import { menuPosition } from "../lib/menuPosition";
 import { driverDisplayName } from "../lib/driverName";
 import { geocodeCity, routeMiles } from "../lib/geo";
 import { CityAutocomplete } from "./CityAutocomplete";
+import { UncompleteConfirm } from "./UncompleteConfirm";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -1836,6 +1837,14 @@ export function LoadsPage() {
     }
   };
 
+  // Moving a load out of `completed` deletes its payout, so it asks first.
+  const [uncompleting, setUncompleting] = useState<{ load: Load; to: Status } | null>(null);
+
+  const requestStatus = (l: Load, s: Status) => {
+    if (l.status === "completed" && s !== "completed") { setUncompleting({ load: l, to: s }); return; }
+    patchLoad(l.id, { status: s });
+  };
+
   const openCreate = () => { setEditing({}); setModal("create"); };
   const openEdit   = (l: Load) => { setEditing(l); setModal("edit"); };
 
@@ -2010,7 +2019,7 @@ export function LoadsPage() {
                       </span>
                     </td>
                     <td style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", verticalAlign: "middle" }}>
-                      <StatusDropdown value={l.status} onChange={(s) => patchLoad(l.id, { status: s })} readOnly={!canUpdate} />
+                      <StatusDropdown value={l.status} onChange={(s) => requestStatus(l, s)} readOnly={!canUpdate} />
                     </td>
                     {/* Route — origin + stops */}
                     <td style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", verticalAlign: "top", paddingTop: 12, paddingBottom: 12 }}>
@@ -2129,6 +2138,17 @@ export function LoadsPage() {
       )}
       {deleting && (
         <DeleteConfirm label={deleting.loadId} busy={delBusy} error={delErr} onClose={() => { setDeleting(null); setDelErr(null); }} onConfirm={del} />
+      )}
+      {uncompleting && (
+        <UncompleteConfirm
+          to={uncompleting.to}
+          label={uncompleting.load.loadId}
+          onCancel={() => setUncompleting(null)}
+          onConfirm={() => {
+            patchLoad(uncompleting.load.id, { status: uncompleting.to });
+            setUncompleting(null);
+          }}
+        />
       )}
     </div>
   );

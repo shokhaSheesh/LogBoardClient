@@ -7,6 +7,7 @@ import { useAuth } from "../lib/auth";
 import { menuPosition } from "../lib/menuPosition";
 import { driverDisplayName } from "../lib/driverName";
 import { boardWsUrl } from "../lib/ws";
+import { UncompleteConfirm } from "./UncompleteConfirm";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -1194,6 +1195,20 @@ export function DispatchTable() {
     }
   };
 
+  // A driver's status mirrors onto the load they're running, so dropping them out of
+  // `completed` un-completes it — which deletes its payout. Ask first.
+  const [uncompleting, setUncompleting] = useState<{ driver: Driver; to: Status } | null>(null);
+
+  const applyStatus = (driver: Driver, s: Status) => {
+    if (s === "completed") completeLoad(driver.driverId);
+    else patch(driver.driverId, { status: s });
+  };
+
+  const requestStatus = (driver: Driver, s: Status) => {
+    if (driver.status === "completed" && s !== "completed") { setUncompleting({ driver, to: s }); return; }
+    applyStatus(driver, s);
+  };
+
   // Pre-fetch full driver record when edit starts (for safe PUT body)
   const startEdit = (driverId: string, field: string) => {
     setEditCell({ driverId, field });
@@ -1249,6 +1264,17 @@ export function DispatchTable() {
           <AlertCircle size={15} style={{ color: "#EF4444", flexShrink: 0 }} />
           <span style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--foreground)" }}>{toast}</span>
         </div>
+      )}
+      {uncompleting && (
+        <UncompleteConfirm
+          to={uncompleting.to}
+          label={uncompleting.driver.loadId || uncompleting.driver.name}
+          onCancel={() => setUncompleting(null)}
+          onConfirm={() => {
+            applyStatus(uncompleting.driver, uncompleting.to);
+            setUncompleting(null);
+          }}
+        />
       )}
       {historyOpen && (
         <HistoryPanel
@@ -1553,9 +1579,8 @@ export function DispatchTable() {
 
                     {/* Status */}
                     <td style={td({ borderRight: border })}>
-                      <StatusDropdown value={driver.status} disabled={isLockedByOther} onOpenChange={lockOnOpen} onChange={(s) =>
-                        s === "completed" ? completeLoad(driver.driverId) : patch(driver.driverId, { status: s })
-                      } />
+                      <StatusDropdown value={driver.status} disabled={isLockedByOther} onOpenChange={lockOnOpen}
+                        onChange={(s) => requestStatus(driver, s)} />
                     </td>
 
                     {/* Origin / Dest with stops — only when the driver has a load */}

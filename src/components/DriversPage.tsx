@@ -6,6 +6,7 @@ import { useAuth } from "../lib/auth";
 import { hasPerm } from "../lib/permissions";
 import { driverDisplayName } from "../lib/driverName";
 import { menuPosition } from "../lib/menuPosition";
+import { UncompleteConfirm } from "./UncompleteConfirm";
 import {
   User, Users, Plus, Pencil, Trash2, MapPin, MessageSquare,
   X, Check, Search, ChevronDown, ChevronLeft, ChevronRight,
@@ -2315,6 +2316,20 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
     }
   };
 
+  // A driver's status mirrors onto the load they're running, so dropping them out of
+  // `completed` un-completes it — which deletes its payout. Ask first.
+  const [uncompleting, setUncompleting] = useState<{ driver: SoloDriver; to: DriverStatus } | null>(null);
+
+  const applyStatus = (d: SoloDriver, s: DriverStatus) => {
+    if (s === "completed") completeLoad(d.id, d.currentLoadId);
+    else patchRow(d.id, { status: s });
+  };
+
+  const requestStatus = (d: SoloDriver, s: DriverStatus) => {
+    if (d.status === "completed" && s !== "completed") { setUncompleting({ driver: d, to: s }); return; }
+    applyStatus(d, s);
+  };
+
   const openCreate = () => { setEditing({}); setFieldErrors({}); setModal("create"); };
   const openEdit   = (d: SoloDriver) => { setEditing(d); setFieldErrors({}); setModal("edit"); };
   const save = async (d: SoloDriver) => {
@@ -2439,9 +2454,7 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
                 </TD>
                 <TD mono>{d.phone || "—"}</TD>
                 <TD><TypeBadge type={d.type} /></TD>
-                <TD><StatusDropdown value={d.status} onChange={(s) =>
-                  s === "completed" ? completeLoad(d.id, d.currentLoadId) : patchRow(d.id, { status: s })
-                } /></TD>
+                <TD><StatusDropdown value={d.status} onChange={(s) => requestStatus(d, s)} /></TD>
                 <TD mono>
                   {d.currentLoad ? (
                     <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 600, color: "var(--primary)", backgroundColor: "var(--secondary)", borderRadius: 4, padding: "2px 7px" }}>
@@ -2509,6 +2522,14 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
       )}
       {deleting && (
         <DeleteConfirm label={deleting.name} busy={delBusy} error={delErr} onClose={() => { setDeleting(null); setDelErr(null); }} onConfirm={del} />
+      )}
+      {uncompleting && (
+        <UncompleteConfirm
+          to={uncompleting.to}
+          label={uncompleting.driver.currentLoad || uncompleting.driver.name}
+          onCancel={() => setUncompleting(null)}
+          onConfirm={() => { applyStatus(uncompleting.driver, uncompleting.to); setUncompleting(null); }}
+        />
       )}
       {importing && (
         <ImportModal entityLabel="Driver" endpoint="/drivers/import" onClose={() => setImporting(false)} onImported={() => setFetchKey((k) => k + 1)} />
@@ -2599,6 +2620,19 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
     } catch (e) {
       setToast({ type: "error", msg: e instanceof Error ? e.message : "Update failed" });
     }
+  };
+
+  // See the solo table — un-completing deletes the load's payout, so it asks first.
+  const [uncompleting, setUncompleting] = useState<{ driver: TeamDriver; to: DriverStatus } | null>(null);
+
+  const applyStatus = (d: TeamDriver, s: DriverStatus) => {
+    if (s === "completed") completeLoad(d.id, d.currentLoadId);
+    else patchRow(d.id, { status: s });
+  };
+
+  const requestStatus = (d: TeamDriver, s: DriverStatus) => {
+    if (d.status === "completed" && s !== "completed") { setUncompleting({ driver: d, to: s }); return; }
+    applyStatus(d, s);
   };
 
   const openCreate = () => { setEditing({}); setFieldErrors({}); setModal("create"); };
@@ -2724,9 +2758,7 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
                 </TD>
                 <TD mono>{d.phone2 || "—"}</TD>
                 <TD><TypeBadge type={d.type} /></TD>
-                <TD><StatusDropdown value={d.status} onChange={(s) =>
-                  s === "completed" ? completeLoad(d.id, d.currentLoadId) : patchRow(d.id, { status: s })
-                } /></TD>
+                <TD><StatusDropdown value={d.status} onChange={(s) => requestStatus(d, s)} /></TD>
                 <TD mono>
                   {d.currentLoad ? (
                     <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 600, color: "var(--primary)", backgroundColor: "var(--secondary)", borderRadius: 4, padding: "2px 7px" }}>
@@ -2794,6 +2826,14 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
       )}
       {deleting && (
         <DeleteConfirm label={`${deleting.name1} & ${deleting.name2}`} busy={delBusy} error={delErr} onClose={() => { setDeleting(null); setDelErr(null); }} onConfirm={del} />
+      )}
+      {uncompleting && (
+        <UncompleteConfirm
+          to={uncompleting.to}
+          label={uncompleting.driver.currentLoad || uncompleting.driver.name1}
+          onCancel={() => setUncompleting(null)}
+          onConfirm={() => { applyStatus(uncompleting.driver, uncompleting.to); setUncompleting(null); }}
+        />
       )}
       {importing && (
         <ImportModal entityLabel="Team" endpoint="/drivers/import" onClose={() => setImporting(false)} onImported={() => setFetchKey((k) => k + 1)} />
