@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import {
   X, Search, ChevronDown, DollarSign,
   ChevronLeft, ChevronRight, Pencil, Check,
-  CalendarDays, FileText, AlertCircle,
+  CalendarDays, FileText, AlertCircle, Info,
 } from "lucide-react";
 import { api, getCompanyId } from "../lib/api";
 import { useAuth } from "../lib/auth";
@@ -206,6 +206,17 @@ function AdjustModal({ payout, onSave, onClose, saving, error }: {
               placeholder="Optional notes…"
               style={{ ...inputStyle, fontFamily: "var(--font-sans)" }}
             />
+          </div>
+
+          {/* An adjustment belongs to the LOAD, not to this row. Un-completing the load
+              deletes the payout, which looks like the money is gone — say plainly that
+              it isn't, so nobody re-keys figures they never actually lost. */}
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "9px 12px", borderRadius: 8, backgroundColor: "var(--muted)", border: "1px solid var(--border)" }}>
+            <Info size={13} style={{ color: "var(--muted-foreground)", flexShrink: 0, marginTop: 1 }} />
+            <span style={{ fontFamily: "var(--font-sans)", fontSize: 11.5, color: "var(--muted-foreground)", lineHeight: 1.5 }}>
+              These stay with the load. If it's un-completed the payout disappears from this
+              list, but the figures are kept — and come back if the load is completed again.
+            </span>
           </div>
         </div>
 
