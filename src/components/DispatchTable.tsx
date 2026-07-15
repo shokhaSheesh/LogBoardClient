@@ -4,6 +4,7 @@ import { MapPin, Lock, MessageSquare, ChevronDown, Search, Navigation, Check, Ar
 import { Status, STATUS_CONFIG, ALL_STATUSES } from "../lib/statuses";
 import { api, getCompanyId, ApiError } from "../lib/api";
 import { useAuth } from "../lib/auth";
+import { hasPerm } from "../lib/permissions";
 import { menuPosition } from "../lib/menuPosition";
 import { driverDisplayName } from "../lib/driverName";
 import { boardWsUrl } from "../lib/ws";
@@ -253,6 +254,21 @@ function etaColor(km: number | null): string {
   if (km < 200)   return "#10B981";
   if (km < 400)   return "#F59E0B";
   return "#EF4444";
+}
+
+// Board display order: by status (the fixed status order — Re-Update first … Home last),
+// then driver name, then id as a stable tiebreaker. This mirrors how the backend orders
+// GET /board, so we can apply it ourselves on every render — an optimistic status change
+// re-sorts the row into its new group immediately, without waiting for the board.snapshot
+// push to come back. (One bounded sort per render; the board is one row per live driver.)
+const STATUS_RANK: Record<string, number> = Object.fromEntries(ALL_STATUSES.map((s, i) => [s, i]));
+function byBoardOrder(a: Driver, b: Driver): number {
+  const ra = STATUS_RANK[a.status] ?? 999;
+  const rb = STATUS_RANK[b.status] ?? 999;
+  if (ra !== rb) return ra - rb;
+  const n = a.name.localeCompare(b.name);
+  if (n !== 0) return n;
+  return a.driverId.localeCompare(b.driverId);
 }
 
 // HOS duty status → a compact badge. These are the provider's own vocabulary (verbatim),
@@ -841,6 +857,12 @@ export function DispatchTable() {
   const companyId = getCompanyId();
   const { user } = useAuth();
   const currentUserId = user?.id;
+  // The board reads on board.read, but its inline edits write to /drivers and /loads —
+  // so gate the driver-field controls (status, type, comment) on drivers.update and the
+  // route/appt controls on loads.update. Without this a read-only role sees editable
+  // controls that just 403 on save.
+  const canEditDriver = hasPerm(user, "drivers", "update");
+  const canEditLoad   = hasPerm(user, "loads", "update");
 
   const [rows,           setRows]           = useState<Driver[]>([]);
   const [loading,        setLoading]        = useState(true);
@@ -894,7 +916,7 @@ export function DispatchTable() {
   const fetchBoard = async () => {
     try {
       const data = await api.get<BoardRow[]>("/board");
-      setRows((data ?? []).map(fromBoardRow));
+      setRows((data ?? []).map(fromBoardRow).sort(byBoardOrder));
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load board");
@@ -981,7 +1003,7 @@ export function DispatchTable() {
         const msg = JSON.parse(e.data as string);
         switch (msg.type) {
           case "board.snapshot":
-            setRows((msg.rows ?? []).map(fromBoardRow));
+            setRows((msg.rows ?? []).map(fromBoardRow).sort(byBoardOrder));
             break;
           case "board.history":
             setHistoryBadge((n) => n + 1);
@@ -1094,6 +1116,11 @@ export function DispatchTable() {
     try { await api.delete("/board/locks", { entity_type: "driver", entity_id: driverId }); } catch { /* ignore */ }
   };
 
+  // Re-sort the rows into board order. Called only after a write SUCCEEDS (or when
+  // authoritative data lands), so a row moves to its new group on confirmation — not on
+  // the optimistic edit, and never on a save that then fails.
+  const resort = () => setRows((prev) => [...prev].sort(byBoardOrder));
+
   // ── Patch (optimistic + API call) ──────────────────────────────────────────
 
   const patch = async (driverId: string, fields: Partial<Driver>) => {
@@ -1127,7 +1154,8 @@ export function DispatchTable() {
 
     try {
       await api.put(`/drivers/${driverId}`, body);
-      // WS snapshot will push the authoritative state back
+      resort(); // now that it's confirmed, move the row into its new status group
+      // WS snapshot will also push the authoritative state back
     } catch (e) {
       // Roll back optimistic update on failure and tell the user (the revert is otherwise silent)
       setRows((prev) => prev.map((d) => d.driverId === driverId ? driver : d));
@@ -1232,6 +1260,7 @@ export function DispatchTable() {
 
     try {
       await api.put(`/loads/${load.id}`, { ...load, status: "completed", stops: allDone });
+      resort(); // confirmed — move the row into its new group
       // WS snapshot pushes the authoritative rows (driver → covered/ready, queue rotated).
     } catch (e) {
       rollback();
@@ -1276,6 +1305,10 @@ export function DispatchTable() {
   const q = search.trim().toLowerCase();
   // Team scoping is filtered client-side (the realtime snapshot is whole-company).
   const activeTeam = teamFilter === "all" ? null : teams.find((t) => t.id === teamFilter) ?? null;
+  // No sort here — the row order is baked into `rows`, re-sorted only at authoritative
+  // moments (fetch, snapshot, and after a write SUCCEEDS via resort()), never on the
+  // optimistic edit. So a status change updates the cell in place and the row only moves
+  // once the backend confirms it — a failed save reverts without the row ever jumping.
   const visible = rows.filter((d) => {
     const ms = statusFilter === "all" || d.status === statusFilter;
     const mq = !q || d.name.toLowerCase().includes(q) || (d.name2 ?? "").toLowerCase().includes(q) || d.loadId.toLowerCase().includes(q) || d.unit.toLowerCase().includes(q) || d.location.toLowerCase().includes(q);
@@ -1515,6 +1548,9 @@ export function DispatchTable() {
                 // but still gets its own (blue) tint so you can see the lock is active.
                 const isLockedByOther = !!lock && lock.holder_id !== currentUserId;
                 const isLockedByMe    = !!lock && lock.holder_id === currentUserId;
+                // A control is inert if someone else holds the row OR the user can't write it.
+                const noDriverEdit = isLockedByOther || !canEditDriver;
+                const noLoadEdit   = isLockedByOther || !canEditLoad;
                 const lockColor = isLockedByOther ? "#8B5CF6" : isLockedByMe ? "#3B82F6" : undefined;
                 const isEven   = i % 2 === 0;
                 const kmColor  = etaColor(driver.etaKm);
@@ -1622,12 +1658,12 @@ export function DispatchTable() {
 
                     {/* Type */}
                     <td style={td({ borderRight: border })}>
-                      <TypeDropdown value={driver.type} disabled={isLockedByOther} onOpenChange={lockOnOpen} onChange={(t) => patch(driver.driverId, { type: t })} />
+                      <TypeDropdown value={driver.type} disabled={noDriverEdit} onOpenChange={lockOnOpen} onChange={(t) => patch(driver.driverId, { type: t })} />
                     </td>
 
                     {/* Status */}
                     <td style={td({ borderRight: border })}>
-                      <StatusDropdown value={driver.status} disabled={isLockedByOther} onOpenChange={lockOnOpen}
+                      <StatusDropdown value={driver.status} disabled={noDriverEdit} onOpenChange={lockOnOpen}
                         onChange={(s) => requestStatus(driver, s)} />
                     </td>
 
@@ -1640,7 +1676,7 @@ export function DispatchTable() {
                         destination={driver.destination}
                         destinationDone={driver.destinationDone}
                         stops={driver.stops}
-                        disabled={isLockedByOther}
+                        disabled={noLoadEdit}
                         onEditStart={() => claimLock(driver.driverId)}
                         onEditEnd={() => releaseLock(driver.driverId)}
                         onToggleOrigin={() => patchLoad(driver.driverId, driver.stops ?? [], !driver.originDone, driver.destinationDone ?? false)}
@@ -1670,7 +1706,7 @@ export function DispatchTable() {
                             {/* #1 pickup → route index 0 */}
                             <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
                               <span style={{ ...labelStyle, color: "var(--muted-foreground)" }}>#1</span>
-                              <ApptEdit value={driver.pickupAppt} color={driver.pickupAppt === "—" || pickupDone ? "var(--muted-foreground)" : "var(--foreground)"} done={pickupDone} disabled={isLockedByOther}
+                              <ApptEdit value={driver.pickupAppt} color={driver.pickupAppt === "—" || pickupDone ? "var(--muted-foreground)" : "var(--foreground)"} done={pickupDone} disabled={noLoadEdit}
                                 onEditStart={() => claimLock(driver.driverId)} onEditEnd={() => releaseLock(driver.driverId)}
                                 onCommit={(v) => editStop(driver.driverId, 0, { appt: v })} />
                             </div>
@@ -1681,7 +1717,7 @@ export function DispatchTable() {
                               return (
                                 <div key={idx} style={{ display: "flex", alignItems: "center", gap: 5 }}>
                                   <span style={{ ...labelStyle, color: "var(--muted-foreground)" }}>#{idx + 2}</span>
-                                  <ApptEdit value={stop.appt || "—"} color={stop.done || !stop.appt ? "var(--muted-foreground)" : isCurrent ? "var(--foreground)" : "var(--muted-foreground)"} done={stop.done} disabled={isLockedByOther}
+                                  <ApptEdit value={stop.appt || "—"} color={stop.done || !stop.appt ? "var(--muted-foreground)" : isCurrent ? "var(--foreground)" : "var(--muted-foreground)"} done={stop.done} disabled={noLoadEdit}
                                     onEditStart={() => claimLock(driver.driverId)} onEditEnd={() => releaseLock(driver.driverId)}
                                     onCommit={(v) => editStop(driver.driverId, idx + 1, { appt: v })} />
                                 </div>
@@ -1691,7 +1727,7 @@ export function DispatchTable() {
                             {driver.dropAppt !== "—" && (
                               <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
                                 <span style={{ ...labelStyle, color: "var(--muted-foreground)" }}>#{destNum}</span>
-                                <ApptEdit value={driver.dropAppt} color={destDone ? "var(--muted-foreground)" : "var(--foreground)"} done={destDone} disabled={isLockedByOther}
+                                <ApptEdit value={driver.dropAppt} color={destDone ? "var(--muted-foreground)" : "var(--foreground)"} done={destDone} disabled={noLoadEdit}
                                   onEditStart={() => claimLock(driver.driverId)} onEditEnd={() => releaseLock(driver.driverId)}
                                   onCommit={(v) => editStop(driver.driverId, stops.length + 1, { appt: v })} />
                               </div>
@@ -1759,7 +1795,7 @@ export function DispatchTable() {
                         <div style={{ minWidth: 0, flex: 1 }}>
                           {isEdit(driver.driverId, "comments")
                             ? <InlineCell value={driver.comments} onCommit={(v) => { patch(driver.driverId, { comments: v }); stopEdit(driver.driverId); }} />
-                            : <span onClick={isLockedByOther ? undefined : () => startEdit(driver.driverId, "comments")} style={{ cursor: isLockedByOther ? "default" : "text", fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--foreground)", display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{driver.comments || "—"}</span>
+                            : <span onClick={noDriverEdit ? undefined : () => startEdit(driver.driverId, "comments")} style={{ cursor: noDriverEdit ? "default" : "text", fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--foreground)", display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{driver.comments || "—"}</span>
                           }
                           <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--muted-foreground)", display: "block", marginTop: 1 }}>{driver.lastUpdate}</span>
                         </div>
