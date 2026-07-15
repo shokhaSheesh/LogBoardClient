@@ -1697,38 +1697,26 @@ export function DispatchTable() {
                       );
                     })()}
 
-                    {/* Current Location — the dispatcher's typed location, then (distinct)
-                        the truck's real ELD position when it's reporting. Intent vs reality. */}
+                    {/* Current Location — the truck's real ELD position when it's reporting,
+                        else the dispatcher's typed location. Shown next to the pin, with the
+                        ELD freshness beneath. */}
                     <td style={td({ borderRight: border, verticalAlign: "top", paddingTop: 10, paddingBottom: 10 })}>
-                      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                          <MapPin size={11} style={{ color: "var(--muted-foreground)", flexShrink: 0 }} />
-                          <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--foreground)" }}>{driver.location}</span>
-                        </div>
-                        {driver.eld && (driver.eld.location || driver.eld.reported_at) && (() => {
-                          const eld = driver.eld;
-                          const fresh = eldFreshColor(eld.reported_at);
-                          // The ELD may report a different unit than the board has assigned — surface it.
-                          const unitMismatch = eld.vehicle_number && driver.unit !== "—" && eld.vehicle_number !== driver.unit;
-                          return (
-                            <div style={{ display: "flex", alignItems: "flex-start", gap: 5 }}
-                              title={`Truck telemetry${eld.vehicle_number ? ` · unit ${eld.vehicle_number} per ELD` : ""}`}>
-                              <Navigation size={11} style={{ color: fresh, flexShrink: 0, marginTop: 1 }} />
-                              <div style={{ minWidth: 0 }}>
-                                <span style={{ fontFamily: "var(--font-sans)", fontSize: 11.5, color: "var(--muted-foreground)", display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                  {eld.location || "—"}
-                                </span>
-                                {eld.reported_at && (
-                                  <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: fresh, whiteSpace: "nowrap" }}>ELD · {timeAgo(eld.reported_at)}</span>
-                                )}
-                                {unitMismatch && (
-                                  <span title={`ELD reports unit ${eld.vehicle_number}, board has ${driver.unit}`} style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "#F59E0B", whiteSpace: "nowrap", display: "block" }}>⚠ unit {eld.vehicle_number}</span>
-                                )}
-                              </div>
+                      {(() => {
+                        const eld  = driver.eld;
+                        const loc  = eld?.location || driver.location;
+                        const fresh = eld ? eldFreshColor(eld.reported_at) : "var(--muted-foreground)";
+                        return (
+                          <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                              <MapPin size={11} style={{ color: fresh, flexShrink: 0 }} />
+                              <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--foreground)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{loc || "—"}</span>
                             </div>
-                          );
-                        })()}
-                      </div>
+                            {eld?.reported_at && (
+                              <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: fresh, whiteSpace: "nowrap", paddingLeft: 16 }}>ELD · {timeAgo(eld.reported_at)}</span>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </td>
 
                     {/* ETA / Dist. — eta_km is always null (no ELD reports an ETA), so it
