@@ -26,6 +26,24 @@ interface BoardLoad {
   [k: string]: unknown; // passed back verbatim on PUT /loads/:id
 }
 
+// The truck's own telemetry, straight from the ELD (ADR 0021). This is the vehicle's
+// reality — kept entirely separate from the dispatcher's `status`/`location`, which are
+// human intent. Present only when the company has an ELD connected and this driver is
+// linked and reporting; null otherwise.
+interface EldBlock {
+  duty_status: string;          // provider's HOS status, verbatim: DRIVING | SLEEPER | ON_DUTY | OFF_DUTY
+  duty_since: string | null;
+  location: string;             // provider's place name, e.g. "9mi E from Banning, CA"
+  lat: number | null;
+  lng: number | null;
+  odometer: number | null;
+  engine_hours: number | null;
+  fuel_level: number | null;    // percent
+  vehicle_number: string;       // the unit per the ELD — may disagree with the board's `unit`
+  reported_at: string | null;   // when the truck says this was true
+  synced_at: string | null;     // when we last fetched it — the gap tells you the feed went quiet
+}
+
 // What the backend returns for GET /board
 interface BoardRow {
   driver_id: string;
@@ -47,6 +65,7 @@ interface BoardRow {
   location: string;
   eta_km: number | null;
   speed_mph: number | null;
+  eld?: EldBlock | null;
   comments: string;
   next_loads?: { id: string; load_id: string; origin?: string; destination?: string; pickup_appt?: string; drop_appt?: string }[];
   last_update: string;
@@ -78,6 +97,7 @@ interface Driver {
   location: string;
   etaKm: number | null;
   speedMph: number | null;
+  eld?: EldBlock | null;   // truck telemetry, read-only display (never PUT back)
   comments: string;
   lastUpdate: string;
 }
@@ -221,6 +241,7 @@ function fromBoardRow(r: BoardRow): Driver {
     location:    r.location     || "—",
     etaKm:       r.eta_km,
     speedMph:    r.speed_mph,
+    eld:         r.eld ?? null,
     comments:    r.comments     || "",
     lastUpdate:  timeAgo(r.last_update),
   };
@@ -232,6 +253,29 @@ function etaColor(km: number | null): string {
   if (km < 200)   return "#10B981";
   if (km < 400)   return "#F59E0B";
   return "#EF4444";
+}
+
+// HOS duty status → a compact badge. These are the provider's own vocabulary (verbatim),
+// NOT the board's dispatcher status — they mean different things and never mix.
+const DUTY_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
+  DRIVING:  { label: "Driving",  color: "#10B981", bg: "rgba(16,185,129,0.14)" },
+  ON_DUTY:  { label: "On duty",  color: "#3B82F6", bg: "rgba(59,130,246,0.14)" },
+  SLEEPER:  { label: "Sleeper",  color: "#8B5CF6", bg: "rgba(139,92,246,0.14)" },
+  OFF_DUTY: { label: "Off duty", color: "var(--muted-foreground)", bg: "var(--muted)" },
+};
+function dutyConfig(s: string) {
+  return DUTY_CONFIG[s] ?? { label: s.replace(/_/g, " ").toLowerCase(), color: "var(--muted-foreground)", bg: "var(--muted)" };
+}
+
+// A telemetry feed that hasn't reported in a while is stale — a dispatcher needs to see
+// that the truck's position is old, not trust it as live. Returns the freshness colour
+// for the "reported X ago" line.
+function eldFreshColor(reportedAt: string | null): string {
+  if (!reportedAt) return "var(--muted-foreground)";
+  const age = Date.now() - new Date(reportedAt).getTime();
+  if (age < 10 * 60000)  return "#10B981"; // < 10 min — live
+  if (age < 60 * 60000)  return "#F59E0B"; // < 1 hr — getting stale
+  return "#EF4444";                        // over an hour — cold
 }
 
 
@@ -1653,17 +1697,44 @@ export function DispatchTable() {
                       );
                     })()}
 
-                    {/* Current Location — read-only */}
-                    <td style={td({ borderRight: border })}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                        <MapPin size={11} style={{ color: "var(--muted-foreground)", flexShrink: 0 }} />
-                        <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--foreground)" }}>{driver.location}</span>
+                    {/* Current Location — the dispatcher's typed location, then (distinct)
+                        the truck's real ELD position when it's reporting. Intent vs reality. */}
+                    <td style={td({ borderRight: border, verticalAlign: "top", paddingTop: 10, paddingBottom: 10 })}>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                          <MapPin size={11} style={{ color: "var(--muted-foreground)", flexShrink: 0 }} />
+                          <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--foreground)" }}>{driver.location}</span>
+                        </div>
+                        {driver.eld && (driver.eld.location || driver.eld.reported_at) && (() => {
+                          const eld = driver.eld;
+                          const fresh = eldFreshColor(eld.reported_at);
+                          // The ELD may report a different unit than the board has assigned — surface it.
+                          const unitMismatch = eld.vehicle_number && driver.unit !== "—" && eld.vehicle_number !== driver.unit;
+                          return (
+                            <div style={{ display: "flex", alignItems: "flex-start", gap: 5 }}
+                              title={`Truck telemetry${eld.vehicle_number ? ` · unit ${eld.vehicle_number} per ELD` : ""}`}>
+                              <Navigation size={11} style={{ color: fresh, flexShrink: 0, marginTop: 1 }} />
+                              <div style={{ minWidth: 0 }}>
+                                <span style={{ fontFamily: "var(--font-sans)", fontSize: 11.5, color: "var(--muted-foreground)", display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                  {eld.location || "—"}
+                                </span>
+                                {eld.reported_at && (
+                                  <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: fresh, whiteSpace: "nowrap" }}>ELD · {timeAgo(eld.reported_at)}</span>
+                                )}
+                                {unitMismatch && (
+                                  <span title={`ELD reports unit ${eld.vehicle_number}, board has ${driver.unit}`} style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "#F59E0B", whiteSpace: "nowrap", display: "block" }}>⚠ unit {eld.vehicle_number}</span>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })()}
                       </div>
                     </td>
 
-                    {/* ETA / Dist. — always null from backend for now */}
-                    <td style={td({ borderRight: border, verticalAlign: "top", paddingTop: 12, paddingBottom: 12 })}>
-                      <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                    {/* ETA / Dist. — eta_km is always null (no ELD reports an ETA), so it
+                        stays "—". Speed and HOS duty status come live from the ELD. */}
+                    <td style={td({ borderRight: border, verticalAlign: "top", paddingTop: 10, paddingBottom: 10 })}>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                         {driver.etaKm === null ? (
                           <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--muted-foreground)" }}>—</span>
                         ) : driver.etaKm === 0 ? (
@@ -1674,6 +1745,15 @@ export function DispatchTable() {
                             <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 600, color: kmColor, whiteSpace: "nowrap" }}>~{driver.etaKm} km</span>
                           </div>
                         )}
+                        {driver.eld?.duty_status && (() => {
+                          const dc = dutyConfig(driver.eld.duty_status);
+                          return (
+                            <span title={driver.eld.duty_since ? `since ${timeAgo(driver.eld.duty_since)}` : undefined}
+                              style={{ alignSelf: "flex-start", fontFamily: "var(--font-sans)", fontSize: 9, fontWeight: 700, color: dc.color, backgroundColor: dc.bg, borderRadius: 4, padding: "1px 6px", textTransform: "uppercase", letterSpacing: "0.04em", whiteSpace: "nowrap" }}>
+                              {dc.label}
+                            </span>
+                          );
+                        })()}
                         {driver.speedMph != null && (
                           <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--muted-foreground)", whiteSpace: "nowrap" }}>{driver.speedMph} mph</span>
                         )}
