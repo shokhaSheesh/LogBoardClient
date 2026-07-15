@@ -1272,14 +1272,14 @@ export function DispatchTable() {
   // `completed` un-completes it — which deletes its payout. Ask first.
   const [uncompleting, setUncompleting] = useState<{ driver: Driver; to: Status } | null>(null);
 
-  const applyStatus = (driver: Driver, s: Status) => {
-    if (s === "completed") completeLoad(driver.driverId);
-    else patch(driver.driverId, { status: s });
-  };
+  // Return the write promise so the StatusDropdown can await it and show its spinner
+  // while the save is in flight (and, now, until the row reorders on success).
+  const applyStatus = (driver: Driver, s: Status): Promise<void> =>
+    s === "completed" ? completeLoad(driver.driverId) : patch(driver.driverId, { status: s });
 
-  const requestStatus = (driver: Driver, s: Status) => {
+  const requestStatus = (driver: Driver, s: Status): Promise<void> | void => {
     if (driver.status === "completed" && s !== "completed") { setUncompleting({ driver, to: s }); return; }
-    applyStatus(driver, s);
+    return applyStatus(driver, s);
   };
 
   // Pre-fetch full driver record when edit starts (for safe PUT body)
