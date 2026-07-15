@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
-import { MapPin, Lock, MessageSquare, ChevronDown, Search, Navigation, Check, ArrowRight, History, X, AlertCircle, RotateCcw, Users, Rows3 } from "lucide-react";
+import { MapPin, Lock, MessageSquare, ChevronDown, Search, Navigation, Check, ArrowRight, History, X, AlertCircle, RotateCcw, Users, Rows3, ExternalLink } from "lucide-react";
 import { Status, STATUS_CONFIG, ALL_STATUSES } from "../lib/statuses";
 import { api, getCompanyId, ApiError } from "../lib/api";
 import { useAuth } from "../lib/auth";
@@ -1745,11 +1745,27 @@ export function DispatchTable() {
                         const eld  = driver.eld;
                         const loc  = eld?.location || driver.location;
                         const fresh = eld ? eldFreshColor(eld.reported_at) : "var(--muted-foreground)";
+                        // Google Maps Directions with the truck's exact position as the
+                        // starting point (destination left blank) — click to open in a new
+                        // tab, type the other end, read the distance. Only when we have coords.
+                        const hasCoords = eld?.lat != null && eld?.lng != null;
                         return (
                           <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
                             <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
                               <MapPin size={11} style={{ color: fresh, flexShrink: 0 }} />
-                              <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--foreground)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{loc || "—"}</span>
+                              <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--foreground)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}>{loc || "—"}</span>
+                              {hasCoords && (
+                                <button
+                                  type="button"
+                                  title="Directions from here in Google Maps"
+                                  onClick={() => window.open(`https://www.google.com/maps/dir/?api=1&origin=${eld!.lat},${eld!.lng}`, "_blank", "noopener,noreferrer")}
+                                  style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0, width: 20, height: 20, borderRadius: 5, border: "none", backgroundColor: "transparent", cursor: "pointer", color: "var(--muted-foreground)" }}
+                                  onMouseEnter={(e) => { const b = e.currentTarget; b.style.backgroundColor = "var(--muted)"; b.style.color = "var(--primary)"; }}
+                                  onMouseLeave={(e) => { const b = e.currentTarget; b.style.backgroundColor = "transparent"; b.style.color = "var(--muted-foreground)"; }}
+                                >
+                                  <ExternalLink size={12} />
+                                </button>
+                              )}
                             </div>
                             {eld?.reported_at && (
                               <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: fresh, whiteSpace: "nowrap", paddingLeft: 16 }}>ELD · {timeAgo(eld.reported_at)}</span>
