@@ -7,6 +7,7 @@ import { hasPerm } from "../lib/permissions";
 import { driverDisplayName } from "../lib/driverName";
 import { menuPosition } from "../lib/menuPosition";
 import { UncompleteConfirm } from "./UncompleteConfirm";
+import { EldModal } from "./EldModal";
 import {
   User, Users, Plus, Pencil, Trash2, MapPin, MessageSquare,
   X, Check, Search, ChevronDown, ChevronLeft, ChevronRight,
@@ -2255,6 +2256,7 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
   const [page, setPage]                       = useState(1);
   const [pageSize, setPageSize]               = useState(20);
   const [importing, setImporting]             = useState(false);
+  const [eldOpen, setEldOpen]                 = useState(false);
   const [toast, setToast]                     = useState<{ type: "success" | "error"; msg: string } | null>(null);
   const [fetchKey, setFetchKey]               = useState(0);
   const [fieldErrors, setFieldErrors]         = useState<{ truck?: string; trailer?: string }>({});
@@ -2407,7 +2409,7 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
       <Toolbar
         search={search} onSearch={handleSearch}
         statusFilter={statusFilter} onStatus={handleStatus}
-        entityLabel="Driver" onManual={openCreate} onImport={() => setImporting(true)} onEld={() => {}}
+        entityLabel="Driver" onManual={openCreate} onImport={() => setImporting(true)} onEld={() => setEldOpen(true)}
         placeholder="Search drivers, trucks…" canCreate={canCreate}
       />
 
@@ -2534,6 +2536,9 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
       {importing && (
         <ImportModal entityLabel="Driver" endpoint="/drivers/import" onClose={() => setImporting(false)} onImported={() => setFetchKey((k) => k + 1)} />
       )}
+      {eldOpen && (
+        <EldModal onClose={() => setEldOpen(false)} onLinked={() => setFetchKey((k) => k + 1)} />
+      )}
       {toast && <Toast type={toast.type} msg={toast.msg} onClose={() => setToast(null)} />}
     </>
   );
@@ -2563,6 +2568,7 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
   const [page, setPage]                       = useState(1);
   const [pageSize, setPageSize]               = useState(20);
   const [importing, setImporting]             = useState(false);
+  const [eldOpen, setEldOpen]                 = useState(false);
   const [toast, setToast]                     = useState<{ type: "success" | "error"; msg: string } | null>(null);
   const [fetchKey, setFetchKey]               = useState(0);
   const [fieldErrors, setFieldErrors]         = useState<{ truck?: string; trailer?: string }>({});
@@ -2706,7 +2712,7 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
       <Toolbar
         search={search} onSearch={handleSearch}
         statusFilter={statusFilter} onStatus={handleStatus}
-        entityLabel="Team" onManual={openCreate} onImport={() => setImporting(true)} onEld={() => {}}
+        entityLabel="Team" onManual={openCreate} onImport={() => setImporting(true)} onEld={() => setEldOpen(true)}
         placeholder="Search teams, trucks…" canCreate={canCreate}
       />
 
@@ -2837,6 +2843,9 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
       )}
       {importing && (
         <ImportModal entityLabel="Team" endpoint="/drivers/import" onClose={() => setImporting(false)} onImported={() => setFetchKey((k) => k + 1)} />
+      )}
+      {eldOpen && (
+        <EldModal onClose={() => setEldOpen(false)} onLinked={() => setFetchKey((k) => k + 1)} />
       )}
       {toast && <Toast type={toast.type} msg={toast.msg} onClose={() => setToast(null)} />}
     </>
