@@ -2,13 +2,17 @@ import { useState, useRef, useEffect } from "react";
 import {
   Users, UsersRound, ShieldCheck, Plus, Pencil, Trash2, X, Check,
   Eye, EyeOff, ToggleLeft, ToggleRight, Search, ChevronDown, ChevronLeft, ChevronRight, CalendarDays,
+  Truck, AlertCircle, Unlink,
 } from "lucide-react";
+import { useAuth } from "../lib/auth";
+import { hasPerm } from "../lib/permissions";
+import { eldErrorMessage } from "./EldModal";
 
 // ─── Week settings helpers ────────────────────────────────────────────────────
 
 const WEEK_DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
 
-import { api, getCompanyId, isForbidden } from "../lib/api";
+import { api, getCompanyId, isForbidden, ApiError } from "../lib/api";
 import { driverDisplayName } from "../lib/driverName";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -1889,9 +1893,144 @@ function WeekTab() {
   );
 }
 
-type TabId = "users" | "teams" | "roles" | "week";
+// ─── ELD CONNECTION TAB ───────────────────────────────────────────────────────
+
+interface EldConnection {
+  provider: string;
+  connected: boolean;
+  company?: string;        // who the provider says the key belongs to — the owner's confirmation
+  connected_at?: string | null;
+  last_sync_at?: string | null;
+  last_error?: string;     // last poll failure, so a revoked key is visible
+}
+
+// Only `noor` has an integration today; other providers answer 400 unknown_provider.
+const ELD_PROVIDERS = [{ value: "noor", label: "Noor ELD" }];
+
+function fmtWhen(iso?: string | null): string {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+}
+
+// Connect the company's own ELD provider. The connection lives at /eld (separate from the
+// company's `eld` display label); credentials are verified with the provider before the
+// backend stores them, and never returned — to change a key you replace it.
+function EldTab({ canManage }: { canManage: boolean }) {
+  const [conn, setConn]     = useState<EldConnection | null>(null);
+  const [state, setState]   = useState<"loading" | "connected" | "disconnected" | "error">("loading");
+  const [errMsg, setErrMsg] = useState<string | null>(null);
+  const [provider, setProvider] = useState("noor");
+  const [apiKey, setApiKey] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const load = () => {
+    setState("loading"); setErrMsg(null);
+    api.get<EldConnection>("/eld")
+      .then((c) => { setConn(c); setState(c.connected ? "connected" : "disconnected"); })
+      .catch((e) => {
+        if (e instanceof ApiError && e.code === "eld_not_connected") { setConn(null); setState("disconnected"); }
+        else { setErrMsg(eldErrorMessage(e)); setState("error"); }
+      });
+  };
+  useEffect(load, []);
+
+  const connect = async () => {
+    if (!apiKey.trim()) return;
+    setSaving(true); setErrMsg(null);
+    try {
+      const c = await api.put<EldConnection>("/eld", { provider, credentials: { api_key: apiKey.trim() } });
+      setConn(c); setState("connected"); setApiKey("");
+    } catch (e) { setErrMsg(eldErrorMessage(e)); }
+    finally { setSaving(false); }
+  };
+
+  const disconnect = async () => {
+    setSaving(true); setErrMsg(null);
+    try { await api.delete("/eld"); setConn(null); setState("disconnected"); setApiKey(""); }
+    catch (e) { setErrMsg(eldErrorMessage(e)); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <div style={{ flex: 1, overflowY: "auto", padding: 24 }}>
+      <div style={{ maxWidth: 520, display: "flex", flexDirection: "column", gap: 16 }}>
+        <div>
+          <div style={{ fontFamily: "var(--font-sans)", fontSize: 16, fontWeight: 700, color: "var(--foreground)", marginBottom: 6 }}>ELD connection</div>
+          <div style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)", lineHeight: 1.5 }}>
+            Connect your electronic-logging-device provider so the board goes live off its telemetry — where each truck is, its speed, and its duty status.
+          </div>
+        </div>
+
+        {errMsg && (
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "11px 14px", backgroundColor: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.35)", borderRadius: 8 }}>
+            <AlertCircle size={15} color="#EF4444" style={{ flexShrink: 0, marginTop: 1 }} />
+            <div style={{ fontFamily: "var(--font-sans)", fontSize: 12.5, color: "#EF4444", lineHeight: 1.5 }}>{errMsg}</div>
+          </div>
+        )}
+
+        {state === "loading" ? (
+          <div style={{ padding: "40px 0", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>Loading…</div>
+        ) : state === "connected" && conn ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 14, padding: 18, border: "1px solid var(--border)", borderRadius: 12, backgroundColor: "var(--background)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ width: 34, height: 34, borderRadius: 9, backgroundColor: "rgba(16,185,129,0.14)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <Truck size={17} color="#10B981" />
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontFamily: "var(--font-sans)", fontSize: 14, fontWeight: 600, color: "var(--foreground)" }}>
+                  {ELD_PROVIDERS.find((p) => p.value === conn.provider)?.label ?? conn.provider}
+                  <span style={{ marginLeft: 8, fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 700, color: "#10B981", backgroundColor: "rgba(16,185,129,0.12)", borderRadius: 4, padding: "2px 7px" }}>Connected</span>
+                </div>
+                {conn.company && <div style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)", marginTop: 2 }}>{conn.company}</div>}
+              </div>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, fontFamily: "var(--font-sans)", fontSize: 12 }}>
+              <div><span style={{ color: "var(--muted-foreground)" }}>Connected</span><div style={{ color: "var(--foreground)", marginTop: 2 }}>{fmtWhen(conn.connected_at)}</div></div>
+              <div><span style={{ color: "var(--muted-foreground)" }}>Last sync</span><div style={{ color: "var(--foreground)", marginTop: 2 }}>{fmtWhen(conn.last_sync_at)}</div></div>
+            </div>
+            {conn.last_error && (
+              <div style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "9px 12px", backgroundColor: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.35)", borderRadius: 8 }}>
+                <AlertCircle size={14} color="#F59E0B" style={{ flexShrink: 0, marginTop: 1 }} />
+                <div style={{ fontFamily: "var(--font-sans)", fontSize: 11.5, color: "#F59E0B", lineHeight: 1.5 }}>Last poll failed: {conn.last_error}. The key may have been revoked — reconnect with a valid one.</div>
+              </div>
+            )}
+            {canManage && (
+              <button onClick={disconnect} disabled={saving}
+                style={{ alignSelf: "flex-start", display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "8px 14px", borderRadius: 7, border: "1px solid rgba(239,68,68,0.4)", backgroundColor: "transparent", color: "#EF4444", cursor: saving ? "default" : "pointer", opacity: saving ? 0.6 : 1 }}>
+                <Unlink size={13} /> {saving ? "Disconnecting…" : "Disconnect"}
+              </button>
+            )}
+          </div>
+        ) : canManage ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 14, padding: 18, border: "1px solid var(--border)", borderRadius: 12, backgroundColor: "var(--background)" }}>
+            <label style={fieldStyle}>
+              <span style={capStyle}>Provider</span>
+              <CustomSelect value={provider} options={ELD_PROVIDERS} onChange={setProvider} />
+            </label>
+            <label style={fieldStyle}>
+              <span style={capStyle}>API key</span>
+              <input value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="Paste the key from your provider's portal" style={{ ...inputStyle, fontFamily: "var(--font-mono)" }} autoComplete="off" />
+              <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "var(--muted-foreground)" }}>Verified with the provider before it's saved. It's sealed and never shown again — to change it, connect again.</span>
+            </label>
+            <button onClick={connect} disabled={saving || !apiKey.trim()}
+              style={{ alignSelf: "flex-start", display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "8px 16px", borderRadius: 7, border: "none", backgroundColor: saving || !apiKey.trim() ? "var(--muted)" : "var(--primary)", color: saving || !apiKey.trim() ? "var(--muted-foreground)" : "#fff", cursor: saving || !apiKey.trim() ? "default" : "pointer" }}>
+              <Check size={14} /> {saving ? "Connecting…" : "Connect"}
+            </button>
+          </div>
+        ) : (
+          <div style={{ padding: "40px 0", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>No ELD connected.</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+type TabId = "users" | "teams" | "roles" | "week" | "eld";
 
 export function SettingsPage() {
+  const { user } = useAuth();
+  const canEldRead   = hasPerm(user, "eld", "read");
+  const canEldUpdate = hasPerm(user, "eld", "update");
   const [tab, setTab] = useState<TabId>("users");
   const [roles, setRoles] = useState<Role[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
@@ -1917,6 +2056,7 @@ export function SettingsPage() {
     { id: "teams",  label: "Teams",              icon: <UsersRound   size={15} />, color: "#8B5CF6", bg: "rgba(139,92,246,0.14)" },
     { id: "roles",  label: "Roles & Permissions",icon: <ShieldCheck  size={15} />, color: "#10B981", bg: "rgba(16,185,129,0.14)" },
     { id: "week",   label: "Work Week",          icon: <CalendarDays size={15} />, color: "#22D3EE", bg: "rgba(34,211,238,0.14)" },
+    ...(canEldRead ? [{ id: "eld" as TabId, label: "ELD", icon: <Truck size={15} />, color: "#F59E0B", bg: "rgba(245,158,11,0.14)" }] : []),
   ];
 
   return (
@@ -1947,6 +2087,7 @@ export function SettingsPage() {
           {tab === "teams" && <TeamsTab users={[]} />}
           {tab === "roles" && <RolesTab onRolesChange={setRoles} />}
           {tab === "week"  && <WeekTab />}
+          {tab === "eld"   && <EldTab canManage={canEldUpdate} />}
         </div>
       </div>
     </div>

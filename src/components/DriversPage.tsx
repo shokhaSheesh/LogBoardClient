@@ -1441,11 +1441,12 @@ function ImportModal({ entityLabel, endpoint, onClose, onImported }: {
 
 // ─── Add Menu ─────────────────────────────────────────────────────────────────
 
-function AddMenu({ entityLabel, onManual, onImport, onEld }: {
+function AddMenu({ entityLabel, onManual, onImport, onEld, canEld = true }: {
   entityLabel: string;
   onManual: () => void;
   onImport: () => void;
   onEld: () => void;
+  canEld?: boolean; // hide the ELD entry from users without the eld.read key
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -1475,14 +1476,14 @@ function AddMenu({ entityLabel, onManual, onImport, onEld }: {
       comingSoon: false,
       onClick: onImport,
     },
-    {
+    ...(canEld ? [{
       icon: <Radio size={16} />,
       iconColor: "#22D3EE", iconBg: "rgba(34,211,238,0.10)",
       label: "Sync from ELD",
       desc: "Pull driver records from your ELD provider",
       comingSoon: false,
       onClick: onEld,
-    },
+    }] : []),
   ];
 
   return (
@@ -2181,12 +2182,12 @@ function TeamDetail({ team, onBack }: { team: TeamDriver; onBack: () => void }) 
 
 function Toolbar({
   search, onSearch, statusFilter, onStatus,
-  entityLabel, onManual, onImport, onEld, placeholder, canCreate = true,
+  entityLabel, onManual, onImport, onEld, placeholder, canCreate = true, canEld = true,
 }: {
   search: string; onSearch: (v: string) => void;
   statusFilter: string; onStatus: (v: string) => void;
   entityLabel: string; onManual: () => void; onImport: () => void; onEld: () => void;
-  placeholder: string; canCreate?: boolean;
+  placeholder: string; canCreate?: boolean; canEld?: boolean;
 }) {
   return (
     <div style={{
@@ -2227,7 +2228,7 @@ function Toolbar({
 
       <div style={{ flex: 1 }} />
 
-      {canCreate && <AddMenu entityLabel={entityLabel} onManual={onManual} onImport={onImport} onEld={onEld} />}
+      {canCreate && <AddMenu entityLabel={entityLabel} onManual={onManual} onImport={onImport} onEld={onEld} canEld={canEld} />}
     </div>
   );
 }
@@ -2240,6 +2241,8 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
   const canUpdate    = hasPerm(user, "drivers", "update");
   const canDelete    = hasPerm(user, "drivers", "delete");
   const canReadFleet = hasPerm(user, "equipments", "read");
+  const canEld       = hasPerm(user, "eld", "read");   // see the ELD roster
+  const canManageEld = hasPerm(user, "eld", "update"); // link / unlink / sync
   const [rows, setRows]               = useState<SoloDriver[]>([]);
   const [total, setTotal]             = useState(0);
   const [loading, setLoading]         = useState(true);
@@ -2409,7 +2412,7 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
       <Toolbar
         search={search} onSearch={handleSearch}
         statusFilter={statusFilter} onStatus={handleStatus}
-        entityLabel="Driver" onManual={openCreate} onImport={() => setImporting(true)} onEld={() => setEldOpen(true)}
+        entityLabel="Driver" onManual={openCreate} onImport={() => setImporting(true)} onEld={() => setEldOpen(true)} canEld={canEld}
         placeholder="Search drivers, trucks…" canCreate={canCreate}
       />
 
@@ -2537,7 +2540,7 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
         <ImportModal entityLabel="Driver" endpoint="/drivers/import" onClose={() => setImporting(false)} onImported={() => setFetchKey((k) => k + 1)} />
       )}
       {eldOpen && (
-        <EldModal onClose={() => setEldOpen(false)} onLinked={() => setFetchKey((k) => k + 1)} />
+        <EldModal canManage={canManageEld} onClose={() => setEldOpen(false)} onLinked={() => setFetchKey((k) => k + 1)} />
       )}
       {toast && <Toast type={toast.type} msg={toast.msg} onClose={() => setToast(null)} />}
     </>
@@ -2552,6 +2555,8 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
   const canUpdate    = hasPerm(user, "drivers", "update");
   const canDelete    = hasPerm(user, "drivers", "delete");
   const canReadFleet = hasPerm(user, "equipments", "read");
+  const canEld       = hasPerm(user, "eld", "read");   // see the ELD roster
+  const canManageEld = hasPerm(user, "eld", "update"); // link / unlink / sync
   const [rows, setRows]               = useState<TeamDriver[]>([]);
   const [total, setTotal]             = useState(0);
   const [loading, setLoading]         = useState(true);
@@ -2712,7 +2717,7 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
       <Toolbar
         search={search} onSearch={handleSearch}
         statusFilter={statusFilter} onStatus={handleStatus}
-        entityLabel="Team" onManual={openCreate} onImport={() => setImporting(true)} onEld={() => setEldOpen(true)}
+        entityLabel="Team" onManual={openCreate} onImport={() => setImporting(true)} onEld={() => setEldOpen(true)} canEld={canEld}
         placeholder="Search teams, trucks…" canCreate={canCreate}
       />
 
@@ -2845,7 +2850,7 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
         <ImportModal entityLabel="Team" endpoint="/drivers/import" onClose={() => setImporting(false)} onImported={() => setFetchKey((k) => k + 1)} />
       )}
       {eldOpen && (
-        <EldModal onClose={() => setEldOpen(false)} onLinked={() => setFetchKey((k) => k + 1)} />
+        <EldModal canManage={canManageEld} onClose={() => setEldOpen(false)} onLinked={() => setFetchKey((k) => k + 1)} />
       )}
       {toast && <Toast type={toast.type} msg={toast.msg} onClose={() => setToast(null)} />}
     </>

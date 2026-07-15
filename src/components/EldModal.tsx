@@ -18,7 +18,7 @@ interface SyncResult { drivers: number; unlinked: number; synced_at: string }
 
 // Turn the ELD error codes into something a human can act on. These aren't the user doing
 // anything wrong — they're states of the integration — so each says who fixes it.
-function eldErrorMessage(e: unknown): string {
+export function eldErrorMessage(e: unknown): string {
   const code = e instanceof ApiError ? e.code : undefined;
   switch (code) {
     case "not_configured":         return "ELD isn't set up on the server yet. This is a platform setting — ask your administrator.";
@@ -30,7 +30,7 @@ function eldErrorMessage(e: unknown): string {
   }
 }
 
-export function EldModal({ onClose, onLinked }: { onClose: () => void; onLinked?: () => void }) {
+export function EldModal({ onClose, onLinked, canManage = true }: { onClose: () => void; onLinked?: () => void; canManage?: boolean }) {
   const [roster, setRoster]   = useState<EldRosterEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState<string | null>(null);
@@ -129,10 +129,12 @@ export function EldModal({ onClose, onLinked }: { onClose: () => void; onLinked?
             </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <button onClick={sync} disabled={syncing || loading}
-              style={{ display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "var(--font-sans)", fontSize: 12.5, fontWeight: 600, padding: "6px 12px", borderRadius: 7, border: "1px solid var(--border)", backgroundColor: "var(--card)", color: "var(--foreground)", cursor: syncing || loading ? "default" : "pointer", opacity: syncing || loading ? 0.6 : 1 }}>
-              <RefreshCw size={13} style={{ animation: syncing ? "spin 0.7s linear infinite" : undefined }} /> {syncing ? "Syncing…" : "Sync now"}
-            </button>
+            {canManage && (
+              <button onClick={sync} disabled={syncing || loading}
+                style={{ display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "var(--font-sans)", fontSize: 12.5, fontWeight: 600, padding: "6px 12px", borderRadius: 7, border: "1px solid var(--border)", backgroundColor: "var(--card)", color: "var(--foreground)", cursor: syncing || loading ? "default" : "pointer", opacity: syncing || loading ? 0.6 : 1 }}>
+                <RefreshCw size={13} style={{ animation: syncing ? "spin 0.7s linear infinite" : undefined }} /> {syncing ? "Syncing…" : "Sync now"}
+              </button>
+            )}
             <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted-foreground)", display: "flex" }}><X size={16} /></button>
           </div>
         </div>
@@ -183,11 +185,15 @@ export function EldModal({ onClose, onLinked }: { onClose: () => void; onLinked?
                         <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: 600, color: "#10B981", backgroundColor: "rgba(16,185,129,0.12)", borderRadius: 6, padding: "3px 9px" }}>
                           <Check size={12} /> {e.driver_name || "Linked"}
                         </span>
-                        <button onClick={() => unlink(e.remote.id, e.driver_id!)} disabled={busy} title="Unlink"
-                          style={{ display: "inline-flex", alignItems: "center", gap: 4, fontFamily: "var(--font-sans)", fontSize: 12, padding: "5px 9px", borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "var(--card)", color: "var(--muted-foreground)", cursor: busy ? "default" : "pointer", opacity: busy ? 0.6 : 1 }}>
-                          <Unlink size={12} /> {busy ? "…" : "Unlink"}
-                        </button>
+                        {canManage && (
+                          <button onClick={() => unlink(e.remote.id, e.driver_id!)} disabled={busy} title="Unlink"
+                            style={{ display: "inline-flex", alignItems: "center", gap: 4, fontFamily: "var(--font-sans)", fontSize: 12, padding: "5px 9px", borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "var(--card)", color: "var(--muted-foreground)", cursor: busy ? "default" : "pointer", opacity: busy ? 0.6 : 1 }}>
+                            <Unlink size={12} /> {busy ? "…" : "Unlink"}
+                          </button>
+                        )}
                       </div>
+                    ) : !canManage ? (
+                      <span style={{ flexShrink: 0, fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)", fontStyle: "italic" }}>Not linked</span>
                     ) : (
                       <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0, width: 300 }}>
                         <div style={{ flex: 1, minWidth: 0 }}>
