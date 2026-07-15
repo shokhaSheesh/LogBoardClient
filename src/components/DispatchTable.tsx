@@ -1547,6 +1547,9 @@ export function DispatchTable() {
                         smaller and muted, so they read as "next" rather than current. */}
                     <td style={td({ position: "sticky", left: LOAD_ID_LEFT, zIndex: 3, width: 110, minWidth: 110, borderRight: border })}>
                       <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 500, color: "var(--primary)" }}>
+                        {driver.loadRaw?.broker && (
+                          <span style={{ color: "var(--muted-foreground)", fontWeight: 400 }}>{driver.loadRaw.broker} - </span>
+                        )}
                         {driver.loadId}
                       </span>
                       {(() => {
