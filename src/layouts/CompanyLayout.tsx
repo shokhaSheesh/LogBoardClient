@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { Outlet, NavLink, useLocation, useNavigate } from "react-router";
 import {
@@ -22,8 +22,6 @@ import {
   Moon,
   AlertTriangle,
   Lock,
-  Plus,
-  X,
 } from "lucide-react";
 import { Avatar, AvatarFallback } from "../components/ui/avatar";
 import { useAuth } from "../lib/auth";
@@ -53,12 +51,11 @@ const sectionLabelStyle: React.CSSProperties = {
 };
 
 function AccountSwitcher({
-  accounts, activeId, onSwitch, onAddCompany,
+  accounts, activeId, onSwitch,
 }: {
   accounts: Account[];
   activeId: string;
   onSwitch: (id: string) => void;
-  onAddCompany: () => void;
 }) {
   const { logout, user } = useAuth();
   const navigate = useNavigate();
@@ -196,26 +193,6 @@ function AccountSwitcher({
               </button>
             );
           })}
-
-          {/* Add company — owner self-service (POST /owner/companies is owner-only) */}
-          {isOwner && (
-            <button
-              onClick={() => { setOpen(false); onAddCompany(); }}
-              style={{
-                display: "flex", alignItems: "center", gap: 10,
-                width: "100%", boxSizing: "border-box", padding: "8px 10px", border: "none", borderRadius: 8,
-                backgroundColor: "transparent", cursor: "pointer", textAlign: "left",
-                fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)",
-              }}
-              onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--muted)"; }}
-              onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = "transparent"; }}
-            >
-              <div style={{ width: 30, height: 30, borderRadius: 8, flexShrink: 0, border: "1px dashed var(--border)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <Plus size={14} />
-              </div>
-              Add company
-            </button>
-          )}
 
           {/* Account section — Billing/Settings only for owners */}
           {menuItems.length > 0 && (
@@ -837,12 +814,11 @@ function ThemeToggle() {
 
 // ─── Top Header ──────────────────────────────────────────────────────────────
 
-function TopHeader({ onToggleSidebar, accounts, activeAccountId, onSwitch, onAddCompany }: {
+function TopHeader({ onToggleSidebar, accounts, activeAccountId, onSwitch }: {
   onToggleSidebar: () => void;
   accounts: Account[];
   activeAccountId: string;
   onSwitch: (id: string) => void;
-  onAddCompany: () => void;
 }) {
   const location = useLocation();
   const segments = location.pathname.replace("/workspace/", "").split("/");
@@ -904,7 +880,6 @@ function TopHeader({ onToggleSidebar, accounts, activeAccountId, onSwitch, onAdd
           accounts={accounts}
           activeId={activeAccountId}
           onSwitch={onSwitch}
-          onAddCompany={onAddCompany}
         />
       </div>
     </header>
@@ -950,25 +925,19 @@ export function CompanyLayout() {
   const [accounts, setAccounts]               = useState<Account[]>([]);
   const [activeAccountId, setActiveAccountId] = useState(getCompanyId());
 
-  // Load an owner's companies (with MC merged in). Callable so a freshly-created
-  // company can be pulled in without a full remount.
-  const loadOwnerAccounts = useCallback(async (): Promise<Account[]> => {
-    const [data, companies] = await Promise.all([
-      api.get<Account[]>("/owner/accounts"),
-      // MC number isn't on /owner/accounts — pull it from the full company records
-      // and merge by id. Best-effort: an owner with no company access just won't see MC.
-      api.get<{ id: string; mc?: string }[]>("/owner/companies").catch(() => []),
-    ]);
-    const mcById = new Map(companies.map((c) => [c.id, c.mc]));
-    const merged = data.map((a) => ({ ...a, mc: mcById.get(a.id) }));
-    setAccounts(merged);
-    return merged;
-  }, []);
-
   // Fetch real accounts for owners; dispatcher/updater have a fixed company_id from login
   useEffect(() => {
     if (user?.role === "owner") {
-      loadOwnerAccounts().then((merged) => {
+      Promise.all([
+        api.get<Account[]>("/owner/accounts"),
+        // MC number isn't on /owner/accounts — pull it from the full company
+        // records and merge by id. Best-effort: an owner with no company access
+        // just won't see MC, which is fine.
+        api.get<{ id: string; mc?: string }[]>("/owner/companies").catch(() => []),
+      ]).then(([data, companies]) => {
+          const mcById = new Map(companies.map((c) => [c.id, c.mc]));
+          const merged = data.map((a) => ({ ...a, mc: mcById.get(a.id) }));
+          setAccounts(merged);
           // Auto-select: prefer the one already in localStorage, else first
           const saved = getCompanyId();
           const match = merged.find((a) => a.id === saved) ?? merged[0];
@@ -1017,16 +986,6 @@ export function CompanyLayout() {
     setTimeout(() => setSwitching(false), 800);
   };
 
-  // Owner self-service: create a company (POST /owner/companies), pull it into the
-  // switcher, and jump straight into it. Throws so the modal can show the error.
-  const [addOpen, setAddOpen] = useState(false);
-  const createCompany = async (body: { name: string; mc: string }) => {
-    const created = await api.post<{ id?: string }>("/owner/companies", body);
-    const merged = await loadOwnerAccounts();
-    const newId = created?.id;
-    if (newId && merged.some((a) => a.id === newId)) switchAccount(newId);
-  };
-
   return (
     <div
       className="flex h-screen overflow-hidden"
@@ -1043,7 +1002,6 @@ export function CompanyLayout() {
           accounts={accounts}
           activeAccountId={activeAccountId}
           onSwitch={switchAccount}
-          onAddCompany={() => setAddOpen(true)}
         />
 
         {/* The board still reads during the grace window — say so once, at the top,
@@ -1081,79 +1039,7 @@ export function CompanyLayout() {
         </div>
       )}
 
-      {addOpen && <AddCompanyModal onClose={() => setAddOpen(false)} onCreate={createCompany} />}
-
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
-  );
-}
-
-// ─── Add company modal ────────────────────────────────────────────────────────
-
-// Owner self-service create. Only name + mc are settable here (the rest default on the
-// server); on success the layout pulls the company into the switcher and jumps into it.
-function AddCompanyModal({ onClose, onCreate }: {
-  onClose: () => void;
-  onCreate: (body: { name: string; mc: string }) => Promise<void>;
-}) {
-  const [name, setName] = useState("");
-  const [mc, setMc]     = useState("");
-  const [saving, setSaving] = useState(false);
-  const [error, setError]   = useState<string | null>(null);
-
-  const canSave = name.trim() && mc.trim() && !saving;
-
-  const submit = async () => {
-    if (!canSave) return;
-    setSaving(true); setError(null);
-    try {
-      await onCreate({ name: name.trim(), mc: mc.trim() });
-      onClose(); // switched into the new company
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Couldn't create the company.");
-      setSaving(false);
-    }
-  };
-
-  const inputStyle: React.CSSProperties = {
-    height: 36, padding: "0 12px", borderRadius: 8, border: "1px solid var(--border)",
-    backgroundColor: "var(--input-background)", color: "var(--foreground)",
-    fontFamily: "var(--font-sans)", fontSize: 13, outline: "none", width: "100%", boxSizing: "border-box",
-  };
-  const labelStyle: React.CSSProperties = { fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600, color: "var(--muted-foreground)", textTransform: "uppercase", letterSpacing: "0.06em" };
-
-  return createPortal(
-    <div style={{ position: "fixed", inset: 0, zIndex: 100000, backgroundColor: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center" }}
-      onClick={(e) => { if (e.target === e.currentTarget && !saving) onClose(); }}>
-      <div style={{ backgroundColor: "var(--card)", borderRadius: 12, width: 420, boxShadow: "0 20px 60px rgba(0,0,0,0.25)", overflow: "hidden" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderBottom: "1px solid var(--border)" }}>
-          <span style={{ fontFamily: "var(--font-sans)", fontSize: 15, fontWeight: 700, color: "var(--foreground)" }}>Add company</span>
-          <button onClick={onClose} disabled={saving} style={{ background: "none", border: "none", cursor: saving ? "default" : "pointer", color: "var(--muted-foreground)", display: "flex" }}><X size={16} /></button>
-        </div>
-        <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 14 }}>
-          <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-            <span style={labelStyle}>Company name</span>
-            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Acme West LLC" style={inputStyle} autoFocus />
-          </label>
-          <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-            <span style={labelStyle}>MC number</span>
-            <input value={mc} onChange={(e) => setMc(e.target.value)} placeholder="MC-654321" style={{ ...inputStyle, fontFamily: "var(--font-mono)" }} />
-          </label>
-          {error && (
-            <div style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "9px 12px", backgroundColor: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.35)", borderRadius: 8 }}>
-              <AlertTriangle size={14} color="#EF4444" style={{ flexShrink: 0, marginTop: 1 }} />
-              <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "#EF4444", lineHeight: 1.5 }}>{error}</span>
-            </div>
-          )}
-        </div>
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, padding: "14px 20px", borderTop: "1px solid var(--border)" }}>
-          <button onClick={onClose} disabled={saving} style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "8px 16px", borderRadius: 7, border: "1px solid var(--border)", backgroundColor: "var(--muted)", color: "var(--foreground)", cursor: saving ? "default" : "pointer" }}>Cancel</button>
-          <button onClick={submit} disabled={!canSave} style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "8px 18px", borderRadius: 7, border: "none", backgroundColor: canSave ? "var(--primary)" : "var(--muted)", color: canSave ? "#fff" : "var(--muted-foreground)", cursor: canSave ? "pointer" : "default", display: "flex", alignItems: "center", gap: 6 }}>
-            <Plus size={14} /> {saving ? "Creating…" : "Create"}
-          </button>
-        </div>
-      </div>
-    </div>,
-    document.body
   );
 }
