@@ -2,9 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 interface Suggestion {
-  display: string;
-  city: string;
-  state: string;
+  display: string;   // "8900 N Sarival Ave Waddell, AZ" — or just "Waddell, AZ" for a city match
   lat: number;
   lng: number;
 }
@@ -19,7 +17,12 @@ interface Props {
   onBlur?: React.FocusEventHandler<HTMLInputElement>;
 }
 
-export function CityAutocomplete({ value, onChange, onCoords, placeholder = "City, ST", style, onFocus, onBlur }: Props) {
+// Free-text stop location with address suggestions. Rate cons print detailed pickup /
+// delivery addresses ("8900 N SARIVAL AVE WADDELL, AZ"), so this suggests full street
+// addresses, not just "City, ST" — while still letting the user type anything, since the
+// backend's stop `city` is free text. A picked suggestion also hands back coordinates so
+// mileage can be routed without a second geocode.
+export function AddressAutocomplete({ value, onChange, onCoords, placeholder = "Address or City, ST", style, onFocus, onBlur }: Props) {
   const inputRef                      = useRef<HTMLInputElement>(null);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [open, setOpen]               = useState(false);
@@ -41,8 +44,7 @@ export function CityAutocomplete({ value, onChange, onCoords, placeholder = "Cit
             format: "json",
             addressdetails: "1",
             countrycodes: "us",
-            featuretype: "city",
-            limit: "6",
+            limit: "7",
           }),
           { headers: { "Accept-Language": "en" } }
         );
@@ -50,14 +52,10 @@ export function CityAutocomplete({ value, onChange, onCoords, placeholder = "Cit
         const seen = new Set<string>();
         const results: Suggestion[] = [];
         for (const item of data) {
-          const city  = item.address?.city ?? item.address?.town ?? item.address?.village ?? item.address?.county ?? "";
-          const state = item.address?.state ?? "";
-          const abbr  = STATE_ABBR[state] ?? state;
-          if (!city || !abbr) continue;
-          const key = `${city},${abbr}`;
-          if (seen.has(key)) continue;
-          seen.add(key);
-          results.push({ display: `${city}, ${abbr}`, city, state: abbr, lat: parseFloat(item.lat), lng: parseFloat(item.lon) });
+          const display = composeAddress(item.address);
+          if (!display || seen.has(display)) continue;
+          seen.add(display);
+          results.push({ display, lat: parseFloat(item.lat), lng: parseFloat(item.lon) });
         }
         setSuggestions(results);
         setOpen(results.length > 0);
@@ -111,6 +109,7 @@ export function CityAutocomplete({ value, onChange, onCoords, placeholder = "Cit
         borderRadius: 8,
         boxShadow: "0 8px 32px rgba(0,0,0,0.16)",
         overflow: "hidden",
+        maxHeight: 260, overflowY: "auto",
       }}
     >
       {suggestions.map((s, i) => (
@@ -126,8 +125,7 @@ export function CityAutocomplete({ value, onChange, onCoords, placeholder = "Cit
             borderTop: i > 0 ? "1px solid var(--border)" : "none",
           }}
         >
-          <span style={{ fontWeight: 600 }}>{s.city}</span>
-          <span style={{ color: "var(--muted-foreground)" }}>, {s.state}</span>
+          {s.display}
         </li>
       ))}
     </ul>,
@@ -154,6 +152,19 @@ export function CityAutocomplete({ value, onChange, onCoords, placeholder = "Cit
       {dropdown}
     </>
   );
+}
+
+// Build a rate-con-style label from Nominatim's structured address: street line + city,
+// then the two-letter state. Falls back to a city-only label when there's no street.
+function composeAddress(a: any): string {
+  if (!a) return "";
+  const line1 = [a.house_number, a.road].filter(Boolean).join(" ");
+  const place = a.city || a.town || a.village || a.hamlet || a.suburb || a.county || "";
+  const abbr  = STATE_ABBR[a.state] ?? a.state ?? "";
+  const tail  = [place, abbr].filter(Boolean).join(", ");
+  const display = [line1, tail].filter(Boolean).join(" ").trim();
+  // Need at least a place and a state for the board's origin/destination columns to read.
+  return place && abbr ? display : "";
 }
 
 const STATE_ABBR: Record<string, string> = {

@@ -280,25 +280,34 @@ function Logo({ collapsed }: { collapsed: boolean }) {
 interface NavItem { icon: React.ElementType; label: string; path: string; module: string; }
 interface NavSection { title: string; items: NavItem[]; }
 
-// Sidebar grouping. Board and Loads lead the first section — they're the pages
-// dispatchers live in — followed by the rest of the day-to-day fleet, then the
-// money/reporting views.
+// Sidebar grouping. Dashboard sits alone at the top; then Operations (Board and
+// Loads — the pages dispatchers live in), the Fleet roster, and the money views.
 const navSections: NavSection[] = [
+  {
+    title: "Overview",
+    items: [
+      { icon: LayoutDashboard, label: "Dashboard", path: "dashboard", module: "dashboard" },
+    ],
+  },
   {
     title: "Operations",
     items: [
-      { icon: Trello,     label: "Board",      path: "board",      module: "board"      },
-      { icon: Package,    label: "Loads",      path: "loads",      module: "loads"      },
-      { icon: Users,      label: "Drivers",    path: "drivers",    module: "drivers"    },
-      { icon: Truck,      label: "Equipments", path: "equipments", module: "equipments" },
+      { icon: Trello,  label: "Board", path: "board", module: "board" },
+      { icon: Package, label: "Loads", path: "loads", module: "loads" },
+    ],
+  },
+  {
+    title: "Fleet",
+    items: [
+      { icon: Users, label: "Drivers",    path: "drivers",    module: "drivers"    },
+      { icon: Truck, label: "Equipments", path: "equipments", module: "equipments" },
     ],
   },
   {
     title: "Financials",
     items: [
-      { icon: LayoutDashboard, label: "Dashboard", path: "dashboard", module: "dashboard" },
-      { icon: BarChart2,       label: "Gross",     path: "gross",     module: "gross"     },
-      { icon: DollarSign,      label: "Payouts",   path: "payouts",   module: "payouts"   },
+      { icon: BarChart2,  label: "Gross",   path: "gross",   module: "gross"   },
+      { icon: DollarSign, label: "Payouts", path: "payouts", module: "payouts" },
     ],
   },
 ];
