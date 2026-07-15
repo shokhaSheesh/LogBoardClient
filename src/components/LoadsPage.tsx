@@ -742,10 +742,9 @@ function draftToLoad(d: ExtractDraft): Partial<Load> {
   };
 }
 
-// The appointment is free text — rate cons print all sorts ("07/06 0800-1700", "FCFS",
-// "Appt required"), so the field imposes no format and no date limits (past dates and
-// out-of-order stops are all fine). The calendar button is only a convenience: it drops a
-// formatted "MM/DD · HH:MM" into the same field, which the user can then edit freely.
+// Calendar-only picker, same as before — but with no restriction on which date/time can
+// be picked (no past-day disabling, no "must be after the earlier stop" clamping). The
+// backend's appt field is free text with no ordering rule, so the UI shouldn't invent one.
 function AppointmentInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const [open, setOpen]   = useState(false);
@@ -779,33 +778,23 @@ function AppointmentInput({ value, onChange }: { value: string; onChange: (v: st
   };
 
   return (
-    <div ref={wrapRef} style={{ position: "relative", display: "flex", alignItems: "center", gap: 6 }}>
-      <input
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder="e.g. 06/12 · 13:00 or FCFS"
-        style={{
-          flex: 1, minWidth: 0, height: 34, padding: "0 10px",
-          border: "1px solid var(--border)", borderRadius: 6,
-          backgroundColor: "var(--input-background)", color: "var(--foreground)",
-          fontFamily: "var(--font-mono)", fontSize: 13, outline: "none",
-        }}
-        onFocus={(e) => { e.currentTarget.style.borderColor = "var(--primary)"; e.currentTarget.style.boxShadow = "0 0 0 3px rgba(59,130,246,0.12)"; }}
-        onBlur={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.boxShadow = "none"; }}
-      />
-      <button type="button" onClick={() => setOpen(v => !v)} title="Pick a date & time"
-        style={{
-          width: 34, height: 34, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
-          border: `1px solid ${open ? "var(--primary)" : "var(--border)"}`, borderRadius: 6,
-          backgroundColor: open ? "var(--secondary)" : "var(--input-background)", cursor: "pointer",
-          color: "var(--muted-foreground)", outline: "none",
-        }}>
-        <CalendarDays size={14} />
+    <div ref={wrapRef} style={{ position: "relative" }}>
+      <button type="button" onClick={() => setOpen(v => !v)} style={{
+        display: "flex", alignItems: "center", gap: 8, width: "100%", height: 34, padding: "0 10px",
+        border: `1px solid ${open ? "var(--primary)" : "var(--border)"}`,
+        borderRadius: 6, backgroundColor: "var(--input-background)", cursor: "pointer",
+        fontFamily: "var(--font-mono)", fontSize: 13,
+        color: value ? "var(--foreground)" : "var(--muted-foreground)",
+        boxShadow: open ? "0 0 0 3px rgba(59,130,246,0.12)" : "none",
+        outline: "none", textAlign: "left",
+      }}>
+        <CalendarDays size={13} style={{ color: "var(--muted-foreground)", flexShrink: 0 }} />
+        <span style={{ flex: 1 }}>{value || "MM/DD · HH:MM"}</span>
       </button>
 
       {open && (
         <div style={{
-          position: "absolute", top: "calc(100% + 4px)", right: 0, zIndex: 600,
+          position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 600,
           backgroundColor: "var(--card)", border: "1px solid var(--border)",
           borderRadius: 10, boxShadow: "0 10px 28px rgba(0,0,0,0.16)", width: 272, padding: 12,
         }}>
