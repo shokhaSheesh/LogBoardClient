@@ -8,7 +8,7 @@ import {
 
 const WEEK_DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
 
-import { api, getCompanyId } from "../lib/api";
+import { api, getCompanyId, isForbidden } from "../lib/api";
 import { driverDisplayName } from "../lib/driverName";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -884,144 +884,6 @@ function UsersTab({ roles, teams, reloadTeams }: { roles: Role[]; teams: Team[];
 
 // ─── TEAMS TAB ────────────────────────────────────────────────────────────────
 
-function DropdownMultiSelect<T>({
-  label,
-  selected,
-  options,
-  getKey,
-  getLabel,
-  onToggle,
-  onClear,
-  placeholder,
-  chipColor = "#3B82F6",
-  chipBg = "rgba(59,130,246,0.14)",
-}: {
-  label: string;
-  selected: T[];
-  options: T[];
-  getKey: (item: T) => string;
-  getLabel: (item: T) => string;
-  onToggle: (item: T) => void;
-  onClear?: () => void; // clear the whole selection from the trigger, not just a chip at a time
-  placeholder?: string;
-  chipColor?: string;
-  chipBg?: string;
-}) {
-  const [query, setQuery] = useState("");
-  const [open, setOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const h = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener("mousedown", h);
-    return () => document.removeEventListener("mousedown", h);
-  }, []);
-
-  const q = query.toLowerCase();
-  const filtered = options.filter((o) => getLabel(o).toLowerCase().includes(q));
-  const selectedKeys = new Set(selected.map(getKey));
-
-  return (
-    <div style={fieldStyle}>
-      <span style={capStyle}>{label}</span>
-      <div ref={containerRef} style={{ position: "relative" }}>
-        {/* Trigger button — matches CustomSelect style */}
-        <button
-          type="button"
-          onClick={() => { setOpen((v) => !v); setQuery(""); }}
-          style={{
-            display: "flex", alignItems: "center", gap: 8, width: "100%",
-            height: 34, paddingLeft: 10, paddingRight: 8,
-            fontFamily: "var(--font-sans)", fontSize: 13,
-            backgroundColor: "var(--input-background)",
-            border: `1px solid ${open ? "var(--primary)" : "var(--border)"}`,
-            borderRadius: 7, color: selected.length === 0 ? "var(--muted-foreground)" : "var(--foreground)",
-            cursor: "pointer",
-            boxShadow: open ? "0 0 0 3px rgba(59,130,246,0.12)" : "none",
-            transition: "border-color 0.15s, box-shadow 0.15s",
-            outline: "none",
-          }}
-        >
-          <span style={{ flex: 1, textAlign: "left", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {selected.length === 0
-              ? (placeholder ?? "Select…")
-              : selected.length === 1
-                ? getLabel(selected[0])
-                : `${selected.length} selected`}
-          </span>
-          {onClear && selected.length > 0 && (
-            <span
-              role="button"
-              title="Clear all"
-              onClick={(e) => { e.stopPropagation(); onClear(); setOpen(false); }}
-              style={{ display: "flex", flexShrink: 0, color: "var(--muted-foreground)", cursor: "pointer" }}
-              onMouseEnter={(e) => { (e.currentTarget as HTMLSpanElement).style.color = "#EF4444"; }}
-              onMouseLeave={(e) => { (e.currentTarget as HTMLSpanElement).style.color = "var(--muted-foreground)"; }}
-            >
-              <X size={13} />
-            </span>
-          )}
-          <ChevronDown size={13} style={{ color: "var(--muted-foreground)", flexShrink: 0, transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s" }} />
-        </button>
-
-        {/* Selected chips shown below trigger */}
-        {selected.length > 0 && (
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 6 }}>
-            {selected.map((item) => (
-              <span key={getKey(item)} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600, color: chipColor, backgroundColor: chipBg, borderRadius: 4, padding: "2px 6px 2px 8px" }}>
-                {getLabel(item)}
-                <button type="button" onClick={() => onToggle(item)} style={{ background: "none", border: "none", cursor: "pointer", color: chipColor, display: "flex", padding: 0, lineHeight: 1 }}>
-                  <X size={10} />
-                </button>
-              </span>
-            ))}
-          </div>
-        )}
-
-        {/* Dropdown panel */}
-        {open && (
-          <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 8, boxShadow: "0 8px 24px rgba(0,0,0,0.12)", zIndex: 9999, overflow: "hidden" }}>
-            <div style={{ padding: "8px 8px 4px" }}>
-              <div style={{ position: "relative" }}>
-                <Search size={12} style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", color: "var(--muted-foreground)", pointerEvents: "none" }} />
-                <input
-                  autoFocus
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Search…"
-                  style={{ width: "100%", height: 30, paddingLeft: 26, paddingRight: 8, fontFamily: "var(--font-sans)", fontSize: 12, border: "1px solid var(--border)", borderRadius: 6, backgroundColor: "var(--input-background)", color: "var(--foreground)", outline: "none", boxSizing: "border-box" }}
-                />
-              </div>
-            </div>
-            <div style={{ maxHeight: 180, overflowY: "auto", scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent" }}>
-              {filtered.length === 0 ? (
-                <div style={{ padding: "10px 12px", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>No results</div>
-              ) : filtered.map((item) => {
-                const isSelected = selectedKeys.has(getKey(item));
-                return (
-                  <button
-                    key={getKey(item)}
-                    type="button"
-                    onMouseDown={(e) => { e.preventDefault(); onToggle(item); }}
-                    style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "8px 12px", border: "none", backgroundColor: isSelected ? "rgba(59,130,246,0.06)" : "transparent", fontFamily: "var(--font-sans)", fontSize: 13, color: isSelected ? "var(--primary)" : "var(--foreground)", cursor: "pointer", textAlign: "left" }}
-                    onMouseEnter={(e) => { if (!isSelected) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--muted)"; }}
-                    onMouseLeave={(e) => { if (!isSelected) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "transparent"; }}
-                  >
-                    <span style={{ flex: 1 }}>{getLabel(item)}</span>
-                    {isSelected && <Check size={13} style={{ color: "var(--primary)", flexShrink: 0 }} />}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
 // kept for potential reuse elsewhere
 function _MultiSelectSearch<T>({
   label,
@@ -1148,33 +1010,190 @@ function _MultiSelectSearch<T>({
   );
 }
 
-function TeamModal({ team, users, allDriverNames, driverLabels, saving, onClose, onSave }: {
-  team: Partial<Team>; users: User[]; allDriverNames: string[]; driverLabels: Record<string, string>;
+// Backend-paginated multi-select with infinite scroll and server-side search — the
+// multi equivalent of AsyncSearchableSelect. It fetches the option list one page at a
+// time (so a 5,000-driver fleet doesn't arrive at once) and re-queries as you type.
+// Selection is tracked by key in the parent; `initialLabels` seeds the chip text for
+// already-selected keys (the ones an edit opens with, which may not be on page 1), and
+// the cache grows as more pages load.
+interface AsyncOpt { key: string; label: string; }
+
+function AsyncMultiSelect({
+  label, selectedKeys, initialLabels, fetchPage, onToggle, onClear, placeholder,
+  chipColor = "#3B82F6", chipBg = "rgba(59,130,246,0.14)",
+}: {
+  label: string;
+  selectedKeys: string[];
+  initialLabels?: Record<string, string>;
+  fetchPage: (query: string, page: number) => Promise<{ items: AsyncOpt[]; total: number }>;
+  onToggle: (key: string, label: string) => void;
+  onClear?: () => void;
+  placeholder?: string;
+  chipColor?: string;
+  chipBg?: string;
+}) {
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const reqId = useRef(0);
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [items, setItems] = useState<AsyncOpt[]>([]);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [denied, setDenied] = useState(false);
+  // key -> label, so a selected chip reads as a name even before its page loads.
+  const [labels, setLabels] = useState<Record<string, string>>(initialLabels ?? {});
+
+  const selectedSet = new Set(selectedKeys);
+  const labelFor = (k: string) => labels[k] ?? k;
+
+  useEffect(() => {
+    const h = (e: MouseEvent) => { if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, []);
+
+  useEffect(() => { if (open) setTimeout(() => inputRef.current?.focus(), 0); }, [open]);
+  useEffect(() => { const t = setTimeout(() => setDebouncedQuery(query), 250); return () => clearTimeout(t); }, [query]);
+
+  const loadPage = async (pageNum: number, q: string, replace: boolean) => {
+    const id = ++reqId.current;
+    setLoading(true);
+    try {
+      const { items: rows, total: t } = await fetchPage(q, pageNum);
+      if (id !== reqId.current) return;
+      setItems((prev) => (replace ? rows : [...prev, ...rows]));
+      setTotal(t);
+      setPage(pageNum);
+      setDenied(false);
+      setLabels((prev) => { const next = { ...prev }; for (const r of rows) next[r.key] = r.label; return next; });
+    } catch (e) {
+      if (id === reqId.current && isForbidden(e)) setDenied(true);
+    } finally {
+      if (id === reqId.current) setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    setItems([]); setTotal(0); setPage(1);
+    void loadPage(1, debouncedQuery, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, debouncedQuery]);
+
+  const onScroll = () => {
+    const el = listRef.current;
+    if (!el || loading) return;
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < 48 && items.length < total) {
+      void loadPage(page + 1, debouncedQuery, false);
+    }
+  };
+
+  return (
+    <div style={fieldStyle}>
+      <span style={capStyle}>{label}</span>
+      <div ref={wrapRef} style={{ position: "relative" }}>
+        <button
+          type="button"
+          onClick={() => { setOpen((v) => !v); setQuery(""); }}
+          style={{
+            display: "flex", alignItems: "center", gap: 8, width: "100%", height: 34, paddingLeft: 10, paddingRight: 8,
+            fontFamily: "var(--font-sans)", fontSize: 13, backgroundColor: "var(--input-background)",
+            border: `1px solid ${open ? "var(--primary)" : "var(--border)"}`, borderRadius: 7,
+            color: selectedKeys.length === 0 ? "var(--muted-foreground)" : "var(--foreground)", cursor: "pointer",
+            boxShadow: open ? "0 0 0 3px rgba(59,130,246,0.12)" : "none", outline: "none",
+          }}
+        >
+          <span style={{ flex: 1, textAlign: "left", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {selectedKeys.length === 0 ? (placeholder ?? "Select…")
+              : selectedKeys.length === 1 ? labelFor(selectedKeys[0])
+              : `${selectedKeys.length} selected`}
+          </span>
+          {onClear && selectedKeys.length > 0 && (
+            <span role="button" title="Clear all"
+              onClick={(e) => { e.stopPropagation(); onClear(); setOpen(false); }}
+              style={{ display: "flex", flexShrink: 0, color: "var(--muted-foreground)", cursor: "pointer" }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLSpanElement).style.color = "#EF4444"; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLSpanElement).style.color = "var(--muted-foreground)"; }}>
+              <X size={13} />
+            </span>
+          )}
+          <ChevronDown size={13} style={{ color: "var(--muted-foreground)", flexShrink: 0, transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s" }} />
+        </button>
+
+        {selectedKeys.length > 0 && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 6 }}>
+            {selectedKeys.map((k) => (
+              <span key={k} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600, color: chipColor, backgroundColor: chipBg, borderRadius: 4, padding: "2px 6px 2px 8px" }}>
+                {labelFor(k)}
+                <button type="button" onClick={() => onToggle(k, labelFor(k))} style={{ background: "none", border: "none", cursor: "pointer", color: chipColor, display: "flex", padding: 0, lineHeight: 1 }}>
+                  <X size={10} />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+
+        {open && (
+          <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 8, boxShadow: "0 8px 24px rgba(0,0,0,0.12)", zIndex: 9999, overflow: "hidden" }}>
+            <div style={{ padding: "8px 8px 4px" }}>
+              <div style={{ position: "relative" }}>
+                <Search size={12} style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", color: "var(--muted-foreground)", pointerEvents: "none" }} />
+                <input ref={inputRef} value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search…"
+                  style={{ width: "100%", height: 30, paddingLeft: 26, paddingRight: 8, fontFamily: "var(--font-sans)", fontSize: 12, border: "1px solid var(--border)", borderRadius: 6, backgroundColor: "var(--input-background)", color: "var(--foreground)", outline: "none", boxSizing: "border-box" }} />
+              </div>
+            </div>
+            <div ref={listRef} onScroll={onScroll} style={{ maxHeight: 180, overflowY: "auto", scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent" }}>
+              {items.map((item) => {
+                const isSelected = selectedSet.has(item.key);
+                return (
+                  <button key={item.key} type="button"
+                    onMouseDown={(e) => { e.preventDefault(); onToggle(item.key, item.label); }}
+                    style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "8px 12px", border: "none", backgroundColor: isSelected ? "rgba(59,130,246,0.06)" : "transparent", fontFamily: "var(--font-sans)", fontSize: 13, color: isSelected ? "var(--primary)" : "var(--foreground)", cursor: "pointer", textAlign: "left" }}
+                    onMouseEnter={(e) => { if (!isSelected) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--muted)"; }}
+                    onMouseLeave={(e) => { if (!isSelected) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "transparent"; }}>
+                    <span style={{ flex: 1 }}>{item.label}</span>
+                    {isSelected && <Check size={13} style={{ color: "var(--primary)", flexShrink: 0 }} />}
+                  </button>
+                );
+              })}
+              {loading && <div style={{ padding: 10, textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)" }}>Loading…</div>}
+              {!loading && items.length === 0 && (
+                <div style={{ padding: "10px 12px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
+                  {denied ? "You don't have access to this list." : "No results"}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function TeamModal({ team, users, driverLabels, saving, onClose, onSave }: {
+  team: Partial<Team>; users: User[]; driverLabels: Record<string, string>;
   saving?: boolean; onClose: () => void; onSave: (t: Team) => void;
 }) {
   const [form, setForm] = useState<Partial<Team>>(team);
   const isNew = !team.id;
 
-  const selectedUsers = users.filter((u) => (form.userIds ?? []).includes(u.id));
-  const selectedDrivers = (form.driverNames ?? []).map((n) => ({ name: n }));
+  // Seed chip labels for members an edit opens with. Users resolve id -> name from the
+  // tab's (small) users list; a driver's key IS its name, prettied via driverLabels.
+  const userLabelSeed = Object.fromEntries(users.map((u) => [u.id, u.name]));
 
-  const driverOptions = Array.from(
-    new Set([...allDriverNames, ...(form.driverNames ?? [])])
-  ).map((n) => ({ name: n }));
+  const toggleUser = (id: string) => setForm((f) => {
+    const ids = f.userIds ?? [];
+    return { ...f, userIds: ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id] };
+  });
 
-  const toggleUser = (u: User) => {
-    setForm((f) => {
-      const ids = f.userIds ?? [];
-      return { ...f, userIds: ids.includes(u.id) ? ids.filter((x) => x !== u.id) : [...ids, u.id] };
-    });
-  };
-
-  const toggleDriver = (d: { name: string }) => {
-    setForm((f) => {
-      const names = f.driverNames ?? [];
-      return { ...f, driverNames: names.includes(d.name) ? names.filter((x) => x !== d.name) : [...names, d.name] };
-    });
-  };
+  const toggleDriver = (name: string) => setForm((f) => {
+    const names = f.driverNames ?? [];
+    return { ...f, driverNames: names.includes(name) ? names.filter((x) => x !== name) : [...names, name] };
+  });
 
   return (
     <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -1189,26 +1208,32 @@ function TeamModal({ team, users, allDriverNames, driverLabels, saving, onClose,
             <input value={form.name ?? ""} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} style={inputStyle} />
           </label>
 
-          <DropdownMultiSelect
+          <AsyncMultiSelect
             label="Users"
-            selected={selectedUsers}
-            options={users}
-            getKey={(u) => String(u.id)}
-            getLabel={(u) => u.name}
-            onToggle={toggleUser}
+            selectedKeys={form.userIds ?? []}
+            initialLabels={userLabelSeed}
+            fetchPage={async (q, p) => {
+              const companyId = getCompanyId();
+              const { items, total } = await api.getList<any>(`/owner/companies/${companyId}/users`, { q: q || undefined, page: p, page_size: 20 });
+              return { items: (items ?? []).map((u: any) => ({ key: String(u.id), label: u.full_name ?? u.login ?? String(u.id) })), total };
+            }}
+            onToggle={(id) => toggleUser(id)}
             onClear={() => setForm((f) => ({ ...f, userIds: [] }))}
             placeholder="Select users…"
             chipColor="#3B82F6"
             chipBg="rgba(59,130,246,0.14)"
           />
 
-          <DropdownMultiSelect
+          <AsyncMultiSelect
             label="Drivers"
-            selected={selectedDrivers}
-            options={driverOptions}
-            getKey={(d) => d.name}
-            getLabel={(d) => driverLabels[d.name] ?? d.name}
-            onToggle={toggleDriver}
+            selectedKeys={form.driverNames ?? []}
+            initialLabels={driverLabels}
+            fetchPage={async (q, p) => {
+              const { items, total } = await api.getList<any>("/drivers", { q: q || undefined, page: p, page_size: 20 });
+              // Teams key drivers by NAME (not id), so the raw name is the selection key.
+              return { items: (items ?? []).filter((d: any) => d.name).map((d: any) => ({ key: d.name as string, label: driverDisplayName(d) })), total };
+            }}
+            onToggle={(name) => toggleDriver(name)}
             onClear={() => setForm((f) => ({ ...f, driverNames: [] }))}
             placeholder="Select drivers…"
             chipColor="var(--foreground)"
@@ -1229,10 +1254,11 @@ function TeamModal({ team, users, allDriverNames, driverLabels, saving, onClose,
 function TeamsTab({ users: _users }: { users: User[] }) {
   const [teams, setTeams]       = useState<Team[]>([]);
   const [users, setUsers]       = useState<User[]>([]);
-  const [driverNames, setDriverNames] = useState<string[]>([]);
   // name -> display label ("Name 1 & Name 2" for team drivers). The dispatch-pod
   // Teams API resolves members by the raw driver `name`, so that stays the
-  // identity key everywhere — this map only affects what's shown on screen.
+  // identity key everywhere — this map only affects what's shown on screen (the teams
+  // table and the pre-selected chips in the modal). The modal's driver picker itself
+  // pages the full fleet on demand, so this preload is display-only.
   const [driverLabels, setDriverLabels] = useState<Record<string, string>>({});
   const [loading, setLoading]   = useState(true);
   const [fetchKey, setFetchKey] = useState(0);
@@ -1259,7 +1285,6 @@ function TeamsTab({ users: _users }: { users: User[] }) {
         setTeams((teamsData ?? []).map(toTeam));
         setUsers((usersData ?? []).map(toUser));
         const driverList: any[] = driversResp.items ?? [];
-        setDriverNames(driverList.map((d) => d.name ?? "").filter(Boolean));
         setDriverLabels(Object.fromEntries(driverList.filter((d) => d.name).map((d) => [d.name, driverDisplayName(d)])));
       })
       .catch(() => {})
@@ -1307,8 +1332,6 @@ function TeamsTab({ users: _users }: { users: User[] }) {
       setDelBusy(false);
     }
   };
-
-  const allDriverNames = Array.from(new Set([...driverNames, ...teams.flatMap((t) => t.driverNames)]));
 
   const q = search.toLowerCase();
   const filtered = teams.filter((t) =>
@@ -1425,7 +1448,7 @@ function TeamsTab({ users: _users }: { users: User[] }) {
       )}
 
       {(modal === "create" || modal === "edit") && (
-        <TeamModal team={editing} users={users} allDriverNames={allDriverNames} driverLabels={driverLabels} saving={saving} onClose={() => setModal(null)} onSave={(t) => { void save(t); }} />
+        <TeamModal team={editing} users={users} driverLabels={driverLabels} saving={saving} onClose={() => setModal(null)} onSave={(t) => { void save(t); }} />
       )}
       {deleting && <DeleteConfirm label={deleting.name} busy={delBusy} error={delErr} onClose={() => { setDeleting(null); setDelErr(null); }} onConfirm={() => { void confirmDelete(deleting); }} />}
     </>
