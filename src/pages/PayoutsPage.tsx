@@ -539,7 +539,7 @@ export function PayoutsPage() {
           <colgroup>
             <col style={{ width: 150 }} />{/* Dispatcher */}
             <col style={{ width: 170 }} />{/* Driver */}
-            <col style={{ width: 110 }} />{/* Load Ref */}
+            <col style={{ width: 172 }} />{/* Load Ref */}
             <col style={{ width: 150 }} />{/* Broker */}
             <col style={{ width: 220 }} />{/* Route */}
             <col style={{ width: 100 }} />{/* Rate */}
@@ -606,7 +606,7 @@ export function PayoutsPage() {
 
                   <TD><span style={{ fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: 500, color: "var(--foreground)" }}>{p.dispatcher || "—"}</span></TD>
                   <TD><span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--foreground)" }}>{p.driverName}</span></TD>
-                  <TD noOverflow><span style={{ fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 600, color: "var(--primary)", backgroundColor: "var(--secondary)", borderRadius: 4, padding: "2px 8px" }}>{p.loadRef || "—"}</span></TD>
+                  <TD noOverflow><span style={{ display: "inline-block", whiteSpace: "nowrap", fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 600, color: "var(--primary)", backgroundColor: "var(--secondary)", borderRadius: 4, padding: "2px 8px" }}>{p.loadRef || "—"}</span></TD>
                   <TD><span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--foreground)" }}>{p.broker || "—"}</span></TD>
                   <TD>
                     {p.origin && p.destination

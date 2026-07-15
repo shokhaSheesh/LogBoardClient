@@ -114,7 +114,7 @@ const TYPE_OPTIONS: { type: CellType; label: string }[] = [
   ...ALL_STATUSES.map((s) => ({ type: s as CellType, label: STATUS_CONFIG[s].label })),
 ];
 
-const DAY_W = 95;
+const DAY_W = 116;
 
 // ─── Day cell display ─────────────────────────────────────────────────────────
 
@@ -124,7 +124,9 @@ function DayCellContent({ cell }: { cell: DayCell }) {
     return cell.amount !== undefined ? (
       <>
         <div style={{ fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: 700, color: "var(--foreground)", lineHeight: 1.2 }}>{fmt(cell.amount)}</div>
-        <div title={cell.loadId} style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "var(--muted-foreground)", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: DAY_W - 12 }}>{cell.loadId}</div>
+        {/* Full width + inherited text-align:center so the ref sits under the amount,
+            not jammed left; truncates within the cell instead of spilling. */}
+        <div title={cell.loadId} style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "var(--muted-foreground)", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "100%" }}>{cell.loadId}</div>
       </>
     ) : (
       <div title={cell.loadId} style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--muted-foreground)" }}>{cell.loadId ?? "—"}</div>

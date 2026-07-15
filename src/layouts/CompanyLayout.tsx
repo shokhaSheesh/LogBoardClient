@@ -277,14 +277,30 @@ function Logo({ collapsed }: { collapsed: boolean }) {
 
 // ─── Navigation config ─────────────────────────────────────────────────────
 
-const navItems = [
-  { icon: LayoutDashboard, label: "Dashboard",  path: "dashboard",  module: "dashboard"  },
-  { icon: Trello,          label: "Board",       path: "board",      module: "board"      },
-  { icon: BarChart2,       label: "Gross",       path: "gross",      module: "gross"      },
-  { icon: Package,         label: "Loads",       path: "loads",      module: "loads"      },
-  { icon: Users,           label: "Drivers",     path: "drivers",    module: "drivers"    },
-  { icon: Truck,           label: "Equipments",  path: "equipments", module: "equipments" },
-  { icon: DollarSign,      label: "Payouts",     path: "payouts",    module: "payouts"    },
+interface NavItem { icon: React.ElementType; label: string; path: string; module: string; }
+interface NavSection { title: string; items: NavItem[]; }
+
+// Sidebar grouping. Board and Loads lead the first section — they're the pages
+// dispatchers live in — followed by the rest of the day-to-day fleet, then the
+// money/reporting views.
+const navSections: NavSection[] = [
+  {
+    title: "Operations",
+    items: [
+      { icon: Trello,     label: "Board",      path: "board",      module: "board"      },
+      { icon: Package,    label: "Loads",      path: "loads",      module: "loads"      },
+      { icon: Users,      label: "Drivers",    path: "drivers",    module: "drivers"    },
+      { icon: Truck,      label: "Equipments", path: "equipments", module: "equipments" },
+    ],
+  },
+  {
+    title: "Financials",
+    items: [
+      { icon: LayoutDashboard, label: "Dashboard", path: "dashboard", module: "dashboard" },
+      { icon: BarChart2,       label: "Gross",     path: "gross",     module: "gross"     },
+      { icon: DollarSign,      label: "Payouts",   path: "payouts",   module: "payouts"   },
+    ],
+  },
 ];
 
 // ─── Active-user presence helpers ────────────────────────────────────────────
@@ -356,8 +372,11 @@ function Sidebar({ collapsed, onToggle }: {
   const location = useLocation();
   const { user } = useAuth();
 
-  // Only show pages the current user's company role can actually open.
-  const visibleNav = navItems.filter((n) => hasPerm(user, n.module));
+  // Only show pages the current user's company role can open, then drop any section
+  // left empty (e.g. an updater with no Financials access shows just Operations).
+  const visibleSections = navSections
+    .map((sec) => ({ ...sec, items: sec.items.filter((n) => hasPerm(user, n.module)) }))
+    .filter((sec) => sec.items.length > 0);
 
   return (
     <aside
@@ -373,79 +392,77 @@ function Sidebar({ collapsed, onToggle }: {
     >
       <Logo collapsed={collapsed} />
 
-      {/* Nav section label */}
-      {!collapsed && (
-        <div
-          className="px-4 pt-4 pb-1"
-          style={{
-            fontSize: "0.65rem",
-            fontWeight: 600,
-            letterSpacing: "0.08em",
-            textTransform: "uppercase",
-            color: "var(--sidebar-foreground)",
-            opacity: 0.45,
-          }}
-        >
-          Main Menu
-        </div>
-      )}
-
-      {/* Nav items */}
-      <nav className="flex-1 px-2 py-2 flex flex-col gap-0.5 overflow-y-auto">
-        {visibleNav.map(({ icon: Icon, label, path }) => {
-          const isActive =
-            location.pathname === `/workspace/${path}` ||
-            location.pathname.startsWith(`/workspace/${path}/`);
-          return (
-            <NavLink
-              key={path}
-              to={`/workspace/${path}`}
-              title={collapsed ? label : undefined}
-              className="flex items-center gap-3 rounded-lg w-full transition-all duration-150"
-              style={{
-                padding: collapsed ? "10px 0" : "9px 12px",
-                justifyContent: collapsed ? "center" : "flex-start",
-                fontSize: 13,
-                fontWeight: isActive ? 600 : 400,
-                color: isActive
-                  ? "var(--sidebar-primary-foreground)"
-                  : "var(--sidebar-foreground)",
-                backgroundColor: isActive ? "var(--sidebar-primary)" : "transparent",
-                textDecoration: "none",
-              }}
-              onMouseEnter={(e) => {
-                if (!isActive) {
-                  (e.currentTarget as HTMLAnchorElement).style.backgroundColor =
-                    "var(--sidebar-accent)";
-                  (e.currentTarget as HTMLAnchorElement).style.color =
-                    "var(--sidebar-accent-foreground)";
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (!isActive) {
-                  (e.currentTarget as HTMLAnchorElement).style.backgroundColor =
-                    isActive ? "var(--sidebar-primary)" : "transparent";
-                  (e.currentTarget as HTMLAnchorElement).style.color =
-                    isActive
+      {/* Nav sections */}
+      <nav className="flex-1 px-2 py-2 flex flex-col overflow-y-auto">
+        {visibleSections.map((section, si) => (
+          <div key={section.title} className="flex flex-col gap-0.5" style={{ marginTop: si === 0 ? 0 : 14 }}>
+            {!collapsed ? (
+              <div
+                className="px-2 pt-1 pb-1"
+                style={{ fontSize: "0.65rem", fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--sidebar-foreground)", opacity: 0.45 }}
+              >
+                {section.title}
+              </div>
+            ) : si > 0 ? (
+              // Collapsed rail: a thin divider stands in for the section heading.
+              <div style={{ height: 1, backgroundColor: "var(--sidebar-border)", margin: "6px 12px 8px" }} />
+            ) : null}
+            {section.items.map(({ icon: Icon, label, path }) => {
+              const isActive =
+                location.pathname === `/workspace/${path}` ||
+                location.pathname.startsWith(`/workspace/${path}/`);
+              return (
+                <NavLink
+                  key={path}
+                  to={`/workspace/${path}`}
+                  title={collapsed ? label : undefined}
+                  className="flex items-center gap-3 rounded-lg w-full transition-all duration-150"
+                  style={{
+                    padding: collapsed ? "10px 0" : "9px 12px",
+                    justifyContent: collapsed ? "center" : "flex-start",
+                    fontSize: 13,
+                    fontWeight: isActive ? 600 : 400,
+                    color: isActive
                       ? "var(--sidebar-primary-foreground)"
-                      : "var(--sidebar-foreground)";
-                }
-              }}
-            >
-              <Icon
-                size={16}
-                strokeWidth={isActive ? 2.5 : 2}
-                style={{ flexShrink: 0, opacity: isActive ? 1 : 0.75 }}
-              />
-              {!collapsed && (
-                <>
-                  <span className="flex-1">{label}</span>
-                  {isActive && <ChevronRight size={14} style={{ opacity: 0.6 }} />}
-                </>
-              )}
-            </NavLink>
-          );
-        })}
+                      : "var(--sidebar-foreground)",
+                    backgroundColor: isActive ? "var(--sidebar-primary)" : "transparent",
+                    textDecoration: "none",
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!isActive) {
+                      (e.currentTarget as HTMLAnchorElement).style.backgroundColor =
+                        "var(--sidebar-accent)";
+                      (e.currentTarget as HTMLAnchorElement).style.color =
+                        "var(--sidebar-accent-foreground)";
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!isActive) {
+                      (e.currentTarget as HTMLAnchorElement).style.backgroundColor =
+                        isActive ? "var(--sidebar-primary)" : "transparent";
+                      (e.currentTarget as HTMLAnchorElement).style.color =
+                        isActive
+                          ? "var(--sidebar-primary-foreground)"
+                          : "var(--sidebar-foreground)";
+                    }
+                  }}
+                >
+                  <Icon
+                    size={16}
+                    strokeWidth={isActive ? 2.5 : 2}
+                    style={{ flexShrink: 0, opacity: isActive ? 1 : 0.75 }}
+                  />
+                  {!collapsed && (
+                    <>
+                      <span className="flex-1">{label}</span>
+                      {isActive && <ChevronRight size={14} style={{ opacity: 0.6 }} />}
+                    </>
+                  )}
+                </NavLink>
+              );
+            })}
+          </div>
+        ))}
       </nav>
 
       {/* User profile card */}
