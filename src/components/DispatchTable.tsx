@@ -182,10 +182,10 @@ const TYPE_CONFIG: Record<DriverType, { color: string; bg: string }> = {
 };
 
 const LOAD_ID_LEFT   = 0;
-const DRIVER_NM_LEFT = 110;
+const DRIVER_NM_LEFT = 200; // = Load ID width, so Driver Name sticks right after it
 
 const COLUMNS = [
-  { label: "Load ID",        width: 110, sticky: true,  left: LOAD_ID_LEFT   },
+  { label: "Load ID",        width: 200, sticky: true,  left: LOAD_ID_LEFT   },
   { label: "Driver Name",    width: 180, sticky: true,  left: DRIVER_NM_LEFT },
   { label: "Phone",          width: 148, sticky: false                        },
   { label: "Unit",           width: 116, sticky: false                        },
@@ -1545,8 +1545,9 @@ export function DispatchTable() {
 
                     {/* Load ID — sticky, read-only. Upcoming queued loads render below,
                         smaller and muted, so they read as "next" rather than current. */}
-                    <td style={td({ position: "sticky", left: LOAD_ID_LEFT, zIndex: 3, width: 110, minWidth: 110, borderRight: border })}>
-                      <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 500, color: "var(--primary)" }}>
+                    <td style={td({ position: "sticky", left: LOAD_ID_LEFT, zIndex: 3, width: 200, minWidth: 200, borderRight: border })}>
+                      <span title={driver.loadRaw?.broker ? `${driver.loadRaw.broker} - ${driver.loadId}` : driver.loadId}
+                        style={{ display: "block", fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 500, color: "var(--primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                         {driver.loadRaw?.broker && (
                           <span style={{ color: "var(--muted-foreground)", fontWeight: 400 }}>{driver.loadRaw.broker} - </span>
                         )}
