@@ -549,14 +549,14 @@ function ExtractModal({ onClose, onExtracted }: {
           {/* Third-party disclosure — the document leaves our server. */}
           <div style={{ display: "flex", alignItems: "flex-start", gap: 8, fontFamily: "var(--font-sans)", fontSize: 11, color: "var(--muted-foreground)", lineHeight: 1.5 }}>
             <AlertCircle size={13} style={{ flexShrink: 0, marginTop: 1 }} />
-            <span>The document is sent to Google's Gemini API to be read. Nothing is saved until you review the draft and create the load.</span>
+            <span>The document is sent to a third-party AI service to be read. Nothing is saved until you review the draft and create the load.</span>
           </div>
 
           {busy && (
             <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", backgroundColor: "rgba(139,92,246,0.10)", border: "1px solid rgba(139,92,246,0.35)", borderRadius: 8 }}>
               <span style={{ width: 15, height: 15, borderRadius: "50%", border: "2px solid rgba(139,92,246,0.35)", borderTopColor: "#8B5CF6", animation: "spin 0.7s linear infinite", flexShrink: 0 }} />
               <div style={{ fontFamily: "var(--font-sans)", fontSize: 12.5, color: "#8B5CF6", lineHeight: 1.45 }}>
-                Reading the document… this usually takes 10–35 seconds.
+                Reading the document… this usually takes 5–15 seconds.
               </div>
             </div>
           )}
