@@ -24,12 +24,24 @@ type DriverType   = "O/O" | "C/D";
 // One entry in the driver's ordered upcoming-load queue (next_loads[])
 interface QueueLoad { id: string; loadId: string }
 
+// How a driver is paid. "" is the backend's default (unconfigured) — pay reports as 0
+// rather than being guessed, so we never send a rate without a type.
+type PayType = "" | "rpm" | "percent";
+
+const PAY_TYPE_OPTS = [
+  { value: "",        label: "Not set" },
+  { value: "rpm",     label: "Per mile (RPM)" },
+  { value: "percent", label: "% of gross" },
+];
+
 interface SoloDriver {
   id: string; name: string; phone: string; type: DriverType;
   status: DriverStatus; truck: string; trailer: string; location: string; comment: string;
   truckId?: string;    // assigned truck's id — settable (tri-state: "" unassigns)
   trailerId?: string;  // assigned trailer's id — settable (tri-state: "" unassigns)
   weeklyGrossTarget?: number;
+  payType?: PayType;
+  payRate?: number;    // $/mile when rpm, a percentage (0–100) when percent
   currentLoad?: string;
   currentLoadId?: string;
   nextLoad?: string;
@@ -43,6 +55,8 @@ interface TeamDriver {
   truckId?: string;
   trailerId?: string;
   weeklyGrossTarget?: number;
+  payType?: PayType;
+  payRate?: number;
   currentLoad?: string;
   currentLoadId?: string;
   nextLoad?: string;
@@ -67,6 +81,8 @@ function toSolo(d: any): SoloDriver {
     location: d.location ?? "",
     comment: d.comment ?? "",
     weeklyGrossTarget: d.weekly_gross_target || undefined,
+    payType:  (d.pay_type as PayType) ?? "",
+    payRate:  d.pay_rate ?? undefined,
     currentLoad:   d.current_load    || undefined,
     currentLoadId: d.current_load_id || undefined,
     nextLoad:      d.next_load       || undefined,
@@ -92,6 +108,8 @@ function toTeam(d: any): TeamDriver {
     location: d.location ?? "",
     comment: d.comment ?? "",
     weeklyGrossTarget: d.weekly_gross_target || undefined,
+    payType:  (d.pay_type as PayType) ?? "",
+    payRate:  d.pay_rate ?? undefined,
     currentLoad:   d.current_load    || undefined,
     currentLoadId: d.current_load_id || undefined,
     nextLoad:      d.next_load       || undefined,
@@ -116,6 +134,10 @@ function fromSolo(d: Partial<SoloDriver>) {
     location: d.location ?? "",
     comment: d.comment ?? "",
     weekly_gross_target: d.weeklyGrossTarget ?? 0,
+    pay_type: d.payType ?? "",
+    // A rate without a type is meaningless — the backend treats "" as unconfigured and
+    // reports pay as 0, so never ship a stale rate alongside it.
+    pay_rate: d.payType ? (d.payRate ?? 0) : 0,
     next_load_id: d.nextLoadId || null,
   };
 }
@@ -134,6 +156,10 @@ function fromTeam(d: Partial<TeamDriver>) {
     location: d.location ?? "",
     comment: d.comment ?? "",
     weekly_gross_target: d.weeklyGrossTarget ?? 0,
+    pay_type: d.payType ?? "",
+    // A rate without a type is meaningless — the backend treats "" as unconfigured and
+    // reports pay as 0, so never ship a stale rate alongside it.
+    pay_rate: d.payType ? (d.payRate ?? 0) : 0,
     next_load_id: d.nextLoadId || null,
   };
 }
@@ -976,6 +1002,64 @@ function LoadQueue({ items, hasDeck, readOnly, onChange }: {
 
 // ─── Modals ───────────────────────────────────────────────────────────────────
 
+// Payout type + its one rate field. The rate only appears once a type is picked, and it
+// changes meaning with it: $/mile for RPM (paid on total distance, deadhead included),
+// or a 0–100 share of gross for percent. Clamped to 100 for percent because the backend
+// rejects more (55 mistyped as 5500 would otherwise skew every gross week it touched).
+function PayFields({ payType, payRate, onChange }: {
+  payType: PayType;
+  payRate?: number;
+  onChange: (patch: { payType?: PayType; payRate?: number }) => void;
+}) {
+  const isPercent = payType === "percent";
+  const numStyle: React.CSSProperties = {
+    fontFamily: "var(--font-sans)", fontSize: 13, height: 34, borderRadius: 6,
+    border: "1px solid var(--border)", backgroundColor: "var(--input-background)",
+    color: "var(--foreground)", outline: "none", width: "100%", boxSizing: "border-box",
+    padding: isPercent ? "7px 26px 7px 10px" : "7px 10px 7px 22px",
+  };
+  return (
+    <>
+      <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+        <FieldLabel>Payout Type</FieldLabel>
+        <CustomSelect
+          value={payType}
+          options={PAY_TYPE_OPTS}
+          // Clearing the type drops the rate — a rate with no type means nothing.
+          onChange={(v) => onChange(v ? { payType: v as PayType } : { payType: "", payRate: undefined })}
+        />
+      </label>
+
+      {payType !== "" && (
+        <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+          <FieldLabel>{isPercent ? "Percent of Gross" : "Rate per Mile"}</FieldLabel>
+          <div style={{ position: "relative" }}>
+            <span style={{ position: "absolute", [isPercent ? "right" : "left"]: 10, top: "50%", transform: "translateY(-50%)", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)", pointerEvents: "none" }}>
+              {isPercent ? "%" : "$"}
+            </span>
+            <input
+              type="number" min={0} max={isPercent ? 100 : undefined} step={isPercent ? 1 : 0.01}
+              value={payRate ?? ""}
+              onChange={(e) => {
+                if (e.target.value === "") { onChange({ payRate: undefined }); return; }
+                const n = Number(e.target.value);
+                onChange({ payRate: isPercent ? Math.min(100, Math.max(0, n)) : Math.max(0, n) });
+              }}
+              placeholder={isPercent ? "e.g. 25" : "e.g. 0.55"}
+              style={numStyle}
+              onFocus={(e) => { e.currentTarget.style.borderColor = "var(--primary)"; e.currentTarget.style.boxShadow = "0 0 0 3px rgba(59,130,246,0.12)"; }}
+              onBlur={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.boxShadow = "none"; }}
+            />
+          </div>
+          <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "var(--muted-foreground)" }}>
+            {isPercent ? "Share of the driver's gross." : "Paid on total distance driven — deadhead included."}
+          </span>
+        </label>
+      )}
+    </>
+  );
+}
+
 function SoloModal({ driver, onClose, onSave, canReorderLoads, saving, fieldErrors, canEditEquipment }: {
   driver: Partial<SoloDriver>; onClose: () => void; onSave: (d: SoloDriver) => void;
   canReorderLoads?: boolean;
@@ -1073,6 +1157,12 @@ function SoloModal({ driver, onClose, onSave, canReorderLoads, saving, fieldErro
               />
             </div>
           </label>
+
+          <PayFields
+            payType={form.payType ?? ""}
+            payRate={form.payRate}
+            onChange={(patch) => setForm((f) => ({ ...f, ...patch }))}
+          />
 
           {!isNew && loadOrder.length > 0 && (
             <div style={{ display: "flex", flexDirection: "column", gap: 5, gridColumn: "1 / -1" }}>
@@ -1213,6 +1303,12 @@ function TeamModal({ driver, onClose, onSave, canReorderLoads, saving, fieldErro
               />
             </div>
           </label>
+
+          <PayFields
+            payType={form.payType ?? ""}
+            payRate={form.payRate}
+            onChange={(patch) => setForm((f) => ({ ...f, ...patch }))}
+          />
 
           {!isNew && loadOrder.length > 0 && (
             <div style={{ display: "flex", flexDirection: "column", gap: 5, gridColumn: "1 / -1" }}>
