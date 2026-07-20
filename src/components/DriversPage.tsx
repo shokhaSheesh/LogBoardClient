@@ -1673,25 +1673,78 @@ function AddMenu({ entityLabel, onManual, onImport, onEld, canEld = true }: {
 
 // ─── Driver Detail ────────────────────────────────────────────────────────────
 
-function DriverDetail({ driver, onBack }: { driver: SoloDriver; onBack: () => void }) {
+// ─── Weekly recap (GET /drivers/:id/detail) ───────────────────────────────────
+
+interface WeekSummary {
+  gross: number; miles: number; loads: number; rpm: number;
+  weekly_target: number; target_pct: number | null;
+  deadhead_miles: number; total_miles: number;
+  driver_pay: number; pay_type?: string; pay_rate?: number;
+}
+interface DetailLoad {
+  id: string; load_id: string; origin: string; destination: string;
+  miles: number; payout: number; status: string; completed_at?: string;
+}
+interface DriverWeek { week: { from: string; to: string }; summary: WeekSummary; loads: DetailLoad[] }
+
+// Shift an ISO date by whole days in pure UTC — never touches the local calendar.
+function shiftISO(iso: string, days: number): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  const t = Date.UTC(y, m - 1, d) + days * 86_400_000;
+  const n = new Date(t);
+  return `${n.getUTCFullYear()}-${String(n.getUTCMonth() + 1).padStart(2, "0")}-${String(n.getUTCDate()).padStart(2, "0")}`;
+}
+
+function fmtISORange(from: string, to: string): string {
+  const f = new Date(`${from}T00:00:00Z`), t = new Date(`${to}T00:00:00Z`);
+  const opt: Intl.DateTimeFormatOptions = { month: "short", day: "numeric", timeZone: "UTC" };
+  return `${f.toLocaleDateString("en-US", opt)} – ${t.toLocaleDateString("en-US", opt)}`;
+}
+
+// The driver's week, computed by the server: earnings, distance (deadhead included),
+// their own pay, and the completed loads behind it. Bucketed by COMPLETION date, so it
+// matches the gross matrix rather than anything derived here.
+//
+// The first request sends no range — the server decides which work week is current (in
+// the business timezone) and returns it. Paging shifts that server-given window by whole
+// weeks, so the browser clock never defines a boundary.
+function useDriverWeek(driverId: string) {
   const [weekOffset, setWeekOffset] = useState(0);
-  const [loads, setLoads]           = useState<WeekLoad[]>([]);
-  const [loadingLoads, setLoadingLoads] = useState(true);
+  const [data, setData]       = useState<DriverWeek | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError]     = useState<string | null>(null);
+  const anchorRef = useRef<{ from: string; to: string } | null>(null);
 
   useEffect(() => {
-    setLoadingLoads(true);
-    fetchWeekLoads(driver.id, weekOffset)
-      .then(setLoads)
-      .catch(() => setLoads([]))
-      .finally(() => setLoadingLoads(false));
-  }, [driver.id, weekOffset]);
+    let cancelled = false;
+    setLoading(true); setError(null);
+    const a = anchorRef.current;
+    const qs = a ? `?from=${shiftISO(a.from, weekOffset * 7)}&to=${shiftISO(a.to, weekOffset * 7)}` : "";
+    api.get<DriverWeek>(`/drivers/${driverId}/detail${qs}`)
+      .then((d) => {
+        if (cancelled) return;
+        if (!anchorRef.current && d?.week) anchorRef.current = d.week; // the server's "this week"
+        setData(d ?? null);
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        setData(null);
+        // The recap exposes per-load revenue, so it needs loads.read on top of drivers.read.
+        setError(isForbidden(e) ? "You don't have access to this driver's earnings." : (e instanceof Error ? e.message : "Couldn't load this week."));
+      })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [driverId, weekOffset]);
 
-  const { start: weekStart, end: weekEnd } = getWeekBounds(weekOffset);
-  const totalGross = loads.reduce((s, l) => s + l.payout, 0);
-  const totalMiles = loads.reduce((s, l) => s + l.miles, 0);
-  const avgRate    = totalMiles > 0 ? totalGross / totalMiles : 0;
-  const target     = driver.weeklyGrossTarget;
-  const targetPct  = target ? Math.min(100, Math.round((totalGross / target) * 100)) : null;
+  return { weekOffset, setWeekOffset, data, loading, error };
+}
+
+function DriverDetail({ driver, onBack }: { driver: SoloDriver; onBack: () => void }) {
+  const { weekOffset, setWeekOffset, data, loading: loadingLoads, error } = useDriverWeek(driver.id);
+  const summary = data?.summary;
+  const loads   = data?.loads ?? [];
+  const targetPct = summary?.target_pct ?? null;
+  const target    = summary?.weekly_target ?? driver.weeklyGrossTarget;
 
   const initials = driver.name.split(" ").slice(0, 2).map((w) => w[0]).join("");
 
@@ -1702,21 +1755,16 @@ function DriverDetail({ driver, onBack }: { driver: SoloDriver; onBack: () => vo
   : driver.payType === "percent" ? `${driver.payRate ?? 0}% of gross`
   : "";
 
-  // ⚠️ Every figure below is derived on the CLIENT from a /loads?driver_id= fetch, and
-  // each diverges from the ledger in its own way: the fetch is capped at 200 loads, the
-  // week window comes from the browser clock (calendar boundaries are server-side, in the
-  // business timezone), Week Gross sums the load rate rather than the payout net (so it
-  // ignores added/deducted), and Avg $/Mile divides by loaded miles while the backend's
-  // rpm now divides by total distance (deadhead included). GET /drivers/:id/detail returns
-  // all of these server-computed — until it's wired they stay marked pending.
+  // Straight from the server's recap — no client arithmetic. Total Miles is the distance
+  // actually driven (deadhead included), which is the span rpm and driver pay divide by.
   const metrics: { label: string; value: string; icon: React.ReactNode; color: string; bg: string; note?: string }[] = [
-    { label: "Week Gross",  value: `$${totalGross.toLocaleString()}`,                            icon: <DollarSign size={16} />, color: "#10B981", bg: "rgba(16,185,129,0.14)", note: "Pending" },
-    { label: "Total Miles", value: totalMiles > 0 ? totalMiles.toLocaleString() : "0",           icon: <Route      size={16} />, color: "#3B82F6", bg: "rgba(59,130,246,0.14)", note: "Pending" },
-    { label: "Loads",       value: String(loads.length),                                          icon: <Package    size={16} />, color: "#8B5CF6", bg: "rgba(139,92,246,0.14)", note: "Pending" },
-    { label: "Avg $/Mile",  value: totalMiles > 0 ? `$${avgRate.toFixed(2)}` : "$0.00",          icon: <TrendingUp size={16} />, color: "#F59E0B", bg: "rgba(245,158,11,0.14)", note: "Pending" },
-    // No client-side stand-in for this one — the driver's take-home needs pay_type/pay_rate
-    // applied to the ledger, which only the backend does. Shows 0 until driver_pay is wired.
-    { label: "Week Payout", value: "$0", icon: <DollarSign size={16} />, color: "#22D3EE", bg: "rgba(34,211,238,0.14)", note: "Pending" },
+    { label: "Week Gross",  value: `$${(summary?.gross ?? 0).toLocaleString()}`,      icon: <DollarSign size={16} />, color: "#10B981", bg: "rgba(16,185,129,0.14)" },
+    { label: "Total Miles", value: (summary?.total_miles ?? 0).toLocaleString(),      icon: <Route      size={16} />, color: "#3B82F6", bg: "rgba(59,130,246,0.14)",
+      note: (summary?.deadhead_miles ?? 0) > 0 ? `incl. ${summary!.deadhead_miles.toLocaleString()} empty` : undefined },
+    { label: "Loads",       value: String(summary?.loads ?? 0),                        icon: <Package    size={16} />, color: "#8B5CF6", bg: "rgba(139,92,246,0.14)" },
+    { label: "Avg $/Mile",  value: `$${(summary?.rpm ?? 0).toFixed(2)}`,               icon: <TrendingUp size={16} />, color: "#F59E0B", bg: "rgba(245,158,11,0.14)" },
+    { label: "Week Payout", value: `$${(summary?.driver_pay ?? 0).toLocaleString()}`,  icon: <DollarSign size={16} />, color: "#22D3EE", bg: "rgba(34,211,238,0.14)",
+      note: summary?.pay_type ? undefined : "No pay type set" },
   ];
 
   const infoRows: { icon: React.ReactNode; label: string; value: string; mono?: boolean; highlight?: boolean }[] = [
@@ -1828,7 +1876,7 @@ function DriverDetail({ driver, onBack }: { driver: SoloDriver; onBack: () => vo
                 {weekOffset === 0 ? "This Week" : weekOffset === -1 ? "Last Week" : `${Math.abs(weekOffset)} Weeks Ago`}
               </div>
               <div style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)", marginTop: 3 }}>
-                {fmtWeekRange(weekStart, weekEnd)}
+                {data?.week ? fmtISORange(data.week.from, data.week.to) : "—"}
               </div>
             </div>
             <div style={{ display: "flex", gap: 4 }}>
@@ -1865,7 +1913,7 @@ function DriverDetail({ driver, onBack }: { driver: SoloDriver; onBack: () => vo
                     {m.value}
                   </div>
                   {m.note && (
-                    <span style={{ alignSelf: "flex-start", fontFamily: "var(--font-sans)", fontSize: 9, fontWeight: 700, color: "#F59E0B", backgroundColor: "rgba(245,158,11,0.14)", borderRadius: 4, padding: "2px 6px", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                    <span style={{ alignSelf: "flex-start", fontFamily: "var(--font-sans)", fontSize: 10, color: "var(--muted-foreground)" }}>
                       {m.note}
                     </span>
                   )}
@@ -1903,6 +1951,10 @@ function DriverDetail({ driver, onBack }: { driver: SoloDriver; onBack: () => vo
               <div style={{ padding: "48px 20px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
                 Loading…
               </div>
+            ) : error ? (
+              <div style={{ padding: "48px 20px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "#EF4444" }}>
+                {error}
+              </div>
             ) : loads.length === 0 ? (
               <div style={{ padding: "48px 20px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
                 No loads for this week.
@@ -1917,7 +1969,7 @@ function DriverDetail({ driver, onBack }: { driver: SoloDriver; onBack: () => vo
                       <TH>Destination</TH>
                       <TH width={80} align="center">Miles</TH>
                       <TH width={100} align="center">Payout</TH>
-                      <TH width={110} align="center">Pickup</TH>
+                      <TH width={110} align="center">Completed</TH>
                       <TH width={110} align="center">Status</TH>
                     </tr>
                   </thead>
@@ -1929,12 +1981,12 @@ function DriverDetail({ driver, onBack }: { driver: SoloDriver; onBack: () => vo
                           key={load.id}
                           style={{ backgroundColor: i % 2 === 0 ? "var(--card)" : "var(--background)" }}
                         >
-                          <TD mono>{load.loadId || load.id}</TD>
+                          <TD mono>{load.load_id || load.id}</TD>
                           <TD>{load.origin}</TD>
                           <TD>{load.destination}</TD>
                           <TD mono center>{load.miles.toLocaleString()}</TD>
                           <TD mono center>${load.payout.toLocaleString()}</TD>
-                          <TD center>{load.pickupAppt ? new Date(load.pickupAppt).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}</TD>
+                          <TD center>{load.completed_at ? new Date(load.completed_at).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}</TD>
                           <td style={{ padding: "10px 12px", borderBottom: "1px solid var(--border)", verticalAlign: "middle", textAlign: "center" }}>
                             {sc ? (
                               <span style={{
@@ -1960,87 +2012,15 @@ function DriverDetail({ driver, onBack }: { driver: SoloDriver; onBack: () => vo
   );
 }
 
-// ─── Week helpers ────────────────────────────────────────────────────────────
-
-function getWeekBounds(offset: number): { start: Date; end: Date } {
-  const now = new Date();
-  const day = now.getDay();
-  const mon = new Date(now);
-  mon.setDate(now.getDate() - (day === 0 ? 6 : day - 1) + offset * 7);
-  mon.setHours(0, 0, 0, 0);
-  const sun = new Date(mon);
-  sun.setDate(mon.getDate() + 6);
-  sun.setHours(23, 59, 59, 999);
-  return { start: mon, end: sun };
-}
-
-function fmtWeekRange(start: Date, end: Date): string {
-  const o: Intl.DateTimeFormatOptions = { month: "short", day: "numeric" };
-  return `${start.toLocaleDateString("en-US", o)} – ${end.toLocaleDateString("en-US", o)}, ${end.getFullYear()}`;
-}
-
-interface WeekLoad {
-  id: string; loadId: string; origin: string; destination: string;
-  miles: number; payout: number; pickupAppt: string; status: string;
-}
-
-// Backend sends pickup_appt as "MM/DD · HH:mm" from /loads, "MM/DD HH:mm" from /board
-function parseAppt(raw: string): Date | null {
-  const m = raw.match(/^(\d{1,2})\/(\d{1,2})\s*(?:·\s*)?(\d{2}):(\d{2})$/);
-  if (!m) return null;
-  const year = new Date().getFullYear();
-  return new Date(year, Number(m[1]) - 1, Number(m[2]), Number(m[3]), Number(m[4]));
-}
-
-// The route lives in the stops array: stops[0] = origin, stops[last] = destination.
-// Read straight from stops — no reconstruction.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function loadRoute(l: any): { origin: string; destination: string; pickupAppt: string } {
-  const raw = l.stops ?? [];
-  const first = raw[0];
-  const last  = raw[raw.length - 1];
-  return { origin: first?.city ?? "", destination: last?.city ?? "", pickupAppt: first?.appt ?? "" };
-}
-
-function fetchWeekLoads(driverId: string, offset: number): Promise<WeekLoad[]> {
-  const { start, end } = getWeekBounds(offset);
-  return api.getList<any>("/loads", { driver_id: driverId, page_size: 200 }).then(({ items }) =>
-    (items ?? [])
-      .map((l: any) => ({ raw: l, route: loadRoute(l) }))
-      .filter(({ route }: any) => {
-        const d = parseAppt(route.pickupAppt);
-        return d !== null && d >= start && d <= end;
-      })
-      .map(({ raw: l, route }: any) => ({
-        id: l.id, loadId: l.load_id ?? "",
-        origin: route.origin, destination: route.destination,
-        miles: l.miles ?? 0, payout: l.payout ?? 0,
-        pickupAppt: route.pickupAppt, status: l.status ?? "",
-      }))
-  );
-}
-
 // ─── Team Detail ─────────────────────────────────────────────────────────────
 
 function TeamDetail({ team, onBack }: { team: TeamDriver; onBack: () => void }) {
-  const [weekOffset, setWeekOffset] = useState(0);
-  const [loads, setLoads]           = useState<WeekLoad[]>([]);
-  const [loadingLoads, setLoadingLoads] = useState(true);
-
-  useEffect(() => {
-    setLoadingLoads(true);
-    fetchWeekLoads(team.id, weekOffset)
-      .then(setLoads)
-      .catch(() => setLoads([]))
-      .finally(() => setLoadingLoads(false));
-  }, [team.id, weekOffset]);
-
-  const { start: weekStart, end: weekEnd } = getWeekBounds(weekOffset);
-  const totalGross = loads.reduce((s, l) => s + l.payout, 0);
-  const totalMiles = loads.reduce((s, l) => s + l.miles, 0);
-  const avgRate    = totalMiles > 0 ? totalGross / totalMiles : 0;
-  const target     = team.weeklyGrossTarget;
-  const targetPct  = target ? Math.min(100, Math.round((totalGross / target) * 100)) : null;
+  // A team is a driver row, so it uses the same recap endpoint.
+  const { weekOffset, setWeekOffset, data, loading: loadingLoads, error } = useDriverWeek(team.id);
+  const summary = data?.summary;
+  const loads   = data?.loads ?? [];
+  const targetPct = summary?.target_pct ?? null;
+  const target    = summary?.weekly_target ?? team.weeklyGrossTarget;
 
   const initials1 = team.name1.split(" ").slice(0, 2).map((w) => w[0]).join("");
   const initials2 = team.name2.split(" ").slice(0, 2).map((w) => w[0]).join("");
@@ -2050,14 +2030,15 @@ function TeamDetail({ team, onBack }: { team: TeamDriver; onBack: () => void }) 
   : team.payType === "percent" ? `${team.payRate ?? 0}% of gross`
   : "";
 
-  // Same client-derived figures (and the same divergences) as DriverDetail — see the note
-  // there. All pending on GET /drivers/:id/detail.
+  // Server-computed, same as DriverDetail.
   const metrics: { label: string; value: string; icon: React.ReactNode; color: string; bg: string; note?: string }[] = [
-    { label: "Week Gross",  value: `$${totalGross.toLocaleString()}`,                   icon: <DollarSign size={16} />, color: "#10B981", bg: "rgba(16,185,129,0.14)", note: "Pending" },
-    { label: "Total Miles", value: totalMiles > 0 ? totalMiles.toLocaleString() : "0",  icon: <Route      size={16} />, color: "#3B82F6", bg: "rgba(59,130,246,0.14)", note: "Pending" },
-    { label: "Loads",       value: String(loads.length),                                 icon: <Package    size={16} />, color: "#8B5CF6", bg: "rgba(139,92,246,0.14)", note: "Pending" },
-    { label: "Avg $/Mile",  value: totalMiles > 0 ? `$${avgRate.toFixed(2)}` : "$0.00", icon: <TrendingUp size={16} />, color: "#F59E0B", bg: "rgba(245,158,11,0.14)", note: "Pending" },
-    { label: "Week Payout", value: "$0", icon: <DollarSign size={16} />, color: "#22D3EE", bg: "rgba(34,211,238,0.14)", note: "Pending" },
+    { label: "Week Gross",  value: `$${(summary?.gross ?? 0).toLocaleString()}`,     icon: <DollarSign size={16} />, color: "#10B981", bg: "rgba(16,185,129,0.14)" },
+    { label: "Total Miles", value: (summary?.total_miles ?? 0).toLocaleString(),     icon: <Route      size={16} />, color: "#3B82F6", bg: "rgba(59,130,246,0.14)",
+      note: (summary?.deadhead_miles ?? 0) > 0 ? `incl. ${summary!.deadhead_miles.toLocaleString()} empty` : undefined },
+    { label: "Loads",       value: String(summary?.loads ?? 0),                       icon: <Package    size={16} />, color: "#8B5CF6", bg: "rgba(139,92,246,0.14)" },
+    { label: "Avg $/Mile",  value: `$${(summary?.rpm ?? 0).toFixed(2)}`,              icon: <TrendingUp size={16} />, color: "#F59E0B", bg: "rgba(245,158,11,0.14)" },
+    { label: "Week Payout", value: `$${(summary?.driver_pay ?? 0).toLocaleString()}`, icon: <DollarSign size={16} />, color: "#22D3EE", bg: "rgba(34,211,238,0.14)",
+      note: summary?.pay_type ? undefined : "No pay type set" },
   ];
 
   const avatarGradients = [
@@ -2185,7 +2166,7 @@ function TeamDetail({ team, onBack }: { team: TeamDriver; onBack: () => void }) 
                 {weekOffset === 0 ? "This Week" : weekOffset === -1 ? "Last Week" : `${Math.abs(weekOffset)} Weeks Ago`}
               </div>
               <div style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)", marginTop: 3 }}>
-                {fmtWeekRange(weekStart, weekEnd)}
+                {data?.week ? fmtISORange(data.week.from, data.week.to) : "—"}
               </div>
             </div>
             <div style={{ display: "flex", gap: 4 }}>
@@ -2222,7 +2203,7 @@ function TeamDetail({ team, onBack }: { team: TeamDriver; onBack: () => void }) 
                     {m.value}
                   </div>
                   {m.note && (
-                    <span style={{ alignSelf: "flex-start", fontFamily: "var(--font-sans)", fontSize: 9, fontWeight: 700, color: "#F59E0B", backgroundColor: "rgba(245,158,11,0.14)", borderRadius: 4, padding: "2px 6px", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                    <span style={{ alignSelf: "flex-start", fontFamily: "var(--font-sans)", fontSize: 10, color: "var(--muted-foreground)" }}>
                       {m.note}
                     </span>
                   )}
@@ -2260,6 +2241,10 @@ function TeamDetail({ team, onBack }: { team: TeamDriver; onBack: () => void }) 
               <div style={{ padding: "48px 20px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
                 Loading…
               </div>
+            ) : error ? (
+              <div style={{ padding: "48px 20px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "#EF4444" }}>
+                {error}
+              </div>
             ) : loads.length === 0 ? (
               <div style={{ padding: "48px 20px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
                 No loads for this week.
@@ -2274,7 +2259,7 @@ function TeamDetail({ team, onBack }: { team: TeamDriver; onBack: () => void }) 
                       <TH>Destination</TH>
                       <TH width={80} align="center">Miles</TH>
                       <TH width={100} align="center">Payout</TH>
-                      <TH width={110} align="center">Pickup</TH>
+                      <TH width={110} align="center">Completed</TH>
                       <TH width={110} align="center">Status</TH>
                     </tr>
                   </thead>
@@ -2283,12 +2268,12 @@ function TeamDetail({ team, onBack }: { team: TeamDriver; onBack: () => void }) 
                       const sc = STATUS_CONFIG[load.status as Status];
                       return (
                         <tr key={load.id} style={{ backgroundColor: i % 2 === 0 ? "var(--card)" : "var(--background)" }}>
-                          <TD mono>{load.loadId || load.id}</TD>
+                          <TD mono>{load.load_id || load.id}</TD>
                           <TD>{load.origin}</TD>
                           <TD>{load.destination}</TD>
                           <TD mono center>{load.miles.toLocaleString()}</TD>
                           <TD mono center>${load.payout.toLocaleString()}</TD>
-                          <TD center>{load.pickupAppt ? new Date(load.pickupAppt).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}</TD>
+                          <TD center>{load.completed_at ? new Date(load.completed_at).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}</TD>
                           <td style={{ padding: "10px 12px", borderBottom: "1px solid var(--border)", verticalAlign: "middle", textAlign: "center" }}>
                             {sc ? (
                               <span style={{
