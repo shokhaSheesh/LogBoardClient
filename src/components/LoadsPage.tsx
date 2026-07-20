@@ -7,7 +7,7 @@ import {
   ArrowLeft, ArrowRight, Building2, User, DollarSign, Clock, History, CalendarDays, Navigation, GripVertical,
 } from "lucide-react";
 import { Status, STATUS_CONFIG as SHARED_STATUS_CONFIG, ALL_STATUSES as SHARED_ALL_STATUSES } from "../lib/statuses";
-import { api, ApiError, isForbidden, getCompanyId } from "../lib/api";
+import { api, ApiError, isForbidden } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { hasPerm } from "../lib/permissions";
 import { menuPosition } from "../lib/menuPosition";
@@ -1108,10 +1108,18 @@ function LoadModal({ load, onClose, onSave, saving = false }: {
               <AsyncSearchableSelect
                 value={form.dispatcher_id ?? ""}
                 valueLabel={form.dispatcher ?? ""}
-                fetchPage={async (q, p) => {
-                  const companyId = getCompanyId();
-                  const { items, total } = await api.getList<any>(`/owner/companies/${companyId}/users`, { q: q || undefined, page: p, page_size: 20 });
-                  return { items: (items ?? []).map((u: any) => ({ value: u.id, label: u.full_name ?? u.login ?? u.id })), total };
+                // Company-plane read (users.read) — the owner-only /owner/* surface 403s for
+                // dispatchers, which left this select empty for exactly the people using it.
+                // It's a bounded pick-list and the docs define no ?q=/paging on it, so fetch
+                // the whole list (omitting page_size returns all) and match here — passing a
+                // query the endpoint ignores would look like search while filtering nothing.
+                fetchPage={async (q) => {
+                  const rows = await api.get<any[]>("/company/users");
+                  const needle = q.trim().toLowerCase();
+                  const opts = (rows ?? [])
+                    .map((u: any) => ({ value: u.id, label: u.full_name ?? u.login ?? u.id }))
+                    .filter((o) => !needle || o.label.toLowerCase().includes(needle));
+                  return { items: opts, total: opts.length };
                 }}
                 onChange={(id, label) => setForm((f) => ({ ...f, dispatcher_id: id, dispatcher: label }))}
                 placeholder="Select dispatcher…"
