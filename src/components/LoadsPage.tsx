@@ -12,7 +12,7 @@ import { useAuth } from "../lib/auth";
 import { hasPerm } from "../lib/permissions";
 import { menuPosition } from "../lib/menuPosition";
 import { driverDisplayName } from "../lib/driverName";
-import { geocodeCity, routeMiles } from "../lib/geo";
+import { geocodeCity, routeMiles, type LatLng } from "../lib/geo";
 import { AsyncSearchableSelect, type SelectOpt } from "./AsyncSelect";
 import { AddressAutocomplete } from "./AddressAutocomplete";
 import { UncompleteConfirm } from "./UncompleteConfirm";
@@ -37,7 +37,8 @@ interface Load {
   status: Status;
   stops?: Stop[];        // the whole ordered route (stops[0] = pickup, last = delivery)
   payout: number;
-  totalMiles: number;
+  totalMiles: number;      // LOADED miles only — the backend keeps deadhead separate
+  deadheadMiles: number;   // empty miles run to reach this load's pickup
   dispatcher: string;
   dispatcher_id: string;
 }
@@ -51,7 +52,8 @@ interface BackendLoad {
   driver_name2?: string;
   status: Status;
   payout: number;
-  miles: number;
+  miles: number;              // loaded miles
+  deadhead_distance?: number; // empty miles to the pickup; total_miles = miles + this
   broker?: string;
   stops?: Stop[];
   dispatcher_id?: string;
@@ -81,6 +83,7 @@ function toLoad(b: BackendLoad): Load {
     status: b.status as Status,
     payout: b.payout ?? 0,
     totalMiles: b.miles ?? 0,
+    deadheadMiles: b.deadhead_distance ?? 0,
     // Backend keeps coords under `location:{lat,lng}`; flatten to lat/lng for the modal
     // so existing geocoded stops keep their coordinates (drives the miles recalc).
     stops: (b.stops ?? []).map((s) => ({
@@ -117,6 +120,9 @@ function toBackend(l: Partial<Load>, opts: { create?: boolean; omitStatus?: bool
     status: opts.omitStatus ? undefined : (l.status || undefined),
     payout: l.payout ?? 0,
     miles: l.totalMiles ?? 0,
+    // Sent separately, never folded into miles — the backend derives
+    // total_miles = miles + deadhead_distance, so folding would double-count it.
+    deadhead_distance: l.deadheadMiles ?? 0,
     broker: l.broker,
     dispatcher_id: l.dispatcher_id || undefined,
   };
@@ -720,7 +726,55 @@ interface ExtractDraft {
   broker?: string;
   payout?: number;
   miles?: number;
+  deadhead_distance?: number; // extractor returns 0 unless the rate con states it
   stops?: { city?: string; appt?: string }[];
+}
+
+// ─── Deadhead anchor ──────────────────────────────────────────────────────────
+
+// Where the truck will be when it STARTS this load — the point deadhead is measured
+// from. Walking the driver's chain: the last stop of the last load already queued to
+// them, or (if they're running nothing) wherever the driver currently is.
+interface DeadheadAnchor { point: LatLng; label: string; from: string }
+
+// The telemetry block we expect on a driver, mirroring the board row's `eld` exactly.
+// ⚠️ Not served on GET /drivers/:id yet — written now so precise coordinates start
+// being used the moment the backend adds it. Until then we fall back to geocoding the
+// dispatcher-typed `location`, which is vaguer but works.
+interface DriverEld { location?: string; lat?: number | null; lng?: number | null }
+
+async function resolveDeadheadAnchor(driverId: string, signal?: AbortSignal): Promise<DeadheadAnchor | null> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const driver = await api.get<any>(`/drivers/${driverId}`);
+
+  // The load this one follows: the tail of the queue, else the load they're running.
+  const queue: { id: string }[] = driver.next_loads ?? [];
+  const priorLoadId: string | undefined = queue.length > 0 ? queue[queue.length - 1]?.id : driver.current_load_id || undefined;
+
+  if (priorLoadId) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const prior = await api.get<any>(`/loads/${priorLoadId}`);
+    const stops = prior.stops ?? [];
+    const last  = stops[stops.length - 1];
+    if (last?.city) {
+      const point = last.location?.lat != null && last.location?.lng != null
+        ? { lat: last.location.lat, lng: last.location.lng }
+        : await geocodeCity(last.city, signal);
+      if (point) return { point, label: last.city, from: `${prior.load_id || "previous load"} delivery` };
+    }
+    return null; // the prior load has no usable delivery point — don't guess
+  }
+
+  // No loads on the deck: measure from where the driver actually is.
+  const eld: DriverEld | undefined = driver.eld ?? undefined;
+  if (eld?.lat != null && eld?.lng != null) {
+    return { point: { lat: eld.lat, lng: eld.lng }, label: eld.location || "current position", from: "driver's current location (ELD)" };
+  }
+  if (driver.location?.trim()) {
+    const point = await geocodeCity(driver.location, signal);
+    if (point) return { point, label: driver.location, from: "driver's current location" };
+  }
+  return null;
 }
 
 function draftToLoad(d: ExtractDraft): Partial<Load> {
@@ -738,6 +792,7 @@ function draftToLoad(d: ExtractDraft): Partial<Load> {
     broker:     d.broker  ?? "",
     payout:     d.payout  ?? 0,
     totalMiles: d.miles   ?? 0,
+    deadheadMiles: d.deadhead_distance ?? 0,
     stops,
   };
 }
@@ -927,6 +982,41 @@ function LoadModal({ load, onClose, onSave, saving = false }: {
 
   const [recalcing, setRecalcing]   = useState(false);
   const [milesNote, setMilesNote]   = useState<string | null>(null);
+
+  // ── Deadhead ──────────────────────────────────────────────────────────────
+  const [dhBusy, setDhBusy] = useState(false);
+  const [dhNote, setDhNote] = useState<string | null>(null);
+
+  const firstStopCity   = (stops[0]?.city ?? "").trim();
+  const canCalcDeadhead = !!form.driver_id && !!firstStopCity;
+
+  // Measure the empty run: from wherever the driver will be when they start this load
+  // (their previous delivery, or their current position if the deck is empty) to this
+  // load's first stop. Never silently overwrites — the dispatcher clicks for it, and the
+  // field stays editable afterwards.
+  const calcDeadhead = async () => {
+    if (!canCalcDeadhead || dhBusy) return;
+    setDhBusy(true); setDhNote(null);
+    try {
+      const anchor = await resolveDeadheadAnchor(form.driver_id!);
+      if (!anchor) { setDhNote("Couldn't work out where the driver starts from — enter it manually."); return; }
+
+      const dest = stops[0].lat != null && stops[0].lng != null
+        ? { lat: stops[0].lat!, lng: stops[0].lng! }
+        : await geocodeCity(firstStopCity);
+      if (!dest) { setDhNote("Couldn't locate the first stop — enter it manually."); return; }
+
+      const mi = await routeMiles([anchor.point, dest]);
+      if (mi == null) { setDhNote("Couldn't measure the distance — enter it manually."); return; }
+
+      set("deadheadMiles", mi);
+      setDhNote(`From: ${anchor.label} — ${anchor.from}`);
+    } catch {
+      setDhNote("Couldn't measure the distance — enter it manually.");
+    } finally {
+      setDhBusy(false);
+    }
+  };
 
   // Drag-to-reorder stops. grabIdx makes only the grip handle a drag source (so the
   // city inputs stay normally interactive); dragIdx/overIdx drive the visual feedback.
@@ -1154,6 +1244,54 @@ function LoadModal({ load, onClose, onSave, saving = false }: {
               {milesNote && <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "var(--muted-foreground)" }}>{milesNote}</span>}
             </label>
           </div>
+
+          {/* Deadhead — the empty run to this load's pickup. Kept separate from Miles
+              because the backend derives total_miles = miles + deadhead itself. */}
+          <label style={labelStyle}>
+            <span style={capStyle}>Deadhead (mi)</span>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <div style={{ position: "relative", flex: 1 }}>
+                <input
+                  type="number" min={0}
+                  value={form.deadheadMiles ?? ""}
+                  onChange={(e) => set("deadheadMiles", e.target.value ? Math.max(0, Number(e.target.value)) : 0)}
+                  style={{ ...inputStyle, fontFamily: "var(--font-mono)", paddingRight: dhBusy ? 30 : undefined }}
+                  placeholder="0" onFocus={focusInput} onBlur={blurInput}
+                />
+                {dhBusy && (
+                  <span style={{ position: "absolute", right: 10, top: "50%", marginTop: -7, boxSizing: "border-box", width: 14, height: 14, borderRadius: "50%", border: "2px solid var(--border)", borderTopColor: "var(--muted-foreground)", animation: "spin 0.7s linear infinite", pointerEvents: "none" }} />
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={calcDeadhead}
+                disabled={!canCalcDeadhead || dhBusy}
+                title={
+                  !form.driver_id ? "Pick a driver first — deadhead is measured from where they'll be"
+                  : !firstStopCity ? "Enter the first stop first"
+                  : "Measure from the driver's previous delivery (or their current location)"
+                }
+                style={{
+                  flexShrink: 0, height: 34, padding: "0 12px", borderRadius: 6, border: "1px solid var(--border)",
+                  backgroundColor: canCalcDeadhead && !dhBusy ? "var(--muted)" : "transparent",
+                  color: canCalcDeadhead && !dhBusy ? "var(--foreground)" : "var(--muted-foreground)",
+                  cursor: canCalcDeadhead && !dhBusy ? "pointer" : "not-allowed",
+                  fontFamily: "var(--font-sans)", fontSize: 12.5, fontWeight: 600,
+                  opacity: canCalcDeadhead ? 1 : 0.55,
+                }}
+              >
+                {dhBusy ? "Measuring…" : "Calculate"}
+              </button>
+            </div>
+            {dhNote && (
+              <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: dhNote.startsWith("From:") ? "var(--muted-foreground)" : "#F59E0B" }}>{dhNote}</span>
+            )}
+            {/* The figure RPM and driver pay actually divide by. */}
+            <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "var(--muted-foreground)" }}>
+              Total distance: {((form.totalMiles ?? 0) + (form.deadheadMiles ?? 0)).toLocaleString()} mi
+              {(form.deadheadMiles ?? 0) > 0 && ` (${(form.totalMiles ?? 0).toLocaleString()} loaded + ${(form.deadheadMiles ?? 0).toLocaleString()} empty)`}
+            </span>
+          </label>
 
           {/* Route — unified stop list */}
           <div style={{ border: "1px solid var(--border)", borderRadius: 10, overflow: "visible" }}>
