@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { CreditCard, Check, Zap, Shield, Building2, ChevronRight, AlertCircle } from "lucide-react";
+import { CreditCard, Check, Zap, Shield, Building2, ChevronRight, AlertCircle, Download } from "lucide-react";
 import { api, getCompanyId } from "../lib/api";
 
 // ─── Backend types ────────────────────────────────────────────────────────────
@@ -104,8 +104,34 @@ export function BillingPage() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState<string | null>(null);
+  const [downloading, setDownloading] = useState<string | null>(null); // invoice id in flight
+  const [downloadErr, setDownloadErr] = useState<string | null>(null);
 
   const companyId = getCompanyId();
+
+  // The PDF is streamed behind the same auth as everything else, so we pull it as a blob
+  // and hand it to the browser — a plain link would drop the Authorization header and 401.
+  const downloadInvoice = async (inv: Invoice) => {
+    if (downloading) return;
+    setDownloading(inv.id); setDownloadErr(null);
+    let url: string | null = null;
+    try {
+      const blob = await api.getBlob(`/owner/companies/${companyId}/invoices/${inv.id}/pdf`);
+      url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `invoice-${inv.invoiceNumber}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    } catch (e) {
+      setDownloadErr(e instanceof Error ? e.message : "Couldn't download that invoice.");
+    } finally {
+      // Revoke on the next tick — revoking synchronously can cancel the click's download.
+      if (url) setTimeout(() => URL.revokeObjectURL(url!), 10_000);
+      setDownloading(null);
+    }
+  };
 
   useEffect(() => {
     setLoading(true);
@@ -305,8 +331,13 @@ export function BillingPage() {
 
         {/* ── Invoices ── */}
         <div>
-          <div style={{ marginBottom: 14 }}>
+          <div style={{ marginBottom: 14, display: "flex", alignItems: "center", gap: 10 }}>
             <span style={capStyle}>Transaction History</span>
+            {downloadErr && (
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "var(--font-sans)", fontSize: 12, color: "#EF4444" }}>
+                <AlertCircle size={13} /> {downloadErr}
+              </span>
+            )}
           </div>
           <div style={{ backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
             {invoices.length === 0 ? (
@@ -317,7 +348,7 @@ export function BillingPage() {
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead>
                   <tr style={{ backgroundColor: "var(--muted)" }}>
-                    {["Date", "Invoice", "Plan", "Amount", "Status"].map((h, i) => (
+                    {["Date", "Invoice", "Plan", "Amount", "Status", ""].map((h, i) => (
                       <th key={i} style={{
                         padding: "10px 16px", textAlign: i >= 3 ? "right" : "left",
                         fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600,
@@ -351,6 +382,25 @@ export function BillingPage() {
                           <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600, color: s.color, backgroundColor: s.bg, borderRadius: 20, padding: "2px 10px" }}>
                             {inv.status}
                           </span>
+                        </td>
+                        <td style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)", textAlign: "right", whiteSpace: "nowrap" }}>
+                          <button
+                            onClick={() => downloadInvoice(inv)}
+                            disabled={downloading === inv.id}
+                            title={`Download invoice ${inv.invoiceNumber} (PDF)`}
+                            style={{
+                              display: "inline-flex", alignItems: "center", gap: 5,
+                              fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: 600,
+                              padding: "5px 10px", borderRadius: 6, border: "1px solid var(--border)",
+                              backgroundColor: "transparent",
+                              color: downloading === inv.id ? "var(--muted-foreground)" : "var(--foreground)",
+                              cursor: downloading === inv.id ? "default" : "pointer",
+                            }}
+                            onMouseEnter={(e) => { if (downloading !== inv.id) { const b = e.currentTarget; b.style.borderColor = "var(--primary)"; b.style.color = "var(--primary)"; } }}
+                            onMouseLeave={(e) => { const b = e.currentTarget; b.style.borderColor = "var(--border)"; b.style.color = downloading === inv.id ? "var(--muted-foreground)" : "var(--foreground)"; }}
+                          >
+                            <Download size={12} /> {downloading === inv.id ? "…" : "PDF"}
+                          </button>
                         </td>
                       </tr>
                     );

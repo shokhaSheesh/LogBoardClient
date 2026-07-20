@@ -205,8 +205,29 @@ async function upload<T>(path: string, file: File, field = "file"): Promise<T> {
   return (json.data ?? json) as T;
 }
 
+// Fetch a binary payload (a generated PDF, say) with the same auth/company headers as
+// every other call. It can't go through request<T>() — that parses JSON — and it can't
+// be a plain <a href> either, because auth rides in a header rather than a cookie, so a
+// direct link would just 401.
+async function getBlob(path: string): Promise<Blob> {
+  const headers: Record<string, string> = {};
+  const token = getToken();
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  const companyId = getCompanyId();
+  if (companyId) headers["X-Company-ID"] = companyId;
+
+  const res = await fetch(`${BASE}${path}`, { method: "GET", headers });
+
+  if (res.status === 401) { clearToken(); window.location.href = "/login"; throw new Error("Unauthorized"); }
+  // A failure on a binary route still comes back as the usual JSON error envelope.
+  if (!res.ok) throw apiError(await res.json().catch(() => ({})), res.status);
+
+  return res.blob();
+}
+
 export const api = {
   get: <T>(path: string) => request<T>("GET", path),
+  getBlob,
   upload,
   post: <T>(path: string, body?: unknown) => request<T>("POST", path, body),
   put: <T>(path: string, body?: unknown) => request<T>("PUT", path, body),
