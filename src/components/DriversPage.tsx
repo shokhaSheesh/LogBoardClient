@@ -1702,14 +1702,21 @@ function DriverDetail({ driver, onBack }: { driver: SoloDriver; onBack: () => vo
   : driver.payType === "percent" ? `${driver.payRate ?? 0}% of gross`
   : "";
 
+  // ⚠️ Every figure below is derived on the CLIENT from a /loads?driver_id= fetch, and
+  // each diverges from the ledger in its own way: the fetch is capped at 200 loads, the
+  // week window comes from the browser clock (calendar boundaries are server-side, in the
+  // business timezone), Week Gross sums the load rate rather than the payout net (so it
+  // ignores added/deducted), and Avg $/Mile divides by loaded miles while the backend's
+  // rpm now divides by total distance (deadhead included). GET /drivers/:id/detail returns
+  // all of these server-computed — until it's wired they stay marked pending.
   const metrics: { label: string; value: string; icon: React.ReactNode; color: string; bg: string; note?: string }[] = [
-    { label: "Week Gross",  value: `$${totalGross.toLocaleString()}`,                            icon: <DollarSign size={16} />, color: "#10B981", bg: "rgba(16,185,129,0.14)" },
-    { label: "Total Miles", value: totalMiles > 0 ? totalMiles.toLocaleString() : "—",           icon: <Route      size={16} />, color: "#3B82F6", bg: "rgba(59,130,246,0.14)" },
-    { label: "Loads",       value: String(loads.length),                                          icon: <Package    size={16} />, color: "#8B5CF6", bg: "rgba(139,92,246,0.14)" },
-    { label: "Avg $/Mile",  value: totalMiles > 0 ? `$${avgRate.toFixed(2)}` : "—",              icon: <TrendingUp size={16} />, color: "#F59E0B", bg: "rgba(245,158,11,0.14)" },
-    // Driver's own take-home for the week. Not wired yet — GET /drivers/:id/detail
-    // returns `driver_pay`, so this lights up once that endpoint is consumed.
-    { label: "Weekly Payout", value: "—", icon: <DollarSign size={16} />, color: "#22D3EE", bg: "rgba(34,211,238,0.14)", note: "Backend pending" },
+    { label: "Week Gross",  value: `$${totalGross.toLocaleString()}`,                            icon: <DollarSign size={16} />, color: "#10B981", bg: "rgba(16,185,129,0.14)", note: "Pending" },
+    { label: "Total Miles", value: totalMiles > 0 ? totalMiles.toLocaleString() : "0",           icon: <Route      size={16} />, color: "#3B82F6", bg: "rgba(59,130,246,0.14)", note: "Pending" },
+    { label: "Loads",       value: String(loads.length),                                          icon: <Package    size={16} />, color: "#8B5CF6", bg: "rgba(139,92,246,0.14)", note: "Pending" },
+    { label: "Avg $/Mile",  value: totalMiles > 0 ? `$${avgRate.toFixed(2)}` : "$0.00",          icon: <TrendingUp size={16} />, color: "#F59E0B", bg: "rgba(245,158,11,0.14)", note: "Pending" },
+    // No client-side stand-in for this one — the driver's take-home needs pay_type/pay_rate
+    // applied to the ledger, which only the backend does. Shows 0 until driver_pay is wired.
+    { label: "Week Payout", value: "$0", icon: <DollarSign size={16} />, color: "#22D3EE", bg: "rgba(34,211,238,0.14)", note: "Pending" },
   ];
 
   const infoRows: { icon: React.ReactNode; label: string; value: string; mono?: boolean; highlight?: boolean }[] = [
@@ -2043,13 +2050,14 @@ function TeamDetail({ team, onBack }: { team: TeamDriver; onBack: () => void }) 
   : team.payType === "percent" ? `${team.payRate ?? 0}% of gross`
   : "";
 
+  // Same client-derived figures (and the same divergences) as DriverDetail — see the note
+  // there. All pending on GET /drivers/:id/detail.
   const metrics: { label: string; value: string; icon: React.ReactNode; color: string; bg: string; note?: string }[] = [
-    { label: "Week Gross",  value: `$${totalGross.toLocaleString()}`,                   icon: <DollarSign size={16} />, color: "#10B981", bg: "rgba(16,185,129,0.14)" },
-    { label: "Total Miles", value: totalMiles > 0 ? totalMiles.toLocaleString() : "—",  icon: <Route      size={16} />, color: "#3B82F6", bg: "rgba(59,130,246,0.14)" },
-    { label: "Loads",       value: String(loads.length),                                 icon: <Package    size={16} />, color: "#8B5CF6", bg: "rgba(139,92,246,0.14)" },
-    { label: "Avg $/Mile",  value: totalMiles > 0 ? `$${avgRate.toFixed(2)}` : "—",     icon: <TrendingUp size={16} />, color: "#F59E0B", bg: "rgba(245,158,11,0.14)" },
-    // See DriverDetail — waiting on GET /drivers/:id/detail's driver_pay.
-    { label: "Weekly Payout", value: "—", icon: <DollarSign size={16} />, color: "#22D3EE", bg: "rgba(34,211,238,0.14)", note: "Backend pending" },
+    { label: "Week Gross",  value: `$${totalGross.toLocaleString()}`,                   icon: <DollarSign size={16} />, color: "#10B981", bg: "rgba(16,185,129,0.14)", note: "Pending" },
+    { label: "Total Miles", value: totalMiles > 0 ? totalMiles.toLocaleString() : "0",  icon: <Route      size={16} />, color: "#3B82F6", bg: "rgba(59,130,246,0.14)", note: "Pending" },
+    { label: "Loads",       value: String(loads.length),                                 icon: <Package    size={16} />, color: "#8B5CF6", bg: "rgba(139,92,246,0.14)", note: "Pending" },
+    { label: "Avg $/Mile",  value: totalMiles > 0 ? `$${avgRate.toFixed(2)}` : "$0.00", icon: <TrendingUp size={16} />, color: "#F59E0B", bg: "rgba(245,158,11,0.14)", note: "Pending" },
+    { label: "Week Payout", value: "$0", icon: <DollarSign size={16} />, color: "#22D3EE", bg: "rgba(34,211,238,0.14)", note: "Pending" },
   ];
 
   const avatarGradients = [
