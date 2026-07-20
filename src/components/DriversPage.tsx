@@ -120,9 +120,11 @@ function toTeam(d: any): TeamDriver {
 
 function fromSolo(d: Partial<SoloDriver>) {
   return {
-    name: d.name ?? "",
+    // Driver names are stored uppercase — the board, payouts and team rosters all key
+    // off the raw name, so normalising on write keeps them consistent everywhere.
+    name: (d.name ?? "").toUpperCase(),
     phone: d.phone ?? "",
-    type: d.type ?? "O/O",
+    type: d.type ?? "C/D",
     team: false,
     status: d.status ?? "ready",
     // truck/trailer are read-only derived fields now — assign via id instead.
@@ -144,8 +146,9 @@ function fromSolo(d: Partial<SoloDriver>) {
 
 function fromTeam(d: Partial<TeamDriver>) {
   return {
-    name: d.name1 ?? "",
-    name2: d.name2 ?? "",
+    // Uppercase for the same reason as fromSolo — the name is the identity key.
+    name: (d.name1 ?? "").toUpperCase(),
+    name2: (d.name2 ?? "").toUpperCase(),
     phone: d.phone1 ?? "",
     phone2: d.phone2 ?? "",
     type: d.type ?? "C/D",
@@ -1135,7 +1138,7 @@ function SoloModal({ driver, onClose, onSave, canReorderLoads, saving, fieldErro
 
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
             <FieldLabel>Type</FieldLabel>
-            <CustomSelect value={form.type ?? "O/O"} options={TYPE_OPTS} onChange={(v) => set("type", v)} />
+            <CustomSelect value={form.type ?? "C/D"} options={TYPE_OPTS} onChange={(v) => set("type", v)} />
           </label>
 
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
@@ -1692,15 +1695,26 @@ function DriverDetail({ driver, onBack }: { driver: SoloDriver; onBack: () => vo
 
   const initials = driver.name.split(" ").slice(0, 2).map((w) => w[0]).join("");
 
-  const metrics = [
+  // How this driver is paid, as one readable line. "" (unconfigured) reads as blank so
+  // the row renders "—" like any other unset field.
+  const payLabel =
+    driver.payType === "rpm"     ? `$${(driver.payRate ?? 0).toFixed(2)} / mile`
+  : driver.payType === "percent" ? `${driver.payRate ?? 0}% of gross`
+  : "";
+
+  const metrics: { label: string; value: string; icon: React.ReactNode; color: string; bg: string; note?: string }[] = [
     { label: "Week Gross",  value: `$${totalGross.toLocaleString()}`,                            icon: <DollarSign size={16} />, color: "#10B981", bg: "rgba(16,185,129,0.14)" },
     { label: "Total Miles", value: totalMiles > 0 ? totalMiles.toLocaleString() : "—",           icon: <Route      size={16} />, color: "#3B82F6", bg: "rgba(59,130,246,0.14)" },
     { label: "Loads",       value: String(loads.length),                                          icon: <Package    size={16} />, color: "#8B5CF6", bg: "rgba(139,92,246,0.14)" },
     { label: "Avg $/Mile",  value: totalMiles > 0 ? `$${avgRate.toFixed(2)}` : "—",              icon: <TrendingUp size={16} />, color: "#F59E0B", bg: "rgba(245,158,11,0.14)" },
+    // Driver's own take-home for the week. Not wired yet — GET /drivers/:id/detail
+    // returns `driver_pay`, so this lights up once that endpoint is consumed.
+    { label: "Weekly Payout", value: "—", icon: <DollarSign size={16} />, color: "#22D3EE", bg: "rgba(34,211,238,0.14)", note: "Backend pending" },
   ];
 
   const infoRows: { icon: React.ReactNode; label: string; value: string; mono?: boolean; highlight?: boolean }[] = [
     { icon: <Phone        size={13} />, label: "Phone",        value: driver.phone,          mono: true },
+    { icon: <DollarSign   size={13} />, label: "Pay",          value: payLabel                    },
     { icon: <Package      size={13} />, label: "Current Load", value: driver.currentLoad ?? "", mono: true, highlight: true },
     { icon: <Package      size={13} />, label: "Next Load",    value: driver.nextLoad    ?? "", mono: true },
     { icon: <Truck        size={13} />, label: "Truck",        value: driver.truck,          mono: true },
@@ -1824,7 +1838,7 @@ function DriverDetail({ driver, onBack }: { driver: SoloDriver; onBack: () => vo
           </div>
 
           {/* Metric cards */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12 }}>
             {metrics.map((m) => {
               const isGross = m.label === "Week Gross";
               return (
@@ -1843,6 +1857,11 @@ function DriverDetail({ driver, onBack }: { driver: SoloDriver; onBack: () => vo
                   <div style={{ fontFamily: "var(--font-sans)", fontSize: 24, fontWeight: 700, color: "var(--foreground)", lineHeight: 1 }}>
                     {m.value}
                   </div>
+                  {m.note && (
+                    <span style={{ alignSelf: "flex-start", fontFamily: "var(--font-sans)", fontSize: 9, fontWeight: 700, color: "#F59E0B", backgroundColor: "rgba(245,158,11,0.14)", borderRadius: 4, padding: "2px 6px", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                      {m.note}
+                    </span>
+                  )}
                   {isGross && targetPct !== null && (
                     <div style={{ display: "flex", flexDirection: "column", gap: 5, marginTop: -2 }}>
                       <div style={{ height: 5, borderRadius: 99, backgroundColor: "var(--muted)", overflow: "hidden" }}>
@@ -2019,11 +2038,18 @@ function TeamDetail({ team, onBack }: { team: TeamDriver; onBack: () => void }) 
   const initials1 = team.name1.split(" ").slice(0, 2).map((w) => w[0]).join("");
   const initials2 = team.name2.split(" ").slice(0, 2).map((w) => w[0]).join("");
 
-  const metrics = [
+  const payLabel =
+    team.payType === "rpm"     ? `$${(team.payRate ?? 0).toFixed(2)} / mile`
+  : team.payType === "percent" ? `${team.payRate ?? 0}% of gross`
+  : "";
+
+  const metrics: { label: string; value: string; icon: React.ReactNode; color: string; bg: string; note?: string }[] = [
     { label: "Week Gross",  value: `$${totalGross.toLocaleString()}`,                   icon: <DollarSign size={16} />, color: "#10B981", bg: "rgba(16,185,129,0.14)" },
     { label: "Total Miles", value: totalMiles > 0 ? totalMiles.toLocaleString() : "—",  icon: <Route      size={16} />, color: "#3B82F6", bg: "rgba(59,130,246,0.14)" },
     { label: "Loads",       value: String(loads.length),                                 icon: <Package    size={16} />, color: "#8B5CF6", bg: "rgba(139,92,246,0.14)" },
     { label: "Avg $/Mile",  value: totalMiles > 0 ? `$${avgRate.toFixed(2)}` : "—",     icon: <TrendingUp size={16} />, color: "#F59E0B", bg: "rgba(245,158,11,0.14)" },
+    // See DriverDetail — waiting on GET /drivers/:id/detail's driver_pay.
+    { label: "Weekly Payout", value: "—", icon: <DollarSign size={16} />, color: "#22D3EE", bg: "rgba(34,211,238,0.14)", note: "Backend pending" },
   ];
 
   const avatarGradients = [
@@ -2109,6 +2135,7 @@ function TeamDetail({ team, onBack }: { team: TeamDriver; onBack: () => void }) 
           {/* Truck / trailer / comment */}
           <div style={{ backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
             {[
+              { icon: <DollarSign    size={13} />, label: "Pay",          value: payLabel                          },
               { icon: <Package       size={13} />, label: "Current Load", value: team.currentLoad ?? "", mono: true, highlight: true },
               { icon: <Package       size={13} />, label: "Next Load",    value: team.nextLoad    ?? "", mono: true },
               { icon: <Truck         size={13} />, label: "Truck",        value: team.truck,            mono: true  },
@@ -2167,7 +2194,7 @@ function TeamDetail({ team, onBack }: { team: TeamDriver; onBack: () => void }) 
           </div>
 
           {/* Metric cards */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12 }}>
             {metrics.map((m) => {
               const isGross = m.label === "Week Gross";
               return (
@@ -2186,6 +2213,11 @@ function TeamDetail({ team, onBack }: { team: TeamDriver; onBack: () => void }) 
                   <div style={{ fontFamily: "var(--font-sans)", fontSize: 24, fontWeight: 700, color: "var(--foreground)", lineHeight: 1 }}>
                     {m.value}
                   </div>
+                  {m.note && (
+                    <span style={{ alignSelf: "flex-start", fontFamily: "var(--font-sans)", fontSize: 9, fontWeight: 700, color: "#F59E0B", backgroundColor: "rgba(245,158,11,0.14)", borderRadius: 4, padding: "2px 6px", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                      {m.note}
+                    </span>
+                  )}
                   {isGross && targetPct !== null && (
                     <div style={{ display: "flex", flexDirection: "column", gap: 5, marginTop: -2 }}>
                       <div style={{ height: 5, borderRadius: 99, backgroundColor: "var(--muted)", overflow: "hidden" }}>
@@ -2431,7 +2463,8 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
     applyStatus(d, s);
   };
 
-  const openCreate = () => { setEditing({}); setFieldErrors({}); setModal("create"); };
+  // New drivers start as Company Driver — the common case.
+  const openCreate = () => { setEditing({ type: "C/D" }); setFieldErrors({}); setModal("create"); };
   const openEdit   = (d: SoloDriver) => { setEditing(d); setFieldErrors({}); setModal("edit"); };
   const save = async (d: SoloDriver) => {
     setSaving(true);
@@ -2742,7 +2775,8 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
     applyStatus(d, s);
   };
 
-  const openCreate = () => { setEditing({}); setFieldErrors({}); setModal("create"); };
+  // New drivers start as Company Driver — the common case.
+  const openCreate = () => { setEditing({ type: "C/D" }); setFieldErrors({}); setModal("create"); };
   const openEdit   = (d: TeamDriver) => { setEditing(d); setFieldErrors({}); setModal("edit"); };
   const save = async (d: TeamDriver) => {
     setSaving(true);
