@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { CreditCard, Check, Zap, Shield, Building2, ChevronRight, AlertCircle, Download } from "lucide-react";
+import { CreditCard, Check, Zap, Shield, Building2, AlertCircle, Download } from "lucide-react";
 import { api, getCompanyId } from "../lib/api";
 
 // ─── Backend types ────────────────────────────────────────────────────────────
@@ -24,6 +24,10 @@ interface BackendBilling {
     days_left?: number | null;
   } | null;
   expires_at?: string | null;
+  // Driver-seat usage — `used` counts live drivers, `limit` is null for unlimited (and
+  // for a plan-less company). Sits beside current_plan because usage is the company's,
+  // not the plan's, and is present even when current_plan is null.
+  drivers?: { used: number; limit: number | null };
 }
 
 interface BackendInvoice {
@@ -97,6 +101,38 @@ function PlanIcon({ name, size = 16 }: { name: string; size?: number }) {
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
+
+// Driver-seat usage — "23 of 50 drivers" with a bar, or "23 drivers · Unlimited" when
+// the plan has no cap. Reporting only (the backend enforces the cap on driver create).
+function DriverSeats({ drivers }: { drivers?: { used: number; limit: number | null } }) {
+  if (!drivers) return null;
+  const { used, limit } = drivers;
+  const unlimited = limit == null;
+  const pct = unlimited || limit === 0 ? 0 : Math.min(100, Math.round((used / limit) * 100));
+  const nearingCap = !unlimited && limit > 0 && used / limit >= 0.8;
+  const barColor = pct >= 100 ? "#EF4444" : nearingCap ? "#F59E0B" : "#10B981";
+
+  return (
+    <div style={{ flexShrink: 0, minWidth: 150, display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-end" }}>
+      <div style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
+        <strong style={{ color: "var(--foreground)", fontSize: 15 }}>{used}</strong>
+        {unlimited ? " drivers" : <> of <strong style={{ color: "var(--foreground)", fontSize: 15 }}>{limit}</strong> drivers</>}
+      </div>
+      {unlimited ? (
+        <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "var(--muted-foreground)" }}>Unlimited</span>
+      ) : (
+        <>
+          <div style={{ width: "100%", height: 5, borderRadius: 99, backgroundColor: "var(--muted)", overflow: "hidden" }}>
+            <div style={{ height: "100%", borderRadius: 99, width: `${pct}%`, backgroundColor: barColor, transition: "width 0.4s ease" }} />
+          </div>
+          <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: pct >= 100 ? "#EF4444" : "var(--muted-foreground)" }}>
+            {pct >= 100 ? "Limit reached" : `${Math.max(0, limit! - used)} left`}
+          </span>
+        </>
+      )}
+    </div>
+  );
+}
 
 export function BillingPage() {
   const [plans, setPlans]       = useState<Plan[]>([]);
@@ -228,22 +264,13 @@ export function BillingPage() {
               </div>
             )}
 
-            <button
-              disabled
-              title="Plan changes coming soon — contact support"
-              style={{
-                fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600,
-                padding: "8px 16px", borderRadius: 8, border: "none",
-                backgroundColor: "var(--muted)", color: "var(--muted-foreground)",
-                cursor: "not-allowed", display: "flex", alignItems: "center", gap: 6, flexShrink: 0,
-              }}>
-              Manage Plan <ChevronRight size={14} />
-            </button>
+            <DriverSeats drivers={billing?.drivers} />
           </div>
         ) : (
           <div style={{ backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 12, padding: "20px 24px", display: "flex", alignItems: "center", gap: 14 }}>
             <AlertCircle size={18} style={{ color: "#F59E0B", flexShrink: 0 }} />
-            <span style={{ fontFamily: "var(--font-sans)", fontSize: 14, color: "var(--foreground)" }}>
+            <span style={{ flex: 1, fontFamily: "var(--font-sans)", fontSize: 14, color: "var(--foreground)" }}>
+              {billing?.drivers ? `You have ${billing.drivers.used} driver${billing.drivers.used === 1 ? "" : "s"}. ` : ""}
               No active plan. Choose a plan below to unlock board features.
             </span>
           </div>
