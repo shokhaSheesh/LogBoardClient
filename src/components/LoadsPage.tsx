@@ -13,19 +13,50 @@ import { hasPerm } from "../lib/permissions";
 import { menuPosition } from "../lib/menuPosition";
 import { driverDisplayName } from "../lib/driverName";
 import { geocodeCity, routeMiles, type LatLng } from "../lib/geo";
+import { cleanAppt } from "../lib/appt";
 import { AsyncSearchableSelect, type SelectOpt } from "./AsyncSelect";
-import { AddressAutocomplete } from "./AddressAutocomplete";
+import { AddressAutocomplete, type AddressParts } from "./AddressAutocomplete";
 import { UncompleteConfirm } from "./UncompleteConfirm";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+// ADR 0023: an address is three fields. `city` holds ONLY the city now; street and
+// state sit beside it. The API joins them "street, city, state" (empty parts skipped)
+// wherever it renders one line — we mirror that with joinAddress().
 interface Stop {
+  street?: string;
   city: string;
+  state?: string;
   done: boolean;
   appt?: string;
   lat?: number;
   lng?: number;
   location?: { lat: number; lng: number }; // backend coord shape (round-tripped)
+  // Client-only: the raw text as typed in the address input. Displaying the parsed →
+  // re-joined form would normalize away the ", " the user is mid-typing (making commas
+  // and spaces impossible to enter). Never sent to the backend.
+  text?: string;
+}
+
+// Full one-line address (street, city, state) — used in the EDIT input so the dispatcher
+// sees exactly what they entered.
+function joinAddress(s: { street?: string; city?: string; state?: string }): string {
+  return [s.street, s.city, s.state].map((p) => (p ?? "").trim()).filter(Boolean).join(", ");
+}
+
+// Short form (city, state) — what we DISPLAY everywhere a load is shown after creation.
+function cityState(s: { city?: string; state?: string }): string {
+  return [s.city, s.state].map((p) => (p ?? "").trim()).filter(Boolean).join(", ");
+}
+
+// Split a typed one-liner back into the three fields. Comma-delimited: the last part is
+// the state, the one before it the city, anything earlier the street — the same split
+// (on the last comma) the backend's migration used, so typed and picked stay consistent.
+function parseAddress(text: string): { street: string; city: string; state: string } {
+  const parts = text.split(",").map((p) => p.trim()).filter(Boolean);
+  if (parts.length === 0) return { street: "", city: "", state: "" };
+  if (parts.length === 1) return { street: "", city: parts[0], state: "" };
+  return { street: parts.slice(0, -2).join(", "), city: parts[parts.length - 2], state: parts[parts.length - 1] };
 }
 
 interface Load {
@@ -87,7 +118,8 @@ function toLoad(b: BackendLoad): Load {
     // Backend keeps coords under `location:{lat,lng}`; flatten to lat/lng for the modal
     // so existing geocoded stops keep their coordinates (drives the miles recalc).
     stops: (b.stops ?? []).map((s) => ({
-      city: s.city, done: s.done, appt: s.appt,
+      street: s.street ?? "", city: s.city, state: s.state ?? "",
+      done: s.done, appt: cleanAppt(s.appt),
       lat: s.location?.lat ?? s.lat,
       lng: s.location?.lng ?? s.lng,
     })),
@@ -106,7 +138,10 @@ function toBackend(l: Partial<Load>, opts: { create?: boolean; omitStatus?: bool
     // defined as "no assignee" at create time.
     driver_id: l.driver_id || (opts.create ? "" : null),
     stops: (l.stops ?? []).map((s) => ({
-      city: s.city,
+      // Send the three fields separately — no longer cram the whole address into city.
+      street: (s.street ?? "").trim(),
+      city: (s.city ?? "").trim(),
+      state: (s.state ?? "").trim(),
       appt: s.appt,
       done: s.done,
       ...(s.lat != null && s.lng != null ? { location: { lat: s.lat, lng: s.lng } } : {}),
@@ -467,6 +502,11 @@ function ExtractModal({ onClose, onExtracted }: {
   const [busy, setBusy]       = useState(false);
   const [error, setError]     = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  // Closing must ALWAYS work — extraction can run 15s+, and a user who picked the wrong
+  // file shouldn't be trapped watching it. Nothing is saved server-side, so cancelling
+  // just means ignoring the result when (if) it lands.
+  const closedRef = useRef(false);
+  const close = () => { closedRef.current = true; onClose(); };
 
   const pickFile = (f: File | undefined | null) => {
     if (!f) return;
@@ -482,12 +522,13 @@ function ExtractModal({ onClose, onExtracted }: {
     setBusy(true);
     setError(null);
     try {
-      // Extraction reads the document with a reasoning model — 8–35s is normal,
+      // Extraction reads the document with a reasoning model — a few seconds is normal,
       // longer for a many-page PDF. fetch has no default timeout, so just wait.
       const res = await api.upload<{ draft: ExtractDraft }>("/loads/extract", file);
+      if (closedRef.current) return; // user cancelled while it ran — discard the draft
       onExtracted(res?.draft ?? {});
     } catch (e) {
-      setError(extractErrorMessage(e));
+      if (!closedRef.current) setError(extractErrorMessage(e));
     } finally {
       setBusy(false);
     }
@@ -504,7 +545,7 @@ function ExtractModal({ onClose, onExtracted }: {
             </div>
             <span style={{ fontFamily: "var(--font-sans)", fontSize: 14, fontWeight: 600, color: "var(--foreground)" }}>AI Smart Extract</span>
           </div>
-          <button onClick={onClose} disabled={busy} style={{ background: "none", border: "none", cursor: busy ? "default" : "pointer", color: "var(--muted-foreground)", display: "flex", opacity: busy ? 0.4 : 1 }}>
+          <button onClick={close} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted-foreground)", display: "flex" }}>
             <X size={16} />
           </button>
         </div>
@@ -571,7 +612,7 @@ function ExtractModal({ onClose, onExtracted }: {
 
         {/* Footer */}
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, padding: "14px 20px", borderTop: "1px solid var(--border)" }}>
-          <button onClick={onClose} disabled={busy} style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 16px", borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "var(--muted)", color: "var(--foreground)", cursor: busy ? "default" : "pointer", opacity: busy ? 0.5 : 1 }}>
+          <button onClick={close} style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 16px", borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "var(--muted)", color: "var(--foreground)", cursor: "pointer" }}>
             Cancel
           </button>
           <button
@@ -727,7 +768,7 @@ interface ExtractDraft {
   payout?: number;
   miles?: number;
   deadhead_distance?: number; // extractor returns 0 unless the rate con states it
-  stops?: { city?: string; appt?: string }[];
+  stops?: { street?: string; city?: string; state?: string; appt?: string }[];
 }
 
 // ─── Deadhead anchor ──────────────────────────────────────────────────────────
@@ -737,10 +778,9 @@ interface ExtractDraft {
 // them, or (if they're running nothing) wherever the driver currently is.
 interface DeadheadAnchor { point: LatLng; label: string; from: string }
 
-// The telemetry block we expect on a driver, mirroring the board row's `eld` exactly.
-// ⚠️ Not served on GET /drivers/:id yet — written now so precise coordinates start
-// being used the moment the backend adds it. Until then we fall back to geocoding the
-// dispatcher-typed `location`, which is vaguer but works.
+// The telemetry block on a driver, mirroring the board row's `eld` (ADR 0021/0023).
+// GET /drivers/:id now returns it, so deadhead measures from the truck's real position;
+// we still geocode the typed `location` as a fallback when the driver isn't ELD-linked.
 interface DriverEld { location?: string; lat?: number | null; lng?: number | null }
 
 async function resolveDeadheadAnchor(driverId: string, signal?: AbortSignal): Promise<DeadheadAnchor | null> {
@@ -757,10 +797,11 @@ async function resolveDeadheadAnchor(driverId: string, signal?: AbortSignal): Pr
     const stops = prior.stops ?? [];
     const last  = stops[stops.length - 1];
     if (last?.city) {
+      const line = joinAddress(last);
       const point = last.location?.lat != null && last.location?.lng != null
         ? { lat: last.location.lat, lng: last.location.lng }
-        : await geocodeCity(last.city, signal);
-      if (point) return { point, label: last.city, from: `${prior.load_id || "previous load"} delivery` };
+        : await geocodeCity(line, signal);
+      if (point) return { point, label: line, from: `${prior.load_id || "previous load"} delivery` };
     }
     return null; // the prior load has no usable delivery point — don't guess
   }
@@ -779,10 +820,15 @@ async function resolveDeadheadAnchor(driverId: string, signal?: AbortSignal): Pr
 
 function draftToLoad(d: ExtractDraft): Partial<Load> {
   const stops: Stop[] = (d.stops ?? []).map((s) => ({
+    // The extractor splits the address into three fields now — take them as given.
+    street: s.street ?? "",
     city: s.city ?? "",
+    state: s.state ?? "",
     // Keep the broker's appointment text as printed (e.g. "07/06 0800-1700", "FCFS") —
-    // the field is free-form, so there's nothing to normalize it into.
-    appt: s.appt ?? "",
+    // but drop label-only junk: a rate con with no time set makes the model copy the
+    // section HEADING ("Appointment", "TBD", …) as the value, which then renders on the
+    // board as if it meant something. Empty is honest; a human fills it in.
+    appt: cleanAppt(s.appt),
     done: false,
   }));
   // The modal expects at least an origin and a destination row.
@@ -844,7 +890,18 @@ function AppointmentInput({ value, onChange }: { value: string; onChange: (v: st
         outline: "none", textAlign: "left",
       }}>
         <CalendarDays size={13} style={{ color: "var(--muted-foreground)", flexShrink: 0 }} />
-        <span style={{ flex: 1 }}>{value || "MM/DD · HH:MM"}</span>
+        <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{value || "MM/DD · HH:MM"}</span>
+        {value && (
+          <span
+            role="button" title="Clear"
+            onClick={(e) => { e.stopPropagation(); onChange(""); setOpen(false); }}
+            style={{ display: "flex", flexShrink: 0, color: "var(--muted-foreground)", cursor: "pointer" }}
+            onMouseEnter={(e) => { (e.currentTarget as HTMLSpanElement).style.color = "#EF4444"; }}
+            onMouseLeave={(e) => { (e.currentTarget as HTMLSpanElement).style.color = "var(--muted-foreground)"; }}
+          >
+            <X size={13} />
+          </span>
+        )}
       </button>
 
       {open && (
@@ -1039,21 +1096,29 @@ function LoadModal({ load, onClose, onSave, saving = false }: {
 
   const addStop    = () => setStops((p) => [...p, { city: "", done: false, appt: "" }]);
   const removeStop = (idx: number) => { setStops((p) => p.filter((_, i) => i !== idx)); recalcSoon(); };
-  const updateCity = (idx: number, val: string) => setStops((p) => p.map((s, i) => i === idx ? { ...s, city: val, lat: undefined, lng: undefined } : s));
-  const updateAppt = (idx: number, val: string) => setStops((p) => p.map((s, i) => i === idx ? { ...s, appt: val } : s));
-
-  // A suggestion pick caches the stop's coords (precise — no need to wait for blur to recalc).
-  const updateCoords = (idx: number, lat: number, lng: number) => {
-    setStops((prev) => prev.map((s, i) => i === idx ? { ...s, lat, lng } : s));
+  // Free typing: keep the raw text for the input (so ", " survives mid-typing), and
+  // split it into street/city/state underneath. Drop the cached coords — the address
+  // just changed and they may no longer match.
+  const updateAddress = (idx: number, text: string) => {
+    const p = parseAddress(text);
+    setStops((prev) => prev.map((s, i) => i === idx ? { ...s, ...p, text, lat: undefined, lng: undefined } : s));
+  };
+  // A picked suggestion gives the fields already split AND precise coords — take both
+  // (no need to wait for blur to re-geocode). The display text becomes the clean join.
+  const selectAddress = (idx: number, parts: AddressParts, lat: number, lng: number) => {
+    setStops((prev) => prev.map((s, i) => i === idx ? { ...s, ...parts, text: joinAddress(parts), lat, lng } : s));
     recalcSoon();
   };
+  const updateAppt = (idx: number, val: string) => setStops((p) => p.map((s, i) => i === idx ? { ...s, appt: val } : s));
 
   // Latest stops, so the debounced calc always reads fresh values (no stale closure).
   const stopsRef = useRef(stops);
   stopsRef.current = stops;
 
-  // The ordered list of non-empty cities — the only thing a mileage calc depends on.
-  const routeSig = (arr: Stop[]) => arr.filter((s) => s.city.trim()).map((s) => s.city.trim().toLowerCase()).join(" → ");
+  // The ordered list of non-empty addresses — the only thing a mileage calc depends on.
+  // Keyed on the full one-liner so a street/state change re-triggers the recalc, not just
+  // a city change (two stops in the same city but different streets are different points).
+  const routeSig = (arr: Stop[]) => arr.filter((s) => s.city.trim()).map((s) => joinAddress(s).toLowerCase()).join(" → ");
 
   // Guards so mileage recalculation is safe to trigger from anywhere:
   //  · runIdRef — only the newest run is allowed to write state (older runs bail out)
@@ -1083,18 +1148,21 @@ function LoadModal({ load, onClose, onSave, saving = false }: {
     setRecalcing(true);
     setMilesNote(null);
     try {
-      const resolved: Array<{ city: string; lat: number | null; lng: number | null }> = [];
+      // Geocode the full one-liner (street + city + state) — far more precise than the
+      // bare city, and the key we cache against.
+      const resolved: Array<{ key: string; lat: number | null; lng: number | null }> = [];
       for (const s of filled) {
-        if (s.lat != null && s.lng != null) { resolved.push({ city: s.city, lat: s.lat, lng: s.lng }); continue; }
-        const c = await geocodeCity(s.city, ctl.signal);
+        const key = joinAddress(s);
+        if (s.lat != null && s.lng != null) { resolved.push({ key, lat: s.lat, lng: s.lng }); continue; }
+        const c = await geocodeCity(key, ctl.signal);
         if (isStale()) return;                          // a newer run superseded us
-        resolved.push({ city: s.city, lat: c?.lat ?? null, lng: c?.lng ?? null });
+        resolved.push({ key, lat: c?.lat ?? null, lng: c?.lng ?? null });
       }
 
       // Cache freshly geocoded coords back onto the stops so we don't re-geocode them.
       setStops((prev) => prev.map((s) => {
         if (s.lat != null || !s.city.trim()) return s;
-        const hit = resolved.find((r) => r.lat != null && r.city === s.city);
+        const hit = resolved.find((r) => r.lat != null && r.key === joinAddress(s));
         return hit ? { ...s, lat: hit.lat!, lng: hit.lng! } : s;
       }));
 
@@ -1345,9 +1413,9 @@ function LoadModal({ load, onClose, onSave, saving = false }: {
                           {(isFirst || isLast) && <span style={{ color: "#EF4444", marginLeft: 2 }}>*</span>}
                         </div>
                         <AddressAutocomplete
-                          value={stop.city}
-                          onChange={(v) => updateCity(idx, v)}
-                          onCoords={(lat, lng) => updateCoords(idx, lat, lng)}
+                          value={stop.text ?? joinAddress(stop)}
+                          onChange={(v) => updateAddress(idx, v)}
+                          onSelect={(parts, lat, lng) => selectAddress(idx, parts, lat, lng)}
                           style={inputStyle}
                           onFocus={focusInput}
                           onBlur={(e) => { blurInput(e); recalcSoon(); }}
@@ -1598,7 +1666,7 @@ function LoadDetail({ load, onBack }: { load: Load; onBack: () => void }) {
 
               {/* Route card */}
               {(() => {
-                const waypoints = (load.stops ?? []).map((s) => ({ city: s.city, appt: s.appt, done: s.done ?? false }));
+                const waypoints = (load.stops ?? []).map((s) => ({ city: cityState(s) || s.city, appt: s.appt, done: s.done ?? false }));
                 const isLast = (i: number) => i === waypoints.length - 1;
                 return (
                   <div style={{ backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 12, padding: "20px 24px" }}>
@@ -1968,7 +2036,7 @@ export function LoadsPage() {
                                     textDecoration: isDone ? "line-through" : "none",
                                     fontWeight: isCurrent ? 500 : 400,
                                   }}>
-                                    {stop.city || "—"}
+                                    {cityState(stop) || "—"}
                                   </span>
                                 </div>
                               );

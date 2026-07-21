@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
-interface Suggestion {
-  display: string;   // "8900 N Sarival Ave Waddell, AZ" — or just "Waddell, AZ" for a city match
+export interface AddressParts { street: string; city: string; state: string }
+
+interface Suggestion extends AddressParts {
+  display: string;   // "8900 N Sarival Ave, Waddell, AZ" — or just "Waddell, AZ" for a city match
   lat: number;
   lng: number;
 }
@@ -10,6 +12,9 @@ interface Suggestion {
 interface Props {
   value: string;
   onChange: (val: string) => void;
+  // Fired when a suggestion is picked — carries the address already split into fields
+  // (ADR 0023), so the caller doesn't have to parse the display string back apart.
+  onSelect?: (parts: AddressParts, lat: number, lng: number) => void;
   onCoords?: (lat: number, lng: number) => void;
   placeholder?: string;
   style?: React.CSSProperties;
@@ -22,7 +27,7 @@ interface Props {
 // addresses, not just "City, ST" — while still letting the user type anything, since the
 // backend's stop `city` is free text. A picked suggestion also hands back coordinates so
 // mileage can be routed without a second geocode.
-export function AddressAutocomplete({ value, onChange, onCoords, placeholder = "Address or City, ST", style, onFocus, onBlur }: Props) {
+export function AddressAutocomplete({ value, onChange, onSelect, onCoords, placeholder = "Address or City, ST", style, onFocus, onBlur }: Props) {
   const inputRef                      = useRef<HTMLInputElement>(null);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [open, setOpen]               = useState(false);
@@ -52,10 +57,12 @@ export function AddressAutocomplete({ value, onChange, onCoords, placeholder = "
         const seen = new Set<string>();
         const results: Suggestion[] = [];
         for (const item of data) {
-          const display = composeAddress(item.address);
-          if (!display || seen.has(display)) continue;
+          const parts = composeAddress(item.address);
+          if (!parts) continue;
+          const display = joinParts(parts);
+          if (seen.has(display)) continue;
           seen.add(display);
-          results.push({ display, lat: parseFloat(item.lat), lng: parseFloat(item.lon) });
+          results.push({ ...parts, display, lat: parseFloat(item.lat), lng: parseFloat(item.lon) });
         }
         setSuggestions(results);
         setOpen(results.length > 0);
@@ -68,7 +75,8 @@ export function AddressAutocomplete({ value, onChange, onCoords, placeholder = "
   };
 
   const pick = (s: Suggestion) => {
-    onChange(s.display);
+    if (onSelect) onSelect({ street: s.street, city: s.city, state: s.state }, s.lat, s.lng);
+    else onChange(s.display); // back-compat for callers that only take a string
     onCoords?.(s.lat, s.lng);
     setSuggestions([]);
     setOpen(false);
@@ -154,17 +162,20 @@ export function AddressAutocomplete({ value, onChange, onCoords, placeholder = "
   );
 }
 
-// Build a rate-con-style label from Nominatim's structured address: street line + city,
-// then the two-letter state. Falls back to a city-only label when there's no street.
-function composeAddress(a: any): string {
-  if (!a) return "";
-  const line1 = [a.house_number, a.road].filter(Boolean).join(" ");
-  const place = a.city || a.town || a.village || a.hamlet || a.suburb || a.county || "";
-  const abbr  = STATE_ABBR[a.state] ?? a.state ?? "";
-  const tail  = [place, abbr].filter(Boolean).join(", ");
-  const display = [line1, tail].filter(Boolean).join(" ").trim();
-  // Need at least a place and a state for the board's origin/destination columns to read.
-  return place && abbr ? display : "";
+// Split Nominatim's structured address into the three fields the load stops now store
+// (ADR 0023). Null when it lacks a city + state — the board's origin/destination and
+// per-state reporting need both.
+function composeAddress(a: any): AddressParts | null {
+  if (!a) return null;
+  const street = [a.house_number, a.road].filter(Boolean).join(" ");
+  const city   = a.city || a.town || a.village || a.hamlet || a.suburb || a.county || "";
+  const state  = STATE_ABBR[a.state] ?? a.state ?? "";
+  return city && state ? { street, city, state } : null;
+}
+
+// The one-line form — must match how the backend joins a stop (street, city, state).
+function joinParts(p: AddressParts): string {
+  return [p.street, p.city, p.state].filter(Boolean).join(", ");
 }
 
 const STATE_ABBR: Record<string, string> = {

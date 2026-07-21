@@ -8,13 +8,20 @@ import { hasPerm } from "../lib/permissions";
 import { menuPosition } from "../lib/menuPosition";
 import { driverDisplayName } from "../lib/driverName";
 import { boardWsUrl } from "../lib/ws";
+import { cleanAppt } from "../lib/appt";
 import { UncompleteConfirm } from "./UncompleteConfirm";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type DriverType = "O/O" | "C/D";
 
-interface Stop { city: string; done: boolean; appt?: string; location?: { lat: number; lng: number }; }
+// ADR 0023: a stop's address is street/city/state; `city` is the city alone. The board
+// only DISPLAYS loads (never edits the route), so it shows the short city, state form.
+interface Stop { street?: string; city: string; state?: string; done: boolean; appt?: string; location?: { lat: number; lng: number }; }
+function cityState(s?: { city?: string; state?: string } | null): string {
+  if (!s) return "";
+  return [s.city, s.state].map((p) => (p ?? "").trim()).filter(Boolean).join(", ");
+}
 
 // The full current load carried on each board row (same shape as GET /loads)
 interface BoardLoad {
@@ -232,13 +239,14 @@ function fromBoardRow(r: BoardRow): Driver {
     trailer:     r.trailer      || "—",
     type:        (r.type as DriverType) || "O/O",
     status:      (r.status as Status)   || "ready",
-    origin:          (first?.city ?? r.origin) || "—",
+    // Show city, state only (not the street the dispatcher entered on create).
+    origin:          (cityState(first) || r.origin) || "—",
     originDone:      first?.done ?? false,
-    destination:     (last?.city ?? r.destination) || "—",
+    destination:     (cityState(last) || r.destination) || "—",
     destinationDone: last?.done ?? false,
     stops:           route.slice(1, -1),
-    pickupAppt:  r.pickup_appt  || "—",
-    dropAppt:    r.drop_appt    || "—",
+    pickupAppt:  cleanAppt(r.pickup_appt)  || "—",
+    dropAppt:    cleanAppt(r.drop_appt)    || "—",
     location:    r.location     || "—",
     etaKm:       r.eta_km,
     speedMph:    r.speed_mph,
@@ -471,28 +479,11 @@ function InlineCell({ value, onCommit, mono, fontSize = 12, color = "var(--foreg
 }
 
 // Inline-editable appointment (free-text, e.g. "07/08 · 08:00"). Read-only when disabled.
-function ApptEdit({ value, color, disabled, done, onCommit, onEditStart, onEditEnd }: {
-  value: string; color: string; disabled?: boolean; done?: boolean;
-  onCommit: (v: string) => void; onEditStart?: () => void; onEditEnd?: () => void;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState("");
-  const shown = value || "—";
-  const begin = () => { if (disabled) return; setDraft(value === "—" ? "" : value); setEditing(true); onEditStart?.(); };
-  const commit = () => { onCommit(draft.trim()); setEditing(false); onEditEnd?.(); };
-  const cancel = () => { setEditing(false); onEditEnd?.(); };
-  if (editing) {
-    return (
-      <input autoFocus value={draft} placeholder="MM/DD · HH:MM"
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); commit(); } if (e.key === "Escape") { e.stopPropagation(); cancel(); } }}
-        style={{ width: 90, border: "none", outline: "none", background: "transparent", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--foreground)", padding: 0, borderBottom: "1.5px solid var(--primary)" }}
-      />
-    );
-  }
+// Read-only appointment display. The route (stops + appts) is edited on the Loads page,
+// not the board — the board only shows it and ticks stops off as done.
+function ApptText({ value, color, done }: { value: string; color: string; done?: boolean }) {
   return (
-    <span onClick={begin} style={{ fontFamily: "var(--font-mono)", fontSize: 11, color, cursor: disabled ? "default" : "text", textDecoration: done ? "line-through" : "none" }}>{shown}</span>
+    <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color, textDecoration: done ? "line-through" : "none" }}>{value || "—"}</span>
   );
 }
 
@@ -522,24 +513,17 @@ function TickBtn({ done, isCurrent, canToggle, onToggle }: { done: boolean; isCu
   );
 }
 
-function StopList({ origin, originDone, destination, destinationDone, stops, onToggleOrigin, onToggleDestination, onToggleStop, onEditCity, onEditStart, onEditEnd, disabled = false }: {
+// The board shows the route read-only — stops are ticked off as done, but their
+// addresses are edited on the Loads page, not here (ADR 0023: the full address is three
+// fields, and the board only ever shows city, state).
+function StopList({ origin, originDone, destination, destinationDone, stops, onToggleOrigin, onToggleDestination, onToggleStop, disabled = false }: {
   origin: string; originDone?: boolean;
   destination: string; destinationDone?: boolean;
   stops?: Stop[];
   onToggleOrigin?: () => void; onToggleDestination?: () => void;
   onToggleStop?: (idx: number) => void;
-  // absIndex is the position in the full route (0 = origin … last = destination)
-  onEditCity?: (absIndex: number, city: string) => void;
-  onEditStart?: () => void; onEditEnd?: () => void;
   disabled?: boolean;
 }) {
-  const [editingIdx, setEditingIdx] = useState<number | null>(null);
-  const [draft, setDraft] = useState("");
-
-  const beginEdit = (idx: number, city: string) => { if (disabled) return; setDraft(city); setEditingIdx(idx); onEditStart?.(); };
-  const commitEdit = (idx: number) => { onEditCity?.(idx, draft.trim()); setEditingIdx(null); onEditEnd?.(); };
-  const cancelEdit = () => { setEditingIdx(null); onEditEnd?.(); };
-
   const labelStyle: React.CSSProperties = {
     fontFamily: "var(--font-mono)", fontSize: 9, fontWeight: 700,
     color: "var(--muted-foreground)", letterSpacing: "0.06em",
@@ -556,7 +540,7 @@ function StopList({ origin, originDone, destination, destinationDone, stops, onT
   // All stops as a flat list: origin, ...intermediates, destination
   const allStops = [
     { city: origin,      done: originDone ?? false,      onToggle: onToggleOrigin,      isOrigin: true  },
-    ...(stops ?? []).map((s, i) => ({ city: s.city, done: s.done, onToggle: () => onToggleStop?.(i), isOrigin: false })),
+    ...(stops ?? []).map((s, i) => ({ city: cityState(s) || s.city, done: s.done, onToggle: () => onToggleStop?.(i), isOrigin: false })),
     { city: destination, done: destinationDone ?? false, onToggle: onToggleDestination, isOrigin: false },
   ];
 
@@ -572,22 +556,7 @@ function StopList({ origin, originDone, destination, destinationDone, stops, onT
           <div key={idx} style={{ display: "flex", alignItems: "center", gap: 5 }}>
             <span style={labelStyle}>#{idx + 1}</span>
             <TickBtn done={stop.done} isCurrent={isCurrent} canToggle={canToggle} onToggle={canToggle ? stop.onToggle : undefined} />
-            {editingIdx === idx ? (
-              <input autoFocus value={draft} onChange={(e) => setDraft(e.target.value)}
-                onBlur={() => commitEdit(idx)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") { e.preventDefault(); commitEdit(idx); }
-                  if (e.key === "Escape") cancelEdit();
-                }}
-                style={{ border: "none", outline: "none", background: "transparent", fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--foreground)", padding: 0, flex: 1, borderBottom: "1.5px solid var(--primary)" }} />
-            ) : (
-              <span
-                onClick={() => beginEdit(idx, stop.city)}
-                style={{ ...textStyle(stop.done, isCurrent), cursor: disabled ? "default" : "text" }}
-              >
-                {stop.city || "—"}
-              </span>
-            )}
+            <span style={textStyle(stop.done, isCurrent)}>{stop.city || "—"}</span>
           </div>
         );
       })}
@@ -1199,46 +1168,6 @@ export function DispatchTable() {
     }
   };
 
-  // ── Edit a stop's city/appt (persists via the load, unlike a driver PUT) ────
-  // Route edits must go through PUT /loads — a driver PUT ignores stops. Given the full
-  // ordered route (loadRaw.stops matches [origin, …intermediates, destination]), replace
-  // one stop's field and re-derive the board row optimistically, then persist.
-  const editStop = async (driverId: string, absIndex: number, changes: Partial<Stop>) => {
-    const driver = rows.find((d) => d.driverId === driverId);
-    const load = driver?.loadRaw;
-    if (!driver || !load?.id) return;
-    const raw = (load.stops ?? []) as Stop[];
-    if (absIndex < 0 || absIndex >= raw.length) return;
-    const fullStops = raw.map((s, i) => {
-      if (i !== absIndex) return s;
-      const next = { ...s, ...changes };
-      // A stop's `location` is the geocode of its city. Rename the city and those coords
-      // now point at the wrong place — and nothing on the board re-geocodes, so they'd
-      // stick and quietly skew the load's mileage. Drop them; the Loads page geocodes
-      // the stop again next time the load is opened.
-      if (changes.city !== undefined && changes.city !== s.city) delete next.location;
-      return next;
-    });
-
-    const first = fullStops[0];
-    const last  = fullStops.length > 1 ? fullStops[fullStops.length - 1] : undefined;
-    const derived: Partial<Driver> = {
-      origin:          (first?.city ?? "") || "—",
-      destination:     (last?.city ?? "") || "—",
-      stops:           fullStops.slice(1, -1),
-      pickupAppt:      (first?.appt ?? "") || "—",
-      dropAppt:        (last?.appt ?? "") || "—",
-      loadRaw:         { ...load, stops: fullStops },
-    };
-    setRows((prev) => prev.map((d) => (d.driverId === driverId ? { ...d, ...derived } : d)));
-    try {
-      await api.put(`/loads/${load.id}`, { ...load, stops: fullStops });
-    } catch (e) {
-      setRows((prev) => prev.map((d) => (d.driverId === driverId ? driver : d)));
-      setToast(e instanceof Error ? e.message : "Couldn't save the route — reverted.");
-    }
-  };
-
   // ── Complete the driver's load ────────────────────────────────────────────
   // Setting the status to "completed" on the board completes the current load. Per the
   // API, completing a load runs the whole lifecycle (stamps completed_at, writes a
@@ -1678,16 +1607,12 @@ export function DispatchTable() {
                         destinationDone={driver.destinationDone}
                         stops={driver.stops}
                         disabled={noLoadEdit}
-                        onEditStart={() => claimLock(driver.driverId)}
-                        onEditEnd={() => releaseLock(driver.driverId)}
                         onToggleOrigin={() => patchLoad(driver.driverId, driver.stops ?? [], !driver.originDone, driver.destinationDone ?? false)}
                         onToggleDestination={() => patchLoad(driver.driverId, driver.stops ?? [], driver.originDone ?? false, !driver.destinationDone)}
                         onToggleStop={(idx) => {
                           const updated = (driver.stops ?? []).map((s, i) => i === idx ? { ...s, done: !s.done } : s);
                           patchLoad(driver.driverId, updated, driver.originDone ?? false, driver.destinationDone ?? false);
                         }}
-                        // absIndex is the position in the full route — persist via the load
-                        onEditCity={(absIndex, city) => editStop(driver.driverId, absIndex, { city })}
                       />
                       )}
                     </td>
@@ -1707,9 +1632,7 @@ export function DispatchTable() {
                             {/* #1 pickup → route index 0 */}
                             <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
                               <span style={{ ...labelStyle, color: "var(--muted-foreground)" }}>#1</span>
-                              <ApptEdit value={driver.pickupAppt} color={driver.pickupAppt === "—" || pickupDone ? "var(--muted-foreground)" : "var(--foreground)"} done={pickupDone} disabled={noLoadEdit}
-                                onEditStart={() => claimLock(driver.driverId)} onEditEnd={() => releaseLock(driver.driverId)}
-                                onCommit={(v) => editStop(driver.driverId, 0, { appt: v })} />
+                              <ApptText value={driver.pickupAppt} color={driver.pickupAppt === "—" || pickupDone ? "var(--muted-foreground)" : "var(--foreground)"} done={pickupDone} />
                             </div>
                             {/* intermediate stops → route index idx+1 */}
                             {stops.map((stop, idx) => {
@@ -1718,9 +1641,7 @@ export function DispatchTable() {
                               return (
                                 <div key={idx} style={{ display: "flex", alignItems: "center", gap: 5 }}>
                                   <span style={{ ...labelStyle, color: "var(--muted-foreground)" }}>#{idx + 2}</span>
-                                  <ApptEdit value={stop.appt || "—"} color={stop.done || !stop.appt ? "var(--muted-foreground)" : isCurrent ? "var(--foreground)" : "var(--muted-foreground)"} done={stop.done} disabled={noLoadEdit}
-                                    onEditStart={() => claimLock(driver.driverId)} onEditEnd={() => releaseLock(driver.driverId)}
-                                    onCommit={(v) => editStop(driver.driverId, idx + 1, { appt: v })} />
+                                  <ApptText value={cleanAppt(stop.appt) || "—"} color={stop.done || !stop.appt ? "var(--muted-foreground)" : isCurrent ? "var(--foreground)" : "var(--muted-foreground)"} done={stop.done} />
                                 </div>
                               );
                             })}
@@ -1728,9 +1649,7 @@ export function DispatchTable() {
                             {driver.dropAppt !== "—" && (
                               <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
                                 <span style={{ ...labelStyle, color: "var(--muted-foreground)" }}>#{destNum}</span>
-                                <ApptEdit value={driver.dropAppt} color={destDone ? "var(--muted-foreground)" : "var(--foreground)"} done={destDone} disabled={noLoadEdit}
-                                  onEditStart={() => claimLock(driver.driverId)} onEditEnd={() => releaseLock(driver.driverId)}
-                                  onCommit={(v) => editStop(driver.driverId, stops.length + 1, { appt: v })} />
+                                <ApptText value={driver.dropAppt} color={destDone ? "var(--muted-foreground)" : "var(--foreground)"} done={destDone} />
                               </div>
                             )}
                           </div>
