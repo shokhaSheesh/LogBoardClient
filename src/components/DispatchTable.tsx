@@ -487,19 +487,27 @@ function ApptText({ value, color, done }: { value: string; color: string; done?:
   );
 }
 
-// "<broker> - <load id>" where the broker truncates with an ellipsis if it's long, but
-// the id is never cut off — the broker gets whatever width the id leaves. Sized by the
-// caller's font styles; used for the current load and each queued one.
+// Keep the broker short on the board: just its first word, then "…". If that first word
+// is itself long (a run-on name with no spaces), cut it at 10 characters. The full name
+// is always in the tooltip.
+function shortBroker(b: string): string {
+  const t = b.trim();
+  const sp = t.indexOf(" ");
+  if (sp === -1) return t.length > 10 ? t.slice(0, 10) + "…" : t;      // one word
+  const first = t.slice(0, sp);
+  return (first.length > 10 ? first.slice(0, 10) : first) + "…";       // first word of many
+}
+
+// "<broker> - <load id>", broker shortened via shortBroker so the id is never crowded
+// out. Sized by the caller's font styles; used for the current load and each queued one.
 function BrokerLoadId({ broker, loadId, color, size, weight }: {
   broker?: string; loadId: string; color: string; size: number; weight: number;
 }) {
   return (
     <span title={broker ? `${broker} - ${loadId}` : loadId}
-      style={{ display: "flex", alignItems: "baseline", minWidth: 0, fontFamily: "var(--font-mono)", fontSize: size, fontWeight: weight, color }}>
-      {broker && (
-        <span style={{ color: "var(--muted-foreground)", fontWeight: 400, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{broker}</span>
-      )}
-      <span style={{ flexShrink: 0, whiteSpace: "nowrap" }}>{broker ? " - " : ""}{loadId}</span>
+      style={{ display: "block", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", fontFamily: "var(--font-mono)", fontSize: size, fontWeight: weight, color }}>
+      {broker && <span style={{ color: "var(--muted-foreground)", fontWeight: 400 }}>{shortBroker(broker)} - </span>}
+      {loadId}
     </span>
   );
 }
