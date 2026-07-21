@@ -62,6 +62,10 @@ function ImageSlideshow() {
         key={current}
         src={slide.url}
         alt={slide.label}
+        // First slide is the LCP element — fetch it eagerly at high priority; decode off
+        // the main thread so it never blocks the login form rendering.
+        fetchPriority={current === 0 ? "high" : "auto"}
+        decoding="async"
         style={{
           position: "absolute", inset: 0, width: "100%", height: "100%",
           objectFit: "cover", objectPosition: "center",
