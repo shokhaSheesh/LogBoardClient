@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { useNavigate } from "react-router";
 import { createPortal } from "react-dom";
 import { MapPin, Lock, MessageSquare, ChevronDown, Search, Navigation, Check, ArrowRight, History, X, AlertCircle, RotateCcw, Users, Rows3, ExternalLink, Copy } from "lucide-react";
 import { Status, STATUS_CONFIG, ALL_STATUSES } from "../lib/statuses";
@@ -500,12 +501,16 @@ function shortBroker(b: string): string {
 
 // "<broker> - <load id>", broker shortened via shortBroker so the id is never crowded
 // out. Sized by the caller's font styles; used for the current load and each queued one.
-function BrokerLoadId({ broker, loadId, color, size, weight }: {
-  broker?: string; loadId: string; color: string; size: number; weight: number;
+// When onOpen is given, clicking it jumps to that load's edit modal on the Loads page.
+function BrokerLoadId({ broker, loadId, color, size, weight, onOpen }: {
+  broker?: string; loadId: string; color: string; size: number; weight: number; onOpen?: () => void;
 }) {
   return (
     <span title={broker ? `${broker} - ${loadId}` : loadId}
-      style={{ display: "block", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", fontFamily: "var(--font-mono)", fontSize: size, fontWeight: weight, color }}>
+      onClick={onOpen}
+      style={{ display: "block", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", fontFamily: "var(--font-mono)", fontSize: size, fontWeight: weight, color, cursor: onOpen ? "pointer" : "default", textDecoration: onOpen ? "underline" : "none", textDecorationColor: "transparent", transition: "text-decoration-color 0.12s" }}
+      onMouseEnter={onOpen ? (e) => { (e.currentTarget as HTMLElement).style.textDecorationColor = "currentColor"; } : undefined}
+      onMouseLeave={onOpen ? (e) => { (e.currentTarget as HTMLElement).style.textDecorationColor = "transparent"; } : undefined}>
       {broker && <span style={{ color: "var(--muted-foreground)", fontWeight: 400 }}>{shortBroker(broker)} - </span>}
       {loadId}
     </span>
@@ -886,6 +891,10 @@ export function DispatchTable() {
   const companyId = getCompanyId();
   const { user } = useAuth();
   const currentUserId = user?.id;
+  const navigate = useNavigate();
+  // Click a load on the board → open it in the Loads page edit modal (route edits live
+  // there now, not on the board). Needs the load's UUID, not its display ref.
+  const openLoad = (loadUuid?: string) => { if (loadUuid) navigate(`/workspace/loads?edit=${loadUuid}`); };
   // The board reads on board.read, but its inline edits write to /drivers and /loads —
   // so gate the driver-field controls (status, type, comment) on drivers.update and the
   // route/appt controls on loads.update. Without this a read-only role sees editable
@@ -1577,7 +1586,7 @@ export function DispatchTable() {
                     <td style={td({ position: "sticky", left: LOAD_ID_LEFT, zIndex: 3, width: 200, minWidth: 200, borderRight: border })}>
                       <span className="cp-wrap" style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0 }}>
                         <span style={{ flex: 1, minWidth: 0 }}>
-                          <BrokerLoadId broker={driver.loadRaw?.broker} loadId={driver.loadId} color="var(--primary)" size={12} weight={500} />
+                          <BrokerLoadId broker={driver.loadRaw?.broker} loadId={driver.loadId} color="var(--primary)" size={12} weight={500} onOpen={driver.loadUuid ? () => openLoad(driver.loadUuid) : undefined} />
                         </span>
                         {driver.loadId && driver.loadId !== "—" && <CopyBtn value={driver.loadId} />}
                       </span>
@@ -1590,7 +1599,7 @@ export function DispatchTable() {
                         return (
                           <div style={{ marginTop: 2, display: "flex", flexDirection: "column", gap: 1 }}>
                             {shown.map((q) => (
-                              <BrokerLoadId key={q.id} broker={q.broker} loadId={q.loadId} color="#F59E0B" size={11} weight={600} />
+                              <BrokerLoadId key={q.id} broker={q.broker} loadId={q.loadId} color="#F59E0B" size={11} weight={600} onOpen={() => openLoad(q.id)} />
                             ))}
                             {overflow > 0 && (
                               <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--muted-foreground)", opacity: 0.75 }}>+{overflow} more</span>

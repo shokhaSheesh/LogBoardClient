@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { useSearchParams } from "react-router";
 import { createPortal } from "react-dom";
 import {
   Package, Plus, Pencil, Trash2, X, Check, AlertCircle,
@@ -1764,6 +1765,7 @@ function LoadDetail({ load, onBack }: { load: Load; onBack: () => void }) {
 
 export function LoadsPage() {
   const { user } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
   const canCreate = hasPerm(user, "loads", "create");
   const canUpdate = hasPerm(user, "loads", "update");
   const canDelete = hasPerm(user, "loads", "delete");
@@ -1791,6 +1793,19 @@ export function LoadsPage() {
     const t = setTimeout(() => setToast(null), 3500);
     return () => clearTimeout(t);
   }, [toast]);
+
+  // Deep-link from the board: /workspace/loads?edit=<load id> fetches that one load and
+  // opens it straight into the edit modal, then strips the param so a refresh/back doesn't
+  // reopen it. Lets a dispatcher jump from a board row to editing its route.
+  useEffect(() => {
+    const id = searchParams.get("edit");
+    if (!id) return;
+    setSearchParams((p) => { p.delete("edit"); return p; }, { replace: true });
+    api.get<BackendLoad>(`/loads/${id}`)
+      .then((b) => { setEditing(toLoad(b)); setModal("edit"); })
+      .catch((e) => setToast({ type: "error", msg: isForbidden(e) ? "You can't edit that load." : "Couldn't open that load." }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   useEffect(() => {
     const t = setTimeout(() => { setDebouncedSearch(search); setPage(1); }, 250);
