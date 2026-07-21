@@ -75,7 +75,7 @@ interface BoardRow {
   speed_mph: number | null;
   eld?: EldBlock | null;
   comments: string;
-  next_loads?: { id: string; load_id: string; origin?: string; destination?: string; pickup_appt?: string; drop_appt?: string }[];
+  next_loads?: { id: string; load_id: string; broker?: string; origin?: string; destination?: string; pickup_appt?: string; drop_appt?: string }[];
   last_update: string;
 }
 
@@ -85,7 +85,7 @@ interface Driver {
   loadId: string;        // display ref like "LD-00481"
   loadUuid?: string;     // actual UUID for PUT /loads/:id
   loadRaw?: BoardLoad;   // full load object — PUT base for stop toggles (no refetch)
-  nextLoads?: { id: string; loadId: string; origin?: string; destination?: string }[]; // upcoming queue, from the board row directly
+  nextLoads?: { id: string; loadId: string; broker?: string; origin?: string; destination?: string }[]; // upcoming queue, from the board row directly
   name: string;          // raw first-driver name — kept separate for inline editing
   phone: string;
   team?: boolean;
@@ -229,7 +229,7 @@ function fromBoardRow(r: BoardRow): Driver {
     loadId:      r.load_id      || "—",
     loadUuid:    r.load?.id,
     loadRaw:     r.load ?? undefined,
-    nextLoads:   (r.next_loads ?? []).map((q) => ({ id: q.id, loadId: q.load_id, origin: q.origin, destination: q.destination })),
+    nextLoads:   (r.next_loads ?? []).map((q) => ({ id: q.id, loadId: q.load_id, broker: q.broker, origin: q.origin, destination: q.destination })),
     name:        r.name         || "—",
     phone:       r.phone        || "—",
     team:        r.team         ?? false,
@@ -484,6 +484,23 @@ function InlineCell({ value, onCommit, mono, fontSize = 12, color = "var(--foreg
 function ApptText({ value, color, done }: { value: string; color: string; done?: boolean }) {
   return (
     <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color, textDecoration: done ? "line-through" : "none" }}>{value || "—"}</span>
+  );
+}
+
+// "<broker> - <load id>" where the broker truncates with an ellipsis if it's long, but
+// the id is never cut off — the broker gets whatever width the id leaves. Sized by the
+// caller's font styles; used for the current load and each queued one.
+function BrokerLoadId({ broker, loadId, color, size, weight }: {
+  broker?: string; loadId: string; color: string; size: number; weight: number;
+}) {
+  return (
+    <span title={broker ? `${broker} - ${loadId}` : loadId}
+      style={{ display: "flex", alignItems: "baseline", minWidth: 0, fontFamily: "var(--font-mono)", fontSize: size, fontWeight: weight, color }}>
+      {broker && (
+        <span style={{ color: "var(--muted-foreground)", fontWeight: 400, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{broker}</span>
+      )}
+      <span style={{ flexShrink: 0, whiteSpace: "nowrap" }}>{broker ? " - " : ""}{loadId}</span>
+    </span>
   );
 }
 
@@ -1512,13 +1529,7 @@ export function DispatchTable() {
                     {/* Load ID — sticky, read-only. Upcoming queued loads render below,
                         smaller and muted, so they read as "next" rather than current. */}
                     <td style={td({ position: "sticky", left: LOAD_ID_LEFT, zIndex: 3, width: 200, minWidth: 200, borderRight: border })}>
-                      <span title={driver.loadRaw?.broker ? `${driver.loadRaw.broker} - ${driver.loadId}` : driver.loadId}
-                        style={{ display: "block", fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 500, color: "var(--primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                        {driver.loadRaw?.broker && (
-                          <span style={{ color: "var(--muted-foreground)", fontWeight: 400 }}>{driver.loadRaw.broker} - </span>
-                        )}
-                        {driver.loadId}
-                      </span>
+                      <BrokerLoadId broker={driver.loadRaw?.broker} loadId={driver.loadId} color="var(--primary)" size={12} weight={500} />
                       {(() => {
                         const queue = driver.nextLoads ?? [];
                         if (queue.length === 0) return null;
@@ -1528,9 +1539,7 @@ export function DispatchTable() {
                         return (
                           <div style={{ marginTop: 2, display: "flex", flexDirection: "column", gap: 1 }}>
                             {shown.map((q) => (
-                              <span key={q.id} title={`Next up: ${q.loadId}${q.origin && q.destination ? ` (${q.origin} → ${q.destination})` : ""}`} style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 600, color: "#F59E0B", whiteSpace: "nowrap" }}>
-                                {q.loadId}
-                              </span>
+                              <BrokerLoadId key={q.id} broker={q.broker} loadId={q.loadId} color="#F59E0B" size={11} weight={600} />
                             ))}
                             {overflow > 0 && (
                               <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--muted-foreground)", opacity: 0.75 }}>+{overflow} more</span>
