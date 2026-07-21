@@ -23,6 +23,12 @@ function cityState(s?: { city?: string; state?: string } | null): string {
   if (!s) return "";
   return [s.city, s.state].map((p) => (p ?? "").trim()).filter(Boolean).join(", ");
 }
+// Full address (street, city, state) — what a stop's copy button yields. Falls back to
+// city, state when no street was entered.
+function joinFull(s?: { street?: string; city?: string; state?: string } | null): string {
+  if (!s) return "";
+  return [s.street, s.city, s.state].map((p) => (p ?? "").trim()).filter(Boolean).join(", ");
+}
 
 // The full current load carried on each board row (same shape as GET /loads)
 interface BoardLoad {
@@ -581,10 +587,13 @@ function TickBtn({ done, isCurrent, canToggle, onToggle }: { done: boolean; isCu
 // The board shows the route read-only — stops are ticked off as done, but their
 // addresses are edited on the Loads page, not here (ADR 0023: the full address is three
 // fields, and the board only ever shows city, state).
-function StopList({ origin, originDone, destination, destinationDone, stops, onToggleOrigin, onToggleDestination, onToggleStop, disabled = false }: {
+function StopList({ origin, originDone, destination, destinationDone, stops, originStop, destinationStop, onToggleOrigin, onToggleDestination, onToggleStop, disabled = false }: {
   origin: string; originDone?: boolean;
   destination: string; destinationDone?: boolean;
   stops?: Stop[];
+  // Full origin/destination stops (with street) — the intermediates already carry it.
+  // Used only for the copy value; display stays city, state.
+  originStop?: Stop; destinationStop?: Stop;
   onToggleOrigin?: () => void; onToggleDestination?: () => void;
   onToggleStop?: (idx: number) => void;
   disabled?: boolean;
@@ -602,11 +611,12 @@ function StopList({ origin, originDone, destination, destinationDone, stops, onT
     fontWeight: isCurrent && !done ? 500 : 400,
   });
 
-  // All stops as a flat list: origin, ...intermediates, destination
+  // All stops as a flat list: origin, ...intermediates, destination. `copy` is the FULL
+  // address (street, city, state), `city` the short form we show.
   const allStops = [
-    { city: origin,      done: originDone ?? false,      onToggle: onToggleOrigin,      isOrigin: true  },
-    ...(stops ?? []).map((s, i) => ({ city: cityState(s) || s.city, done: s.done, onToggle: () => onToggleStop?.(i), isOrigin: false })),
-    { city: destination, done: destinationDone ?? false, onToggle: onToggleDestination, isOrigin: false },
+    { city: origin,      copy: joinFull(originStop) || origin,           done: originDone ?? false,      onToggle: onToggleOrigin },
+    ...(stops ?? []).map((s, i) => ({ city: cityState(s) || s.city, copy: joinFull(s) || s.city, done: s.done, onToggle: () => onToggleStop?.(i) })),
+    { city: destination, copy: joinFull(destinationStop) || destination, done: destinationDone ?? false, onToggle: onToggleDestination },
   ];
 
   return (
@@ -618,10 +628,11 @@ function StopList({ origin, originDone, destination, destinationDone, stops, onT
         const canToggle = !disabled && (stop.done || prevDone);
 
         return (
-          <div key={idx} style={{ display: "flex", alignItems: "center", gap: 5 }}>
+          <div key={idx} className="cp-wrap" style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0 }}>
             <span style={labelStyle}>#{idx + 1}</span>
             <TickBtn done={stop.done} isCurrent={isCurrent} canToggle={canToggle} onToggle={canToggle ? stop.onToggle : undefined} />
-            <span style={textStyle(stop.done, isCurrent)}>{stop.city || "—"}</span>
+            <span style={{ ...textStyle(stop.done, isCurrent), flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{stop.city || "—"}</span>
+            {stop.city && stop.city !== "—" && <CopyBtn value={stop.copy} />}
           </div>
         );
       })}
@@ -1588,7 +1599,11 @@ export function DispatchTable() {
                         <span style={{ flex: 1, minWidth: 0 }}>
                           <BrokerLoadId broker={driver.loadRaw?.broker} loadId={driver.loadId} color="var(--primary)" size={12} weight={500} onOpen={driver.loadUuid ? () => openLoad(driver.loadUuid) : undefined} />
                         </span>
-                        {driver.loadId && driver.loadId !== "—" && <CopyBtn value={driver.loadId} />}
+                        {/* Copy the FULL broker (no "…" truncation) + id, even though the
+                            cell shows a shortened broker. */}
+                        {driver.loadId && driver.loadId !== "—" && (
+                          <CopyBtn value={driver.loadRaw?.broker ? `${driver.loadRaw.broker} - ${driver.loadId}` : driver.loadId} />
+                        )}
                       </span>
                       {(() => {
                         const queue = driver.nextLoads ?? [];
@@ -1671,6 +1686,8 @@ export function DispatchTable() {
                         destination={driver.destination}
                         destinationDone={driver.destinationDone}
                         stops={driver.stops}
+                        originStop={driver.loadRaw?.stops?.[0]}
+                        destinationStop={(driver.loadRaw?.stops?.length ?? 0) > 1 ? driver.loadRaw!.stops![driver.loadRaw!.stops!.length - 1] : undefined}
                         disabled={noLoadEdit}
                         onToggleOrigin={() => patchLoad(driver.driverId, driver.stops ?? [], !driver.originDone, driver.destinationDone ?? false)}
                         onToggleDestination={() => patchLoad(driver.driverId, driver.stops ?? [], driver.originDone ?? false, !driver.destinationDone)}
