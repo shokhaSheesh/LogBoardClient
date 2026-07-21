@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
-import { MapPin, Lock, MessageSquare, ChevronDown, Search, Navigation, Check, ArrowRight, History, X, AlertCircle, RotateCcw, Users, Rows3, ExternalLink } from "lucide-react";
+import { MapPin, Lock, MessageSquare, ChevronDown, Search, Navigation, Check, ArrowRight, History, X, AlertCircle, RotateCcw, Users, Rows3, ExternalLink, Copy } from "lucide-react";
 import { Status, STATUS_CONFIG, ALL_STATUSES } from "../lib/statuses";
 import { api, getCompanyId, ApiError } from "../lib/api";
 import { useAuth } from "../lib/auth";
@@ -508,6 +508,41 @@ function BrokerLoadId({ broker, loadId, color, size, weight }: {
       style={{ display: "block", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", fontFamily: "var(--font-mono)", fontSize: size, fontWeight: weight, color }}>
       {broker && <span style={{ color: "var(--muted-foreground)", fontWeight: 400 }}>{shortBroker(broker)} - </span>}
       {loadId}
+    </span>
+  );
+}
+
+// A copy-to-clipboard affordance that stays hidden until you hover the value (the board
+// is dense — always-on icons would be noise). Opacity is driven by the `.cp-*` CSS rules
+// below, not inline, so the :hover rule can win. Flips to a green check for a moment.
+function CopyBtn({ value }: { value: string }) {
+  const [done, setDone] = useState(false);
+  const copy = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    navigator.clipboard?.writeText(value)
+      .then(() => { setDone(true); setTimeout(() => setDone(false), 1100); })
+      .catch(() => {});
+  };
+  return (
+    <button type="button" title="Copy" onClick={copy}
+      className={`cp-btn${done ? " cp-done" : ""}`}
+      style={{ flexShrink: 0, display: "inline-flex", alignItems: "center", border: "none", background: "none", cursor: "pointer", padding: 0, color: done ? "#10B981" : "var(--muted-foreground)" }}>
+      {done ? <Check size={11} /> : <Copy size={11} />}
+    </button>
+  );
+}
+
+// One value + its hover copy button, laid out so the value truncates and the button never
+// does. `mono`/size/color/weight style the value text.
+function Copyable({ value, display, size = 12, color = "var(--foreground)", weight = 400, mono = false }: {
+  value: string; display?: string; size?: number; color?: string; weight?: number; mono?: boolean;
+}) {
+  return (
+    <span className="cp-wrap" style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0 }}>
+      <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: mono ? "var(--font-mono)" : "var(--font-sans)", fontSize: size, fontWeight: weight, color }}>
+        {display ?? value}
+      </span>
+      <CopyBtn value={value} />
     </span>
   );
 }
@@ -1291,6 +1326,9 @@ export function DispatchTable() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+      {/* Copy buttons stay hidden until their value is hovered — via CSS so :hover beats
+          the default (inline opacity would win and never let the rule show it). */}
+      <style>{`.cp-btn{opacity:0;transition:opacity .12s} .cp-wrap:hover .cp-btn{opacity:1} .cp-btn.cp-done{opacity:1}`}</style>
       {toast && (
         <div style={{ position: "fixed", top: 20, right: 20, zIndex: 10000, display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", borderRadius: 8, backgroundColor: "var(--card)", border: "1px solid #EF4444", boxShadow: "0 10px 30px rgba(0,0,0,0.16)", maxWidth: 360 }}>
           <AlertCircle size={15} style={{ color: "#EF4444", flexShrink: 0 }} />
@@ -1537,7 +1575,12 @@ export function DispatchTable() {
                     {/* Load ID — sticky, read-only. Upcoming queued loads render below,
                         smaller and muted, so they read as "next" rather than current. */}
                     <td style={td({ position: "sticky", left: LOAD_ID_LEFT, zIndex: 3, width: 200, minWidth: 200, borderRight: border })}>
-                      <BrokerLoadId broker={driver.loadRaw?.broker} loadId={driver.loadId} color="var(--primary)" size={12} weight={500} />
+                      <span className="cp-wrap" style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0 }}>
+                        <span style={{ flex: 1, minWidth: 0 }}>
+                          <BrokerLoadId broker={driver.loadRaw?.broker} loadId={driver.loadId} color="var(--primary)" size={12} weight={500} />
+                        </span>
+                        {driver.loadId && driver.loadId !== "—" && <CopyBtn value={driver.loadId} />}
+                      </span>
                       {(() => {
                         const queue = driver.nextLoads ?? [];
                         if (queue.length === 0) return null;
@@ -1559,9 +1602,11 @@ export function DispatchTable() {
 
                     {/* Driver Name — sticky, read-only. Shows a "being edited by X" note when locked. */}
                     <td style={td({ position: "sticky", left: DRIVER_NM_LEFT, zIndex: 3, width: 180, minWidth: 180, borderRight: border, boxShadow: "2px 0 5px rgba(0,0,0,0.07)" })}>
-                      <span style={{ fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", display: "block", fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--foreground)" }}>
-                        {driver.team ? driverDisplayName({ name: driver.name, name2: driver.name2, team: driver.team }) : driver.name}
-                      </span>
+                      {/* Team drivers show each name on its own copyable line. */}
+                      <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                        <Copyable value={driver.name} size={12} weight={500} />
+                        {driver.team && driver.name2 && <Copyable value={driver.name2} size={12} weight={500} />}
+                      </div>
                       {isLockedByOther && (
                         <span style={{ display: "inline-flex", alignItems: "center", gap: 3, marginTop: 2, fontFamily: "var(--font-sans)", fontSize: 10, color: lockColor, whiteSpace: "nowrap" }}>
                           <Lock size={9} /> Editing by {lock!.holder_name}
@@ -1574,31 +1619,25 @@ export function DispatchTable() {
                       )}
                     </td>
 
-                    {/* Phone — read-only (team drivers show both contacts) */}
-                    <td style={td({ borderRight: border })}>
-                      {driver.team ? (
-                        <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                          <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--muted-foreground)", whiteSpace: "nowrap" }}>{driver.phone}</span>
-                          {driver.phone2 && <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--muted-foreground)", whiteSpace: "nowrap" }}>{driver.phone2}</span>}
-                        </div>
-                      ) : (
-                        <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--muted-foreground)", whiteSpace: "nowrap" }}>{driver.phone}</span>
-                      )}
-                    </td>
-
-                    {/* Unit (+ trailer below, only when the driver actually has one) */}
+                    {/* Phone — read-only (team drivers show both contacts, each copyable) */}
                     <td style={td({ borderRight: border })}>
                       <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                        <Copyable value={driver.phone} size={11} color="var(--muted-foreground)" mono />
+                        {driver.team && driver.phone2 && <Copyable value={driver.phone2} size={11} color="var(--muted-foreground)" mono />}
+                      </div>
+                    </td>
+
+                    {/* Unit (+ trailer below) — each copyable when it's a real value */}
+                    <td style={td({ borderRight: border })}>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0 }}>
                           {isLockedByOther && <Lock size={10} style={{ color: lockColor, flexShrink: 0 }} />}
-                          <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 500, color: isLockedByOther ? lockColor : "var(--foreground)" }}>
-                            {driver.unit}
-                          </span>
+                          {driver.unit && driver.unit !== "—"
+                            ? <Copyable value={driver.unit} size={11} weight={500} color={isLockedByOther ? lockColor : "var(--foreground)"} mono />
+                            : <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--muted-foreground)" }}>—</span>}
                         </div>
                         {driver.trailer && driver.trailer !== "—" && (
-                          <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--muted-foreground)", whiteSpace: "nowrap" }}>
-                            {driver.trailer}
-                          </span>
+                          <Copyable value={driver.trailer} size={10} color="var(--muted-foreground)" mono />
                         )}
                       </div>
                     </td>
