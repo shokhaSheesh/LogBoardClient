@@ -13,7 +13,7 @@ import {
   X, Check, Search, ChevronDown, ChevronLeft, ChevronRight,
   ClipboardList, FileSpreadsheet, Radio, Upload, FileText,
   ArrowLeft, Phone, Truck, DollarSign, Route, Package, TrendingUp,
-  AlertCircle, GripVertical,
+  AlertCircle, GripVertical, ExternalLink,
 } from "lucide-react";
 
 type DriverStatus = Status;
@@ -37,6 +37,8 @@ const PAY_TYPE_OPTS = [
 interface SoloDriver {
   id: string; name: string; phone: string; type: DriverType;
   status: DriverStatus; truck: string; trailer: string; location: string; comment: string;
+  eldLocation?: string; // truck's own location from the ELD (read-only); preferred over the typed one
+  eldLat?: number; eldLng?: number; // the truck's coords, for the Google Maps link
   truckId?: string;    // assigned truck's id — settable (tri-state: "" unassigns)
   trailerId?: string;  // assigned trailer's id — settable (tri-state: "" unassigns)
   weeklyGrossTarget?: number;
@@ -52,6 +54,8 @@ interface SoloDriver {
 interface TeamDriver {
   id: string; name1: string; name2: string; phone1: string; phone2: string;
   type: DriverType; status: DriverStatus; truck: string; trailer: string; location: string; comment: string;
+  eldLocation?: string; // truck's own location from the ELD (read-only); preferred over the typed one
+  eldLat?: number; eldLng?: number; // the truck's coords, for the Google Maps link
   truckId?: string;
   trailerId?: string;
   weeklyGrossTarget?: number;
@@ -79,6 +83,9 @@ function toSolo(d: any): SoloDriver {
     truckId: d.truck_id ?? "",
     trailerId: d.trailer_id ?? "",
     location: d.location ?? "",
+    eldLocation: d.eld?.location || undefined,
+    eldLat: d.eld?.lat ?? undefined,
+    eldLng: d.eld?.lng ?? undefined,
     comment: d.comment ?? "",
     weeklyGrossTarget: d.weekly_gross_target || undefined,
     payType:  (d.pay_type as PayType) ?? "",
@@ -106,6 +113,9 @@ function toTeam(d: any): TeamDriver {
     truckId: d.truck_id ?? "",
     trailerId: d.trailer_id ?? "",
     location: d.location ?? "",
+    eldLocation: d.eld?.location || undefined,
+    eldLat: d.eld?.lat ?? undefined,
+    eldLng: d.eld?.lng ?? undefined,
     comment: d.comment ?? "",
     weeklyGrossTarget: d.weekly_gross_target || undefined,
     payType:  (d.pay_type as PayType) ?? "",
@@ -165,6 +175,34 @@ function fromTeam(d: Partial<TeamDriver>) {
     pay_rate: d.payType ? (d.payRate ?? 0) : 0,
     next_load_id: d.nextLoadId || null,
   };
+}
+
+// One Location cell: the truck's ELD location when it's reporting, else the dispatcher's
+// typed location, plus a Google Maps Directions button (origin = the truck's coords) when
+// the ELD has given us a position — same behaviour as the board's Location column.
+function LocationCell({ location, eldLocation, lat, lng }: {
+  location?: string; eldLocation?: string; lat?: number; lng?: number;
+}) {
+  const text = eldLocation || location || "—";
+  const hasCoords = lat != null && lng != null;
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 5, maxWidth: "100%" }}>
+      <MapPin size={11} style={{ color: "var(--muted-foreground)", flexShrink: 0 }} />
+      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{text}</span>
+      {hasCoords && (
+        <button
+          type="button"
+          title="Directions from here in Google Maps"
+          onClick={() => window.open(`https://www.google.com/maps/dir/?api=1&origin=${lat},${lng}`, "_blank", "noopener,noreferrer")}
+          style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0, width: 20, height: 20, borderRadius: 5, border: "none", backgroundColor: "transparent", cursor: "pointer", color: "var(--muted-foreground)" }}
+          onMouseEnter={(e) => { const b = e.currentTarget; b.style.backgroundColor = "var(--muted)"; b.style.color = "var(--primary)"; }}
+          onMouseLeave={(e) => { const b = e.currentTarget; b.style.backgroundColor = "transparent"; b.style.color = "var(--muted-foreground)"; }}
+        >
+          <ExternalLink size={12} />
+        </button>
+      )}
+    </span>
+  );
 }
 
 // Maps a truck/trailer assignment error to the offending equipment field, so the
@@ -1788,7 +1826,7 @@ function DriverDetail({ driver, onBack }: { driver: SoloDriver; onBack: () => vo
     { icon: <Package      size={13} />, label: "Next Load",    value: driver.nextLoad    ?? "", mono: true },
     { icon: <Truck        size={13} />, label: "Truck",        value: driver.truck,          mono: true },
     { icon: <Truck        size={13} />, label: "Trailer",      value: driver.trailer,        mono: true },
-    { icon: <MapPin       size={13} />, label: "Location",     value: driver.location             },
+    { icon: <MapPin       size={13} />, label: "Location",     value: driver.eldLocation || driver.location },
     { icon: <MessageSquare size={13}/>, label: "Note",         value: driver.comment              },
   ];
 
@@ -2143,7 +2181,7 @@ function TeamDetail({ team, onBack }: { team: TeamDriver; onBack: () => void }) 
               { icon: <Package       size={13} />, label: "Next Load",    value: team.nextLoad    ?? "", mono: true },
               { icon: <Truck         size={13} />, label: "Truck",        value: team.truck,            mono: true  },
               { icon: <Truck         size={13} />, label: "Trailer",      value: team.trailer,          mono: true  },
-              { icon: <MapPin        size={13} />, label: "Location",     value: team.location                     },
+              { icon: <MapPin        size={13} />, label: "Location",     value: team.eldLocation || team.location },
               { icon: <MessageSquare size={13} />, label: "Note",         value: team.comment                       },
             ].map((row, i, arr) => (
               <div key={row.label} style={{
@@ -2565,7 +2603,7 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
               <TH width={120}>Next Load</TH>
               <TH width={110}>Truck</TH>
               <TH width={110}>Trailer</TH>
-              <TH width={160}>Location</TH>
+              <TH width={230}>Location</TH>
               <TH width={240}>Comment</TH>
               <TH width={90} align="center">Actions</TH>
             </tr>
@@ -2622,10 +2660,7 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
                 <TD mono>{d.truck || "—"}</TD>
                 <TD mono>{d.trailer || "—"}</TD>
                 <TD>
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
-                    <MapPin size={11} style={{ color: "var(--muted-foreground)", flexShrink: 0 }} />
-                    {d.location || "—"}
-                  </span>
+                  <LocationCell location={d.location} eldLocation={d.eldLocation} lat={d.eldLat} lng={d.eldLng} />
                 </TD>
                 <TD>
                   <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
@@ -2873,7 +2908,7 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
               <TH width={120}>Next Load</TH>
               <TH width={110}>Truck</TH>
               <TH width={110}>Trailer</TH>
-              <TH width={160}>Location</TH>
+              <TH width={230}>Location</TH>
               <TH width={240}>Comment</TH>
               <TH width={90} align="center">Actions</TH>
             </tr>
@@ -2933,10 +2968,7 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
                 <TD mono>{d.truck || "—"}</TD>
                 <TD mono>{d.trailer || "—"}</TD>
                 <TD>
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
-                    <MapPin size={11} style={{ color: "var(--muted-foreground)", flexShrink: 0 }} />
-                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 130, display: "inline-block" }}>{d.location || "—"}</span>
-                  </span>
+                  <LocationCell location={d.location} eldLocation={d.eldLocation} lat={d.eldLat} lng={d.eldLng} />
                 </TD>
                 <TD>
                   <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
