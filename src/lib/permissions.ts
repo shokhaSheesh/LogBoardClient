@@ -8,7 +8,14 @@ export interface PagePerm {
   path: string;
   module: string;
   ownerOnly?: boolean;
+  // Page opens if the user holds `read` on ANY of these modules (used by Settings, whose
+  // tabs are each gated on their own key — users/roles/teams/settings).
+  anyModule?: string[];
 }
+
+// The company-plane modules that Settings manages — the page shows if the user can read
+// any of them (and each tab is gated individually inside SettingsPage).
+export const SETTINGS_MODULES = ["settings", "users", "roles", "teams"];
 
 export const PAGE_PERMS: PagePerm[] = [
   { path: "dashboard",  module: "dashboard"  },
@@ -19,7 +26,8 @@ export const PAGE_PERMS: PagePerm[] = [
   { path: "equipments", module: "equipments" },
   { path: "payouts",    module: "payouts"    },
   { path: "billing",    module: "billing",  ownerOnly: true },
-  { path: "settings",   module: "settings", ownerOnly: true },
+  // Runs on /company/* now, gated on permission keys — not owner-only anymore.
+  { path: "settings",   module: "settings", anyModule: SETTINGS_MODULES },
 ];
 
 // True if the user holds `<module>.<action>` for the active company. Owners carry
@@ -46,6 +54,7 @@ export function canAccessPage(user: AuthUser | null, path: string): boolean {
   const def = PAGE_PERMS.find((p) => p.path === seg);
   if (!def) return true; // unknown page — don't block
   if (def.ownerOnly) return user?.role === "owner";
+  if (def.anyModule) return def.anyModule.some((m) => hasPerm(user, m));
   return hasPerm(user, def.module);
 }
 

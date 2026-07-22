@@ -26,7 +26,7 @@ import {
 import { Avatar, AvatarFallback } from "../components/ui/avatar";
 import { useAuth } from "../lib/auth";
 import { useTheme } from "../lib/theme";
-import { hasPerm, isOwnerPlanePage } from "../lib/permissions";
+import { hasPerm, isOwnerPlanePage, canAccessPage } from "../lib/permissions";
 import { api, setCompanyId, getCompanyId } from "../lib/api";
 import { useBoardPresence } from "../lib/useBoardPresence";
 import { useEntitlement, type EntitlementCopy } from "../lib/entitlement";
@@ -61,7 +61,10 @@ function AccountSwitcher({
   const navigate = useNavigate();
   // Billing & Settings are owner self-service (/owner/*) — hidden for dispatcher/updater.
   const isOwner = user?.role === "owner";
-  const menuItems = isOwner ? USER_MENU_ITEMS : [];
+  // Billing is owner-only (there's no /company/billing); Settings now opens to anyone with
+  // a company-plane settings key, so gate each item on its own access.
+  const menuItems = USER_MENU_ITEMS.filter((m) =>
+    m.path.endsWith("/billing") ? isOwner : canAccessPage(user, "settings"));
   const [open, setOpen] = useState(false);
   const [rect, setRect] = useState<DOMRect | null>(null);
   const anchorRef = useRef<HTMLButtonElement>(null);

@@ -648,7 +648,10 @@ function UserModal({ user, roles, teams, saving, error, onClose, onSave }: {
   );
 }
 
-function UsersTab({ roles, teams, reloadTeams }: { roles: Role[]; teams: Team[]; reloadTeams: () => Promise<unknown> }) {
+function UsersTab({ roles, teams, reloadTeams, canCreate, canUpdate, canDelete }: {
+  roles: Role[]; teams: Team[]; reloadTeams: () => Promise<unknown>;
+  canCreate: boolean; canUpdate: boolean; canDelete: boolean;
+}) {
   const [users, setUsers]       = useState<User[]>([]);
   const [loading, setLoading]   = useState(true);
   const [fetchKey, setFetchKey] = useState(0);
@@ -674,7 +677,7 @@ function UsersTab({ roles, teams, reloadTeams }: { roles: Role[]; teams: Team[];
   useEffect(() => {
     const companyId = getCompanyId();
     setLoading(true);
-    api.get<any[]>(`/owner/companies/${companyId}/users`)
+    api.get<any[]>(`/company/users`)
       .then((data) => setUsers((data ?? []).map(toUser)))
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -690,10 +693,10 @@ function UsersTab({ roles, teams, reloadTeams }: { roles: Role[]; teams: Team[];
       //    lives on the team resource (its user_ids), so it's reconciled separately below.
       let userId = u.id;
       if (isNew) {
-        const created = await api.post<{ id?: string }>(`/owner/companies/${companyId}/users`, fromUser(u, true, roles));
+        const created = await api.post<{ id?: string }>(`/company/users`, fromUser(u, true, roles));
         userId = created?.id ?? "";
       } else {
-        await api.put(`/owner/companies/${companyId}/users/${u.id}`, fromUser(u, false, roles));
+        await api.put(`/company/users/${u.id}`, fromUser(u, false, roles));
       }
 
       // 2) Reconcile team membership by editing the affected teams' user_ids.
@@ -702,13 +705,13 @@ function UsersTab({ roles, teams, reloadTeams }: { roles: Role[]; teams: Team[];
       if (userId && desiredTeamId !== (currentTeam?.id ?? null)) {
         // Remove from the old team (if any)…
         if (currentTeam) {
-          await api.put(`/owner/companies/${companyId}/teams/${currentTeam.id}`,
+          await api.put(`/company/teams/${currentTeam.id}`,
             fromTeam({ ...currentTeam, userIds: currentTeam.userIds.filter((id) => id !== userId) }));
         }
         // …and add to the new one (if any).
         const target = desiredTeamId ? teams.find((t) => t.id === desiredTeamId) : null;
         if (target && !target.userIds.includes(userId)) {
-          await api.put(`/owner/companies/${companyId}/teams/${target.id}`,
+          await api.put(`/company/teams/${target.id}`,
             fromTeam({ ...target, userIds: [...target.userIds, userId] }));
         }
         await reloadTeams();
@@ -729,7 +732,7 @@ function UsersTab({ roles, teams, reloadTeams }: { roles: Role[]; teams: Team[];
     setDelErr(null);
     setDelBusy(true);
     try {
-      await api.delete(`/owner/companies/${companyId}/users/${u.id}`);
+      await api.delete(`/company/users/${u.id}`);
       setFetchKey((k) => k + 1);
       setDeleting(null);
       setToast({ type: "success", msg: `${u.name || "User"} removed` });
@@ -781,9 +784,11 @@ function UsersTab({ roles, teams, reloadTeams }: { roles: Role[]; teams: Team[];
             width={160}
           />
         </div>
-        <button onClick={() => { setEditing({}); setModal("create"); }} style={{ display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 14px", borderRadius: 7, border: "none", backgroundColor: "var(--primary)", color: "#fff", cursor: "pointer" }}>
-          <Plus size={14} /> Add User
-        </button>
+        {canCreate && (
+          <button onClick={() => { setEditing({}); setModal("create"); }} style={{ display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 14px", borderRadius: 7, border: "none", backgroundColor: "var(--primary)", color: "#fff", cursor: "pointer" }}>
+            <Plus size={14} /> Add User
+          </button>
+        )}
       </div>
 
       {/* Table */}
@@ -846,8 +851,8 @@ function UsersTab({ roles, teams, reloadTeams }: { roles: Role[]; teams: Team[];
                   </td>
                   <td style={{ padding: "8px 10px", borderBottom: "1px solid var(--border)", verticalAlign: "middle", textAlign: "center" }}>
                     <div style={{ display: "inline-flex", gap: 5 }}>
-                      <ActionBtn icon={<Pencil size={13} />} color="#3B82F6" bg="rgba(59,130,246,0.14)" onClick={() => { setEditing({ ...u, teamId: team?.id ?? null }); setModal("edit"); }} />
-                      <ActionBtn icon={<Trash2 size={13} />} color="#EF4444" bg="rgba(239,68,68,0.14)" onClick={() => setDeleting(u)} />
+                      {canUpdate && <ActionBtn icon={<Pencil size={13} />} color="#3B82F6" bg="rgba(59,130,246,0.14)" onClick={() => { setEditing({ ...u, teamId: team?.id ?? null }); setModal("edit"); }} />}
+                      {canDelete && <ActionBtn icon={<Trash2 size={13} />} color="#EF4444" bg="rgba(239,68,68,0.14)" onClick={() => setDeleting(u)} />}
                     </div>
                   </td>
                 </tr>
@@ -1216,10 +1221,16 @@ function TeamModal({ team, users, driverLabels, saving, onClose, onSave }: {
             label="Users"
             selectedKeys={form.userIds ?? []}
             initialLabels={userLabelSeed}
-            fetchPage={async (q, p) => {
-              const companyId = getCompanyId();
-              const { items, total } = await api.getList<any>(`/owner/companies/${companyId}/users`, { q: q || undefined, page: p, page_size: 20 });
-              return { items: (items ?? []).map((u: any) => ({ key: String(u.id), label: u.full_name ?? u.login ?? String(u.id) })), total };
+            // /company/users is a bounded pick-list with no ?q=/paging, so fetch it all
+            // and match locally — passing a query it ignores would look like search while
+            // filtering nothing.
+            fetchPage={async (q) => {
+              const rows = await api.get<any[]>("/company/users");
+              const needle = q.trim().toLowerCase();
+              const opts = (rows ?? [])
+                .map((u: any) => ({ key: String(u.id), label: u.full_name ?? u.login ?? String(u.id) }))
+                .filter((o) => !needle || o.label.toLowerCase().includes(needle));
+              return { items: opts, total: opts.length };
             }}
             onToggle={(id) => toggleUser(id)}
             onClear={() => setForm((f) => ({ ...f, userIds: [] }))}
@@ -1255,7 +1266,9 @@ function TeamModal({ team, users, driverLabels, saving, onClose, onSave }: {
   );
 }
 
-function TeamsTab({ users: _users }: { users: User[] }) {
+function TeamsTab({ canCreate, canUpdate, canDelete }: {
+  users: User[]; canCreate: boolean; canUpdate: boolean; canDelete: boolean;
+}) {
   const [teams, setTeams]       = useState<Team[]>([]);
   const [users, setUsers]       = useState<User[]>([]);
   // name -> display label ("Name 1 & Name 2" for team drivers). The dispatch-pod
@@ -1281,8 +1294,8 @@ function TeamsTab({ users: _users }: { users: User[] }) {
     const companyId = getCompanyId();
     setLoading(true);
     Promise.all([
-      api.get<any[]>(`/owner/companies/${companyId}/teams`),
-      api.get<any[]>(`/owner/companies/${companyId}/users`),
+      api.get<any[]>(`/company/teams`),
+      api.get<any[]>(`/company/users`),
       api.getList<any>("/drivers", { page_size: 200 }),
     ])
       .then(([teamsData, usersData, driversResp]) => {
@@ -1306,10 +1319,10 @@ function TeamsTab({ users: _users }: { users: User[] }) {
     setSaving(true);
     try {
       if (modal === "create") {
-        await api.post(`/owner/companies/${companyId}/teams`, fromTeam(t));
+        await api.post(`/company/teams`, fromTeam(t));
         setToast({ type: "success", msg: "Team created" });
       } else {
-        await api.put(`/owner/companies/${companyId}/teams/${t.id}`, fromTeam(t));
+        await api.put(`/company/teams/${t.id}`, fromTeam(t));
         setToast({ type: "success", msg: "Team updated" });
       }
       setFetchKey((k) => k + 1);
@@ -1326,7 +1339,7 @@ function TeamsTab({ users: _users }: { users: User[] }) {
     setDelErr(null);
     setDelBusy(true);
     try {
-      await api.delete(`/owner/companies/${companyId}/teams/${t.id}`);
+      await api.delete(`/company/teams/${t.id}`);
       setToast({ type: "success", msg: "Team deleted" });
       setFetchKey((k) => k + 1);
       setDeleting(null);
@@ -1365,9 +1378,11 @@ function TeamsTab({ users: _users }: { users: User[] }) {
             }}
           />
         </div>
-        <button onClick={() => { setEditing({ userIds: [], driverNames: [] }); setModal("create"); }} style={{ display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 14px", borderRadius: 7, border: "none", backgroundColor: "var(--primary)", color: "#fff", cursor: "pointer" }}>
-          <Plus size={14} /> Create Team
-        </button>
+        {canCreate && (
+          <button onClick={() => { setEditing({ userIds: [], driverNames: [] }); setModal("create"); }} style={{ display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 14px", borderRadius: 7, border: "none", backgroundColor: "var(--primary)", color: "#fff", cursor: "pointer" }}>
+            <Plus size={14} /> Create Team
+          </button>
+        )}
       </div>
 
       {/* Table */}
@@ -1413,8 +1428,8 @@ function TeamsTab({ users: _users }: { users: User[] }) {
                   </td>
                   <td style={{ padding: "8px 10px", borderBottom: "1px solid var(--border)", verticalAlign: "middle", textAlign: "center" }}>
                     <div style={{ display: "inline-flex", gap: 5 }}>
-                      <ActionBtn icon={<Pencil size={13} />} color="#3B82F6" bg="rgba(59,130,246,0.14)" onClick={() => { setEditing(t); setModal("edit"); }} />
-                      <ActionBtn icon={<Trash2 size={13} />} color="#EF4444" bg="rgba(239,68,68,0.14)" onClick={() => setDeleting(t)} />
+                      {canUpdate && <ActionBtn icon={<Pencil size={13} />} color="#3B82F6" bg="rgba(59,130,246,0.14)" onClick={() => { setEditing(t); setModal("edit"); }} />}
+                      {canDelete && <ActionBtn icon={<Trash2 size={13} />} color="#EF4444" bg="rgba(239,68,68,0.14)" onClick={() => setDeleting(t)} />}
                     </div>
                   </td>
                 </tr>
@@ -1592,7 +1607,9 @@ const ACTION_COLOR: Record<string, { on: string; bg: string; label: string }> = 
 const defaultActionColor = { on: "var(--muted-foreground)", bg: "var(--muted)", label: "?" };
 const ACTION_ORDER = ["read", "create", "update", "delete"];
 
-function RolesTab({ onRolesChange }: { onRolesChange: (roles: Role[]) => void }) {
+function RolesTab({ onRolesChange, canCreate, canUpdate, canDelete }: {
+  onRolesChange: (roles: Role[]) => void; canCreate: boolean; canUpdate: boolean; canDelete: boolean;
+}) {
   const [roles, setRoles]       = useState<Role[]>([]);
   const [loading, setLoading]   = useState(true);
   const [fetchKey, setFetchKey] = useState(0);
@@ -1614,7 +1631,7 @@ function RolesTab({ onRolesChange }: { onRolesChange: (roles: Role[]) => void })
 
   useEffect(() => {
     const companyId = getCompanyId();
-    api.get<any>(`/owner/companies/${companyId}/catalog`)
+    api.get<any>(`/company/roles/permissions`)
       .then((raw) => setCatalog(normalizeCatalog(raw)))
       .catch(() => setCatalog([]));
   }, []);
@@ -1622,7 +1639,7 @@ function RolesTab({ onRolesChange }: { onRolesChange: (roles: Role[]) => void })
   useEffect(() => {
     const companyId = getCompanyId();
     setLoading(true);
-    api.get<any[]>(`/owner/companies/${companyId}/roles`)
+    api.get<any[]>(`/company/roles`)
       .then((data) => {
         const mapped = (data ?? []).map(toRole);
         setRoles(mapped);
@@ -1639,9 +1656,9 @@ function RolesTab({ onRolesChange }: { onRolesChange: (roles: Role[]) => void })
     setSaving(true);
     try {
       if (isNew) {
-        await api.post(`/owner/companies/${companyId}/roles`, fromRole(r));
+        await api.post(`/company/roles`, fromRole(r));
       } else {
-        await api.put(`/owner/companies/${companyId}/roles/${r.id}`, fromRole(r));
+        await api.put(`/company/roles/${r.id}`, fromRole(r));
       }
       setFetchKey((k) => k + 1);
       setModal(null);
@@ -1658,7 +1675,7 @@ function RolesTab({ onRolesChange }: { onRolesChange: (roles: Role[]) => void })
     setDelErr(null);
     setDelBusy(true);
     try {
-      await api.delete(`/owner/companies/${companyId}/roles/${r.id}`);
+      await api.delete(`/company/roles/${r.id}`);
       setFetchKey((k) => k + 1);
       setDeleting(null);
       setToast({ type: "success", msg: `${r.name || "Role"} removed` });
@@ -1683,9 +1700,11 @@ function RolesTab({ onRolesChange }: { onRolesChange: (roles: Role[]) => void })
         <span style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
           <span style={{ fontWeight: 600, color: "var(--foreground)" }}>{roles.length}</span> roles defined
         </span>
-        <button onClick={() => { setEditing({}); setModal("create"); }} style={{ display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 14px", borderRadius: 7, border: "none", backgroundColor: "var(--primary)", color: "#fff", cursor: "pointer" }}>
-          <Plus size={14} /> Create Role
-        </button>
+        {canCreate && (
+          <button onClick={() => { setEditing({}); setModal("create"); }} style={{ display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 14px", borderRadius: 7, border: "none", backgroundColor: "var(--primary)", color: "#fff", cursor: "pointer" }}>
+            <Plus size={14} /> Create Role
+          </button>
+        )}
       </div>
 
       <div style={{ flex: 1, overflow: "auto", scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent" }}>
@@ -1742,8 +1761,8 @@ function RolesTab({ onRolesChange }: { onRolesChange: (roles: Role[]) => void })
                   })}
                   <td style={{ padding: "8px 10px", borderBottom: "1px solid var(--border)", verticalAlign: "middle", textAlign: "center" }}>
                     <div style={{ display: "inline-flex", gap: 5 }}>
-                      <ActionBtn icon={<Pencil size={13} />} color="#3B82F6" bg="rgba(59,130,246,0.14)" onClick={() => { setEditing(r); setModal("edit"); }} />
-                      <ActionBtn icon={<Trash2 size={13} />} color="#EF4444" bg="rgba(239,68,68,0.14)" onClick={() => setDeleting(r)} />
+                      {canUpdate && <ActionBtn icon={<Pencil size={13} />} color="#3B82F6" bg="rgba(59,130,246,0.14)" onClick={() => { setEditing(r); setModal("edit"); }} />}
+                      {canDelete && <ActionBtn icon={<Trash2 size={13} />} color="#EF4444" bg="rgba(239,68,68,0.14)" onClick={() => setDeleting(r)} />}
                     </div>
                   </td>
                 </tr>
@@ -1772,7 +1791,7 @@ function RolesTab({ onRolesChange }: { onRolesChange: (roles: Role[]) => void })
 
 // ─── Week tab ─────────────────────────────────────────────────────────────────
 
-function WeekTab() {
+function WeekTab({ canEdit }: { canEdit: boolean }) {
   const companyId = getCompanyId();
   const [startDay, setStartDay] = useState<number | null>(null); // null = still loading
   const [saving, setSaving]     = useState(false);
@@ -1784,7 +1803,7 @@ function WeekTab() {
 
   useEffect(() => {
     if (!companyId) { setLoadError(true); return; }
-    api.get<{ mc: string; name: string; eld?: string; week_start_day?: number }>(`/owner/companies/${companyId}`)
+    api.get<{ mc: string; name: string; eld?: string; week_start_day?: number }>(`/company`)
       .then((c) => {
         companyRef.current = { mc: c.mc, name: c.name, eld: c.eld };
         setStartDay(typeof c.week_start_day === "number" ? c.week_start_day : 1);
@@ -1793,13 +1812,13 @@ function WeekTab() {
   }, [companyId]);
 
   const select = async (day: number) => {
-    if (startDay === null || day === startDay || saving || !companyRef.current) return;
+    if (!canEdit || startDay === null || day === startDay || saving || !companyRef.current) return;
     const prev = startDay;
     setStartDay(day); // optimistic
     setSaving(true);
     setError(null);
     try {
-      await api.put(`/owner/companies/${companyId}`, { ...companyRef.current, week_start_day: day });
+      await api.put(`/company`, { ...companyRef.current, week_start_day: day });
       // Let the Gross page snap to the new current week immediately.
       window.dispatchEvent(new CustomEvent("week-settings-changed", { detail: { weekStartDay: day } }));
     } catch (e) {
@@ -1842,7 +1861,7 @@ function WeekTab() {
         <div style={{ fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600, color: "var(--muted-foreground)", letterSpacing: "0.07em", textTransform: "uppercase", marginBottom: 12 }}>
           Week starts on
         </div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", opacity: saving ? 0.6 : 1, pointerEvents: saving ? "none" : "auto" }}>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", opacity: saving || !canEdit ? 0.6 : 1, pointerEvents: saving || !canEdit ? "none" : "auto" }}>
           {WEEK_DAYS.map((label, idx) => {
             const isStart = idx === startDay;
             const isEnd   = idx === endDay;
@@ -2029,35 +2048,41 @@ type TabId = "users" | "teams" | "roles" | "week" | "eld";
 
 export function SettingsPage() {
   const { user } = useAuth();
-  const canEldRead   = hasPerm(user, "eld", "read");
-  const canEldUpdate = hasPerm(user, "eld", "update");
-  const [tab, setTab] = useState<TabId>("users");
+  // Each tab is gated on its own company-plane read key; the tab renders on read, its
+  // create/edit/delete controls on the matching write key. Owners hold everything.
+  const can = (module: string, action: string = "read") => hasPerm(user, module, action);
+  const canEldUpdate = can("eld", "update");
   const [roles, setRoles] = useState<Role[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
 
   const reloadTeams = () => {
-    const companyId = getCompanyId();
-    return api.get<any[]>(`/owner/companies/${companyId}/teams`)
+    if (!can("teams")) return Promise.resolve();
+    return api.get<any[]>(`/company/teams`)
       .then((data) => setTeams((data ?? []).map(toTeam)))
       .catch(() => {});
   };
 
   useEffect(() => {
-    const companyId = getCompanyId();
-    api.get<any[]>(`/owner/companies/${companyId}/roles`)
-      .then((data) => setRoles((data ?? []).map(toRole)))
-      .catch(() => {});
+    if (can("roles")) {
+      api.get<any[]>(`/company/roles`)
+        .then((data) => setRoles((data ?? []).map(toRole)))
+        .catch(() => {});
+    }
     void reloadTeams();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const tabs: { id: TabId; label: string; icon: React.ReactNode; color: string; bg: string }[] = [
-    { id: "users",  label: "Users",              icon: <Users        size={15} />, color: "#3B82F6", bg: "rgba(59,130,246,0.14)" },
-    { id: "teams",  label: "Teams",              icon: <UsersRound   size={15} />, color: "#8B5CF6", bg: "rgba(139,92,246,0.14)" },
-    { id: "roles",  label: "Roles & Permissions",icon: <ShieldCheck  size={15} />, color: "#10B981", bg: "rgba(16,185,129,0.14)" },
-    { id: "week",   label: "Work Week",          icon: <CalendarDays size={15} />, color: "#22D3EE", bg: "rgba(34,211,238,0.14)" },
-    ...(canEldRead ? [{ id: "eld" as TabId, label: "ELD", icon: <Truck size={15} />, color: "#F59E0B", bg: "rgba(245,158,11,0.14)" }] : []),
+  const TAB_DEFS: { id: TabId; label: string; icon: React.ReactNode; color: string; bg: string; module: string }[] = [
+    { id: "users",  label: "Users",              icon: <Users        size={15} />, color: "#3B82F6", bg: "rgba(59,130,246,0.14)", module: "users" },
+    { id: "teams",  label: "Teams",              icon: <UsersRound   size={15} />, color: "#8B5CF6", bg: "rgba(139,92,246,0.14)", module: "teams" },
+    { id: "roles",  label: "Roles & Permissions",icon: <ShieldCheck  size={15} />, color: "#10B981", bg: "rgba(16,185,129,0.14)", module: "roles" },
+    { id: "week",   label: "Work Week",          icon: <CalendarDays size={15} />, color: "#22D3EE", bg: "rgba(34,211,238,0.14)", module: "settings" },
+    { id: "eld",    label: "ELD",                icon: <Truck        size={15} />, color: "#F59E0B", bg: "rgba(245,158,11,0.14)", module: "eld" },
   ];
+  const tabs = TAB_DEFS.filter((t) => can(t.module));
+  const [tab, setTab] = useState<TabId>(() => (TAB_DEFS.find((t) => hasPerm(user, t.module))?.id ?? "users"));
+  // If the active tab isn't accessible (e.g. after a company switch), fall back to the first.
+  useEffect(() => { if (tabs.length && !tabs.some((t) => t.id === tab)) setTab(tabs[0].id); }, [tabs, tab]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", backgroundColor: "var(--background)" }}>
@@ -2083,10 +2108,10 @@ export function SettingsPage() {
       </div>
       <div style={{ flex: 1, overflow: "hidden", padding: "20px 24px", display: "flex", flexDirection: "column" }}>
         <div style={{ flex: 1, display: "flex", flexDirection: "column", backgroundColor: "var(--card)", borderRadius: 12, overflow: "hidden", border: "1px solid var(--border)" }}>
-          {tab === "users" && <UsersTab roles={roles} teams={teams} reloadTeams={reloadTeams} />}
-          {tab === "teams" && <TeamsTab users={[]} />}
-          {tab === "roles" && <RolesTab onRolesChange={setRoles} />}
-          {tab === "week"  && <WeekTab />}
+          {tab === "users" && <UsersTab roles={roles} teams={teams} reloadTeams={reloadTeams} canCreate={can("users", "create")} canUpdate={can("users", "update")} canDelete={can("users", "delete")} />}
+          {tab === "teams" && <TeamsTab users={[]} canCreate={can("teams", "create")} canUpdate={can("teams", "update")} canDelete={can("teams", "delete")} />}
+          {tab === "roles" && <RolesTab onRolesChange={setRoles} canCreate={can("roles", "create")} canUpdate={can("roles", "update")} canDelete={can("roles", "delete")} />}
+          {tab === "week"  && <WeekTab canEdit={can("settings", "update")} />}
           {tab === "eld"   && <EldTab canManage={canEldUpdate} />}
         </div>
       </div>
