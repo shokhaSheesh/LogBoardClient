@@ -1371,15 +1371,29 @@ function DeleteConfirm({ label, onClose, onConfirm, busy = false, error }: { lab
 
 interface ImportResult { created: number; failed: number; errors: { row: number; message: string }[] }
 
-function ImportModal({ entityLabel, endpoint, onClose, onImported }: {
-  entityLabel: string; endpoint: string; onClose: () => void; onImported?: () => void;
+function ImportModal({ entityLabel, endpoint, templateEndpoint, templateFile, onClose, onImported }: {
+  entityLabel: string; endpoint: string; templateEndpoint: string; templateFile: string;
+  onClose: () => void; onImported?: () => void;
 }) {
   const [dragging, setDragging] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<ImportResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [downloading, setDownloading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const downloadTemplate = async () => {
+    if (downloading) return;
+    setDownloading(true); setError(null);
+    try {
+      await api.download(`${templateEndpoint}?format=csv`, templateFile);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't download the template.");
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   const pickFile = (f: File | undefined | null) => {
     if (!f) return;
@@ -1478,8 +1492,8 @@ function ImportModal({ entityLabel, endpoint, onClose, onImported }: {
                 Pre-formatted CSV with all required columns
               </div>
             </div>
-            <button style={{ fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: 600, padding: "5px 12px", borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "var(--card)", color: "var(--foreground)", cursor: "pointer" }}>
-              Download
+            <button onClick={downloadTemplate} disabled={downloading} style={{ fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: 600, padding: "5px 12px", borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "var(--card)", color: "var(--foreground)", cursor: downloading ? "default" : "pointer", opacity: downloading ? 0.6 : 1 }}>
+              {downloading ? "…" : "Download"}
             </button>
           </div>
 
@@ -2659,7 +2673,7 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
         />
       )}
       {importing && (
-        <ImportModal entityLabel="Driver" endpoint="/drivers/import" onClose={() => setImporting(false)} onImported={() => setFetchKey((k) => k + 1)} />
+        <ImportModal entityLabel="Driver" endpoint="/drivers/import" templateEndpoint="/drivers/import/template" templateFile="drivers-template.csv" onClose={() => setImporting(false)} onImported={() => setFetchKey((k) => k + 1)} />
       )}
       {eldOpen && (
         <EldModal canManage={canManageEld} onClose={() => setEldOpen(false)} onLinked={() => setFetchKey((k) => k + 1)} />
@@ -2970,7 +2984,7 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
         />
       )}
       {importing && (
-        <ImportModal entityLabel="Team" endpoint="/drivers/import" onClose={() => setImporting(false)} onImported={() => setFetchKey((k) => k + 1)} />
+        <ImportModal entityLabel="Team" endpoint="/drivers/import" templateEndpoint="/drivers/import/template" templateFile="drivers-template.csv" onClose={() => setImporting(false)} onImported={() => setFetchKey((k) => k + 1)} />
       )}
       {eldOpen && (
         <EldModal canManage={canManageEld} onClose={() => setEldOpen(false)} onLinked={() => setFetchKey((k) => k + 1)} />

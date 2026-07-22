@@ -627,7 +627,21 @@ function ImportModal({ entityLabel, endpoint, onClose, onImported }: {
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<ImportResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [downloading, setDownloading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Trucks and trailers share one template — identical columns.
+  const downloadTemplate = async () => {
+    if (downloading) return;
+    setDownloading(true); setError(null);
+    try {
+      await api.download("/equipments/import/template?format=csv", "equipment-template.csv");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't download the template.");
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   const pickFile = (f: File | undefined | null) => {
     if (!f) return;
@@ -718,8 +732,8 @@ function ImportModal({ entityLabel, endpoint, onClose, onImported }: {
               <div style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 500, color: "var(--foreground)" }}>Need a template?</div>
               <div style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "var(--muted-foreground)", marginTop: 1 }}>Pre-formatted CSV with all required columns</div>
             </div>
-            <button style={{ fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: 600, padding: "5px 12px", borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "var(--card)", color: "var(--foreground)", cursor: "pointer" }}>
-              Download
+            <button onClick={downloadTemplate} disabled={downloading} style={{ fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: 600, padding: "5px 12px", borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "var(--card)", color: "var(--foreground)", cursor: downloading ? "default" : "pointer", opacity: downloading ? 0.6 : 1 }}>
+              {downloading ? "…" : "Download"}
             </button>
           </div>
 

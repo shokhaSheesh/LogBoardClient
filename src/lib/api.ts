@@ -225,9 +225,24 @@ async function getBlob(path: string): Promise<Blob> {
   return res.blob();
 }
 
+// Fetch a binary route and save it to disk under `filename`. Uses getBlob (so the auth
+// headers ride along) and hands the browser an object URL, revoked after a delay —
+// revoking synchronously can cancel the download mid-flight.
+async function download(path: string, filename: string): Promise<void> {
+  const blob = await getBlob(path);
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
 export const api = {
   get: <T>(path: string) => request<T>("GET", path),
   getBlob,
+  download,
   upload,
   post: <T>(path: string, body?: unknown) => request<T>("POST", path, body),
   put: <T>(path: string, body?: unknown) => request<T>("PUT", path, body),
