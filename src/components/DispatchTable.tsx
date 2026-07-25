@@ -1001,7 +1001,9 @@ export function DispatchTable() {
       fields && fields.length > 0 ? { fields } : undefined
     );
     fetchHistory(); // pull in the fresh "undo" audit entry (and everyone's revertable flags)
-    fetchBoard();   // the board.snapshot push covers this too; refresh so it never lags
+    // No fetchBoard() here: the revert writes through the entity's normal path, so the
+    // backend pushes a board.snapshot just like any other edit — same reconciliation the
+    // rest of the board already trusts. A manual GET would just be a redundant round-trip.
     return res;
   };
 
