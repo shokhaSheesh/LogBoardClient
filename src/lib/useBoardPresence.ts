@@ -26,7 +26,7 @@ export function useBoardPresence(companyId: string): { count: number; users: Onl
       .catch(() => {});
 
     const connect = () => {
-      const ws = new WebSocket(boardWsUrl(companyId));
+      const ws = new WebSocket(boardWsUrl("all", companyId));
       wsRef.current = ws;
       ws.onopen = () => { backoff.current = 2000; };
       ws.onmessage = (e) => {

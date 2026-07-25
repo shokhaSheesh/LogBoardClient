@@ -1017,8 +1017,9 @@ export function DispatchTable() {
   };
 
   // ── Fetch teams (dispatch pods) for the board filter ───────────────────────
-  // Realtime board.snapshot is still whole-company, so we filter rows to the team's
-  // drivers client-side. Read via the company-plane /company/teams (gated on teams.read)
+  // We stream the whole-company board (the "all" socket), so team scoping — both the
+  // filter and the grouped "by team" view — is applied to those rows client-side. Read
+  // teams via the company-plane /company/teams (gated on teams.read)
   // rather than the owner-only /owner/* surface — a dispatcher holds the read key but
   // 403s on /owner/*, which used to leave them with no team filter at all.
   const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -1041,7 +1042,11 @@ export function DispatchTable() {
     if (wsRef.current) { wsRef.current.close(); wsRef.current = null; }
     if (!companyId) return;
 
-    const ws = new WebSocket(boardWsUrl(companyId));
+    // "all" = the whole-company board (the id the backend actually streams snapshots on;
+    // the company id alone gets a connection but no snapshots). We stay on the company-wide
+    // board rather than a per-team socket because the "by team" view groups every team at
+    // once, which needs all rows; team scoping is applied client-side below.
+    const ws = new WebSocket(boardWsUrl("all", companyId));
     wsRef.current = ws;
 
     ws.onopen = () => {
@@ -1313,7 +1318,7 @@ export function DispatchTable() {
   // ── Filtered rows ──────────────────────────────────────────────────────────
 
   const q = search.trim().toLowerCase();
-  // Team scoping is filtered client-side (the realtime snapshot is whole-company).
+  // Team scoping is filtered client-side against the whole-company ("all") snapshot.
   const activeTeam = teamFilter === "all" ? null : teams.find((t) => t.id === teamFilter) ?? null;
   // No sort here — the row order is baked into `rows`, re-sorted only at authoritative
   // moments (fetch, snapshot, and after a write SUCCEEDS via resort()), never on the

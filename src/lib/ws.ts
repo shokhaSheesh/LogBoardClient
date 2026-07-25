@@ -6,8 +6,14 @@ export function getWsBase(): string {
   return base.replace(/^https/, "wss").replace(/^http/, "ws");
 }
 
-// URL for a company's board websocket (carries snapshots, history, locks, presence).
-export function boardWsUrl(companyId: string): string {
+// URL for a board websocket (carries snapshots, history, locks, presence).
+//
+// `boardId` is the realtime scope, NOT the company id: "all" for the whole-company
+// board, or a team id for one dispatch pod. The backend only pushes snapshots on
+// these two — a socket opened on the company id (as this used to do) connects but
+// never receives a board.snapshot, which is why the board went stale until a manual
+// refetch. The company still travels as the company_id query param for auth/tenancy.
+export function boardWsUrl(boardId: string, companyId: string): string {
   const token = localStorage.getItem("auth_token") ?? "";
-  return `${getWsBase()}/api/v1/ws/boards/${companyId}?token=${encodeURIComponent(token)}&company_id=${encodeURIComponent(companyId)}`;
+  return `${getWsBase()}/api/v1/ws/boards/${boardId}?token=${encodeURIComponent(token)}&company_id=${encodeURIComponent(companyId)}`;
 }
