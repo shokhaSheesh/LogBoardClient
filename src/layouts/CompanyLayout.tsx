@@ -21,7 +21,6 @@ import {
   Sun,
   Moon,
   AlertTriangle,
-  Lock,
 } from "lucide-react";
 import { Avatar, AvatarFallback } from "../components/ui/avatar";
 import { useAuth } from "../lib/auth";
@@ -894,23 +893,59 @@ function TopHeader({ onToggleSidebar, accounts, activeAccountId, onSwitch }: {
 // Shown in place of the page when the company isn't entitled. A dispatcher can't fix
 // this themselves — billing lives under /owner/* — so they get the reason and nothing
 // that would only 403. An owner gets a way through to Billing, which stays reachable.
+// A self-contained illustration for the locked-workspace states — an amber padlock
+// with a soft glow and orbiting dashed rings. Draws entirely from theme vars + amber,
+// so it reads on both light and dark without any external asset.
+function LockedIllustration() {
+  return (
+    <svg width="176" height="176" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-hidden="true">
+      <defs>
+        <linearGradient id="lockBody" x1="66" y1="86" x2="134" y2="152" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#60A5FA" />
+          <stop offset="1" stopColor="#3B82F6" />
+        </linearGradient>
+        <radialGradient id="lockGlow" cx="0.5" cy="0.5" r="0.5">
+          <stop stopColor="#3B82F6" stopOpacity="0.22" />
+          <stop offset="1" stopColor="#3B82F6" stopOpacity="0" />
+        </radialGradient>
+      </defs>
+
+      {/* soft glow + orbiting rings */}
+      <circle cx="100" cy="100" r="82" fill="url(#lockGlow)" />
+      <circle cx="100" cy="100" r="80" stroke="var(--border)" strokeWidth="1.5" strokeDasharray="3 7" opacity="0.9" />
+      <circle cx="100" cy="100" r="62" stroke="#3B82F6" strokeWidth="1.5" strokeDasharray="2 8" opacity="0.4" />
+
+      {/* decorative motes */}
+      <circle cx="168" cy="66" r="3.5" fill="#3B82F6" opacity="0.5" />
+      <circle cx="34" cy="120" r="2.5" fill="#3B82F6" opacity="0.4" />
+      <circle cx="150" cy="150" r="2" fill="#3B82F6" opacity="0.35" />
+
+      {/* padlock */}
+      <path d="M78 92 V78 a22 22 0 0 1 44 0 V92" stroke="url(#lockBody)" strokeWidth="12" strokeLinecap="round" />
+      <rect x="64" y="90" width="72" height="62" rx="16" fill="url(#lockBody)" />
+      <rect x="64" y="90" width="72" height="62" rx="16" fill="#000" fillOpacity="0.05" />
+      {/* keyhole */}
+      <circle cx="100" cy="115" r="9" fill="#1E3A8A" fillOpacity="0.6" />
+      <rect x="96" y="120" width="8" height="17" rx="4" fill="#1E3A8A" fillOpacity="0.6" />
+    </svg>
+  );
+}
+
 function EntitlementBlock({ copy, isOwner }: { copy: EntitlementCopy; isOwner: boolean }) {
   return (
     <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
-      <div style={{ maxWidth: 420, textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: 14 }}>
-        <div style={{ width: 52, height: 52, borderRadius: 14, backgroundColor: "rgba(245,158,11,0.12)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <Lock size={24} color="#F59E0B" />
-        </div>
-        <div style={{ fontFamily: "var(--font-sans)", fontSize: 17, fontWeight: 700, color: "var(--foreground)" }}>
+      <div style={{ maxWidth: 440, textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
+        <LockedIllustration />
+        <div style={{ fontFamily: "var(--font-sans)", fontSize: 19, fontWeight: 700, color: "var(--foreground)", marginTop: 4 }}>
           {copy.title}
         </div>
-        <div style={{ fontFamily: "var(--font-sans)", fontSize: 13.5, color: "var(--muted-foreground)", lineHeight: 1.6 }}>
+        <div style={{ fontFamily: "var(--font-sans)", fontSize: 13.5, color: "var(--muted-foreground)", lineHeight: 1.6, maxWidth: 380 }}>
           {copy.body}
         </div>
         {isOwner && (
           <NavLink
             to="/workspace/billing"
-            style={{ marginTop: 4, fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "8px 18px", borderRadius: 7, backgroundColor: "var(--primary)", color: "#fff", textDecoration: "none" }}
+            style={{ marginTop: 14, fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "9px 20px", borderRadius: 8, backgroundColor: "var(--primary)", color: "#fff", textDecoration: "none" }}
           >
             Go to Billing
           </NavLink>

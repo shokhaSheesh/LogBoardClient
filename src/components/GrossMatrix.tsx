@@ -23,6 +23,7 @@ interface DriverRow {
   weeklyTarget?: number;
   companyProfit: number;
   weekTotal?: number;
+  driverPay?: number; // what the DRIVER earns this window; reported by the backend, undefined until it sends it
   miles: number;
   rpm: number; // 0 when miles is 0 — render "—" rather than 0.00
 }
@@ -45,6 +46,7 @@ interface BackendDriverRow {
   weekly_target?: number;
   company_profit?: number;
   week_total?: number; // the row's earnings for the window (load cells only)
+  driver_pay?: number; // what the driver earns this window (rpm×miles or %×gross); reported, never nets off revenue
   miles?: number;      // mileage of the loads the ledger attributes to this driver
   rpm?: number;        // week_total ÷ miles; 0 when miles is 0
   days?: Record<string, BackendCell>;
@@ -73,6 +75,7 @@ function toDriverRow(b: BackendDriverRow): DriverRow {
     weeklyTarget:  b.weekly_target,
     companyProfit: b.company_profit ?? 0,
     weekTotal:     b.week_total,
+    driverPay:     b.driver_pay,
     miles:         b.miles ?? 0,
     rpm:           b.rpm   ?? 0,
     dateMap,
@@ -973,7 +976,10 @@ export function GrossMatrix() {
   const rangeDays = dates.length;
 
 
-  const R = { total: 240, target: 120, profit: 0 };
+  // Right-edge offsets for the sticky summary columns, left→right:
+  // Total(110) · Driver Pay(120) · Target(120) · Co. Profit(120). Total is leftmost, so
+  // it carries the 2px divider from the scrolling day cells (see thStickyRight).
+  const R = { total: 360, driverPay: 240, target: 120, profit: 0 };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", backgroundColor: "var(--background)", overflow: "hidden" }}>
@@ -1113,6 +1119,9 @@ export function GrossMatrix() {
     const groupProfit = driversList.reduce((s, d) => s + d.companyProfit, 0);
     const groupMiles  = driversList.reduce((s, d) => s + d.miles, 0);
     const groupRpm    = groupMiles > 0 ? groupTotal / groupMiles : null;
+    // Driver pay is optional (backend may not send it yet) — only total the rows that have it.
+    const anyPay      = driversList.some((d) => d.driverPay != null);
+    const groupPay    = driversList.reduce((s, d) => s + (d.driverPay ?? 0), 0);
     return (
               <table style={{ borderCollapse: "separate", borderSpacing: 0, tableLayout: "fixed", minWidth: "100%" }}>
                 <thead>
@@ -1132,6 +1141,7 @@ export function GrossMatrix() {
                       );
                     })}
                     <th style={thStickyRight({ width: 110, right: R.total })}>Total</th>
+                    <th style={thStickyRight({ width: 120, right: R.driverPay })}>Driver Pay</th>
                     <th style={thStickyRight({ width: 120, right: R.target })}>Target</th>
                     <th style={thStickyRight({ width: 120, right: R.profit, borderRight: "none" })}>Co. Profit</th>
                   </tr>
@@ -1139,7 +1149,7 @@ export function GrossMatrix() {
                 <tbody>
                   {driversList.length === 0 ? (
                     <tr>
-                      <td colSpan={2 + dates.length + 3} style={{ padding: "48px 20px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
+                      <td colSpan={2 + dates.length + 4} style={{ padding: "48px 20px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
                         No drivers match your search.
                       </td>
                     </tr>
@@ -1163,6 +1173,7 @@ export function GrossMatrix() {
                     const profitBg  = driver.companyProfit >= 0
                       ? (isEven ? tint("rgba(16,185,129,0.07)") : tint("rgba(16,185,129,0.13)"))
                       : (isEven ? tint("rgba(239,68,68,0.06)")  : tint("rgba(239,68,68,0.11)"));
+                    const payBg     = isEven ? tint("rgba(245,158,11,0.07)") : tint("rgba(245,158,11,0.13)");
 
                     return (
                       <tr key={driver.id}>
@@ -1216,6 +1227,13 @@ export function GrossMatrix() {
                           </div>
                         </td>
 
+                        {/* Driver Pay — what the driver earns this window (read-only; from the backend) */}
+                        <td style={{ width: 120, minWidth: 120, padding: "0 12px", textAlign: "right", verticalAlign: "middle", borderLeft: "1px solid var(--border)", borderBottom: "1px solid var(--border)", backgroundColor: rowBg, backgroundImage: payBg, position: "sticky", right: R.driverPay, zIndex: 10 }}>
+                          {driver.driverPay != null
+                            ? <div style={{ fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 700, color: "#F59E0B", whiteSpace: "nowrap" }}>{fmt(driver.driverPay)}</div>
+                            : <div style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--muted-foreground)" }}>—</div>}
+                        </td>
+
                         {/* Target — inline editable */}
                         <td style={{ width: 120, minWidth: 120, padding: "6px 12px", verticalAlign: "middle", borderLeft: "1px solid var(--border)", borderBottom: "1px solid var(--border)", backgroundColor: rowBg, backgroundImage: targetBg, position: "sticky", right: R.target, zIndex: 10 }}>
                           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
@@ -1262,6 +1280,9 @@ export function GrossMatrix() {
                         {groupRpm !== null ? `$${groupRpm.toFixed(2)}/mi` : "—"}
                       </div>
                     </td>
+                    <td style={{ padding: "8px 12px", textAlign: "right", verticalAlign: "middle", borderTop: "2px solid #334155", borderLeft: "1px solid #334155", fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 700, color: anyPay ? "#FBBF24" : "#475569", position: "sticky", right: R.driverPay, zIndex: 16, backgroundColor: "#0F172A" }}>
+                      {anyPay ? fmt(groupPay) : "—"}
+                    </td>
                     <td style={{ padding: "8px 12px", textAlign: "center", verticalAlign: "middle", borderTop: "2px solid #334155", borderLeft: "1px solid #334155", fontFamily: "var(--font-mono)", fontSize: 11, color: "#475569", position: "sticky", right: R.target, zIndex: 16, backgroundColor: "#0F172A" }}>—</td>
                     <td style={{ padding: "8px 12px", textAlign: "right", verticalAlign: "middle", borderTop: "2px solid #334155", borderLeft: "1px solid #334155", fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 700, color: groupProfit >= 0 ? "#34D399" : "#F87171", position: "sticky", right: R.profit, zIndex: 16, backgroundColor: "#0F172A" }}>
                       {groupProfit >= 0 ? fmt(groupProfit) : `-$${Math.abs(groupProfit).toLocaleString()}`}
@@ -1300,7 +1321,7 @@ function thStickyRight(extra: { width: number; right: number; borderRight?: stri
     padding: "10px 12px", textAlign: "right" as const,
     fontFamily: "var(--font-sans)", fontSize: 10, fontWeight: 700,
     color: "#94A3B8", letterSpacing: "0.07em", textTransform: "uppercase" as const,
-    borderLeft: extra.right === 240 ? "2px solid #1E293B" : "1px solid #1E293B",
+    borderLeft: extra.right === 360 ? "2px solid #1E293B" : "1px solid #1E293B",
     borderBottom: "2px solid #1E293B",
     position: "sticky" as const, right: extra.right, zIndex: 21,
     backgroundColor: "#0F172A",
