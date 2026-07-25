@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { CreditCard, Check, Zap, Shield, Building2, AlertCircle, Download } from "lucide-react";
 import { api, getCompanyId } from "../lib/api";
+import { PageLoader } from "../components/PageLoader";
 
 // ─── Backend types ────────────────────────────────────────────────────────────
 
@@ -187,19 +188,18 @@ export function BillingPage() {
 
   const currentPlan = billing?.current_plan ?? null;
   const daysLeft    = currentPlan?.days_left ?? null;
+  // An expired plan reports days_left <= 0 (and/or a terminal status). Guard on both so a
+  // lapsed plan reads "Expired", not "Expiring soon" (days_left <= 0 is also <= 7), and so
+  // "days remaining" never shows a negative count.
+  const planStatus  = (billing?.status ?? "").toLowerCase();
+  const isExpired   = ["expired", "suspended", "failed"].includes(planStatus) || (daysLeft != null && daysLeft <= 0);
 
   const capStyle: React.CSSProperties = {
     fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600,
     color: "var(--muted-foreground)", textTransform: "uppercase", letterSpacing: "0.07em",
   };
 
-  if (loading) {
-    return (
-      <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <span style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>Loading…</span>
-      </div>
-    );
-  }
+  if (loading) return <PageLoader label="billing" />;
 
   if (error) {
     return (
@@ -248,7 +248,7 @@ export function BillingPage() {
                     Renews on <strong style={{ color: "var(--foreground)" }}>{currentPlan.renews_on}</strong>
                   </span>
                 </>)}
-                {daysLeft != null && (<>
+                {daysLeft != null && daysLeft > 0 && (<>
                   <span style={{ width: 3, height: 3, borderRadius: "50%", backgroundColor: "var(--muted-foreground)" }} />
                   <span style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
                     {daysLeft} days remaining
@@ -257,12 +257,17 @@ export function BillingPage() {
               </div>
             </div>
 
-            {daysLeft != null && daysLeft <= 7 && (
+            {isExpired ? (
+              <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 12px", backgroundColor: "rgba(239,68,68,0.14)", borderRadius: 8, border: "1px solid rgba(239,68,68,0.35)" }}>
+                <AlertCircle size={14} style={{ color: "#EF4444" }} />
+                <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: 500, color: "#EF4444" }}>Expired</span>
+              </div>
+            ) : daysLeft != null && daysLeft <= 7 ? (
               <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 12px", backgroundColor: "rgba(245,158,11,0.14)", borderRadius: 8, border: "1px solid rgba(245,158,11,0.35)" }}>
                 <AlertCircle size={14} style={{ color: "#F59E0B" }} />
                 <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: 500, color: "#F59E0B" }}>Expiring soon</span>
               </div>
-            )}
+            ) : null}
 
             <DriverSeats drivers={billing?.drivers} />
           </div>
