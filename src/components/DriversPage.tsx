@@ -1435,7 +1435,7 @@ function ImportModal({ entityLabel, endpoint, templateEndpoint, templateFile, on
 
   const pickFile = (f: File | undefined | null) => {
     if (!f) return;
-    if (!/\.csv$/i.test(f.name)) { setError("Only CSV files are supported."); return; }
+    if (!/\.(csv|xlsx)$/i.test(f.name)) { setError("Only CSV or Excel (.xlsx) files are supported."); return; }
     setError(null); setFile(f);
   };
 
@@ -1494,7 +1494,7 @@ function ImportModal({ entityLabel, endpoint, templateEndpoint, templateFile, on
               cursor: "pointer", transition: "all 0.15s",
             }}
           >
-            <input ref={inputRef} type="file" accept=".csv" onChange={handleFile} style={{ display: "none" }} />
+            <input ref={inputRef} type="file" accept=".csv,.xlsx" onChange={handleFile} style={{ display: "none" }} />
             {file ? (
               <>
                 <div style={{ width: 44, height: 44, borderRadius: 10, backgroundColor: "rgba(16,185,129,0.14)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 12px" }}>
@@ -1514,7 +1514,7 @@ function ImportModal({ entityLabel, endpoint, templateEndpoint, templateFile, on
                   Drag & drop your file here
                 </div>
                 <div style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)", marginTop: 4 }}>
-                  or <span style={{ color: "var(--primary)", fontWeight: 500 }}>browse files</span> — CSV only (max 5 MB)
+                  or <span style={{ color: "var(--primary)", fontWeight: 500 }}>browse files</span> — CSV or Excel (max 5 MB)
                 </div>
               </>
             )}
@@ -1623,7 +1623,7 @@ function AddMenu({ entityLabel, onManual, onImport, onEld, canEld = true }: {
       icon: <FileSpreadsheet size={16} />,
       iconColor: "#10B981", iconBg: "rgba(16,185,129,0.08)",
       label: "Import from File",
-      desc: "Upload a CSV, Excel or PDF roster",
+      desc: "Upload a CSV or Excel roster",
       comingSoon: false,
       onClick: onImport,
     },
