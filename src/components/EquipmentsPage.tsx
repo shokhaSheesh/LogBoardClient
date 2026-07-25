@@ -14,6 +14,7 @@ interface TruckRow {
   driver_id: string;
   driver_team?: boolean;   // resolved on the row — assigned driver is a team
   driver_name2?: string;   // the team's second driver name
+  odometer?: number;       // read-only, resolved from the assigned driver's ELD (miles); absent when unassigned or no ELD link
   make: string;
   model: string;
   vin: string;
@@ -1024,6 +1025,7 @@ function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
               <TH width={150}>Make</TH>
               <TH width={160}>Model</TH>
               <TH width={220}>VIN</TH>
+              <TH width={120} align="right">Odometer</TH>
               <TH width={90} align="center">Actions</TH>
             </tr>
           </thead>
@@ -1044,6 +1046,9 @@ function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
                 <TD>{r.make || "—"}</TD>
                 <TD>{r.model || "—"}</TD>
                 <TD mono>{r.vin || "—"}</TD>
+                <td style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", verticalAlign: "middle", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: r.odometer != null ? "var(--foreground)" : "var(--muted-foreground)" }}>
+                  {r.odometer != null ? `${r.odometer.toLocaleString()} mi` : "—"}
+                </td>
                 <td style={{ padding: "8px 10px", borderBottom: "1px solid var(--border)", verticalAlign: "middle", textAlign: "center" }}>
                   <div style={{ display: "inline-flex", gap: 5 }}>
                     {canUpdate && <ActionBtn icon={<Pencil size={13} />} color="#3B82F6" bg="rgba(59,130,246,0.14)" onClick={() => openEdit(r)} />}
@@ -1055,7 +1060,7 @@ function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
             ))}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={7} style={{ padding: "32px 24px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)", borderBottom: "1px solid var(--border)" }}>
+                <td colSpan={8} style={{ padding: "32px 24px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)", borderBottom: "1px solid var(--border)" }}>
                   No trucks found.
                 </td>
               </tr>
