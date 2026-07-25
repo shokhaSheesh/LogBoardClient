@@ -6,6 +6,7 @@ import {
 } from "recharts";
 import { ChevronLeft, ChevronRight, TrendingUp, TrendingDown, Package, DollarSign, Gauge, Trophy, Zap, AlertCircle } from "lucide-react";
 import { api } from "../lib/api";
+import { PageLoader } from "../components/PageLoader";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -253,11 +254,7 @@ export function DashboardPage() {
       </div>
 
       {/* ── Loading / error ── */}
-      {loading && !week && (
-        <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <span style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>Loading…</span>
-        </div>
-      )}
+      {loading && !week && <PageLoader label="dashboard" />}
 
       {error && !week && (
         <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>

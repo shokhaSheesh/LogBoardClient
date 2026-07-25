@@ -4,6 +4,7 @@ import { api, isForbidden } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { hasPerm } from "../lib/permissions";
 import { driverDisplayName } from "../lib/driverName";
+import { PageLoader } from "./PageLoader";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -1012,9 +1013,7 @@ function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
       {/* Table — dim existing rows while a page-change refetch is in flight */}
       <div style={{ flex: 1, overflow: "auto", scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent" }}>
         {loading && rows.length === 0 ? (
-          <div style={{ padding: "40px 24px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
-            Loading trucks…
-          </div>
+          <PageLoader label="trucks" />
         ) : (
         <table style={{ width: "max-content", minWidth: "100%", borderCollapse: "collapse", tableLayout: "fixed", opacity: loading ? 0.45 : 1, pointerEvents: loading ? "none" : "auto", transition: "opacity 0.15s" }}>
           <thead>
@@ -1201,9 +1200,7 @@ function TrailersTab({ onCountChange }: { onCountChange: (n: number) => void }) 
       {/* Table */}
       <div style={{ flex: 1, overflow: "auto", scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent" }}>
         {loading && rows.length === 0 ? (
-          <div style={{ padding: "40px 24px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
-            Loading trailers…
-          </div>
+          <PageLoader label="trailers" />
         ) : (
         <table style={{ width: "max-content", minWidth: "100%", borderCollapse: "collapse", tableLayout: "fixed", opacity: loading ? 0.45 : 1, pointerEvents: loading ? "none" : "auto", transition: "opacity 0.15s" }}>
           <thead>

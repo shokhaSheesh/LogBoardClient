@@ -16,6 +16,7 @@ import { driverDisplayName } from "../lib/driverName";
 import { geocodeCity, routeMiles, type LatLng } from "../lib/geo";
 import { cleanAppt } from "../lib/appt";
 import { AsyncSearchableSelect, type SelectOpt } from "./AsyncSelect";
+import { PageLoader } from "./PageLoader";
 import { AddressAutocomplete, type AddressParts } from "./AddressAutocomplete";
 import { UncompleteConfirm } from "./UncompleteConfirm";
 
@@ -1916,6 +1917,12 @@ export function LoadsPage() {
   const handleSearch = (v: string) => setSearch(v);
   const handleFilter = (v: string) => setFilter(v);
 
+  if (loading && loads.length === 0) return (
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", backgroundColor: "var(--background)" }}>
+      <PageLoader label="loads" />
+    </div>
+  );
+
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", backgroundColor: "var(--background)", overflow: "hidden" }}>
       {toast && (
@@ -2114,13 +2121,6 @@ export function LoadsPage() {
                     </td>
                   </tr>
                 ))}
-                {loading && loads.length === 0 && (
-                  <tr>
-                    <td colSpan={11} style={{ padding: "40px 20px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
-                      Loading…
-                    </td>
-                  </tr>
-                )}
                 {!loading && loads.length === 0 && (
                   <tr>
                     <td colSpan={11} style={{ padding: "40px 20px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>

@@ -3,6 +3,7 @@ import { Search, Calendar, Check, ChevronDown, ChevronLeft, ChevronRight, AlertC
 import { createPortal } from "react-dom";
 import { Status, STATUS_CONFIG, ALL_STATUSES } from "../lib/statuses";
 import { api, getCompanyId } from "../lib/api";
+import { PageLoader } from "./PageLoader";
 import { driverDisplayName } from "../lib/driverName";
 
 type CellType = Status | "load" | "empty";
@@ -1058,13 +1059,11 @@ export function GrossMatrix() {
 
           {/* Table */}
           <div style={{ flex: 1, overflow: "auto", scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent" }}>
-            {dates.length === 0 ? (
+            {loading ? (
+              <PageLoader label="gross" />
+            ) : dates.length === 0 ? (
               <div style={{ padding: "60px 20px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
                 Select a valid date range to display data.
-              </div>
-            ) : loading ? (
-              <div style={{ padding: "60px 20px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
-                Loading…
               </div>
             ) : loadErr ? (
               <div style={{ padding: "60px 20px", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>

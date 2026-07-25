@@ -7,6 +7,7 @@ import {
 import { useAuth } from "../lib/auth";
 import { hasPerm } from "../lib/permissions";
 import { eldErrorMessage } from "./EldModal";
+import { PageLoader } from "./PageLoader";
 
 // ─── Week settings helpers ────────────────────────────────────────────────────
 
@@ -809,7 +810,7 @@ function UsersTab({ roles, teams, reloadTeams, canCreate, canUpdate, canDelete }
           </thead>
           <tbody>
             {loading && (
-              <tr><td colSpan={10} style={{ padding: "32px 24px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>Loading…</td></tr>
+              <tr><td colSpan={10} style={{ padding: 0 }}><PageLoader label="users" /></td></tr>
             )}
             {!loading && paginated.map((u, i) => {
               const role = roles.find((r) => r.id === u.roleId) ?? roles.find((r) => r.name.toLowerCase() === u.roleName.toLowerCase());
@@ -1436,11 +1437,7 @@ function TeamsTab({ canCreate, canUpdate, canDelete }: {
               );
             })}
             {loading && (
-              <tr>
-                <td colSpan={4} style={{ padding: "32px 24px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)", borderBottom: "1px solid var(--border)" }}>
-                  Loading…
-                </td>
-              </tr>
+              <tr><td colSpan={4} style={{ padding: 0 }}><PageLoader label="teams" /></td></tr>
             )}
             {!loading && paginated.length === 0 && (
               <tr>
@@ -1718,7 +1715,7 @@ function RolesTab({ onRolesChange, canCreate, canUpdate, canDelete }: {
           </thead>
           <tbody>
             {loading && (
-              <tr><td colSpan={effectiveEntries.length + 2} style={{ padding: "32px 24px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>Loading…</td></tr>
+              <tr><td colSpan={effectiveEntries.length + 2} style={{ padding: 0 }}><PageLoader label="roles" /></td></tr>
             )}
             {!loading && roles.map((r, i) => {
               const isEven = i % 2 === 0;
@@ -1836,13 +1833,7 @@ function WeekTab({ canEdit }: { canEdit: boolean }) {
       </div>
     );
   }
-  if (startDay === null) {
-    return (
-      <div style={{ padding: "32px 28px", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
-        Loading…
-      </div>
-    );
-  }
+  if (startDay === null) return <PageLoader label="work week" />;
 
   const endDay = (startDay + 6) % 7;
 
@@ -1988,7 +1979,7 @@ function EldTab({ canManage }: { canManage: boolean }) {
         )}
 
         {state === "loading" ? (
-          <div style={{ padding: "40px 0", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>Loading…</div>
+          <PageLoader label="ELD settings" />
         ) : state === "connected" && conn ? (
           <div style={{ display: "flex", flexDirection: "column", gap: 14, padding: 18, border: "1px solid var(--border)", borderRadius: 12, backgroundColor: "var(--background)" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>

@@ -9,6 +9,7 @@ import { hasPerm } from "../lib/permissions";
 import { menuPosition } from "../lib/menuPosition";
 import { driverDisplayName } from "../lib/driverName";
 import { boardWsUrl } from "../lib/ws";
+import { PageLoader } from "./PageLoader";
 import { cleanAppt } from "../lib/appt";
 import { UncompleteConfirm } from "./UncompleteConfirm";
 
@@ -1491,7 +1492,7 @@ export function DispatchTable() {
       {/* ── Table(s) ── */}
       <div style={{ flex: 1, overflow: "auto", position: "relative", scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent" }}>
         {loading ? (
-          <div style={{ padding: "64px 20px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>Loading board…</div>
+          <PageLoader label="board" />
         ) : error ? (
           <div style={{ padding: "64px 20px", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
             <AlertCircle size={20} style={{ color: "#EF4444" }} />

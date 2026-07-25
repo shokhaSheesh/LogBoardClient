@@ -8,6 +8,7 @@ import { driverDisplayName } from "../lib/driverName";
 import { menuPosition } from "../lib/menuPosition";
 import { UncompleteConfirm } from "./UncompleteConfirm";
 import { EldModal } from "./EldModal";
+import { PageLoader } from "./PageLoader";
 import {
   User, Users, Plus, Pencil, Trash2, MapPin, MessageSquare,
   X, Check, Search, ChevronDown, ChevronLeft, ChevronRight,
@@ -2569,11 +2570,7 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
   const handleSearch = (v: string) => setSearch(v);
   const handleStatus = (v: string) => setStatus(v);
 
-  if (loading && rows.length === 0) return (
-    <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
-      Loading drivers…
-    </div>
-  );
+  if (loading && rows.length === 0) return <PageLoader label="drivers" />;
 
   if (error) return (
     <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "#ef4444" }}>
@@ -2872,11 +2869,7 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
   const handleSearch = (v: string) => setSearch(v);
   const handleStatus = (v: string) => setStatus(v);
 
-  if (loading && rows.length === 0) return (
-    <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
-      Loading teams…
-    </div>
-  );
+  if (loading && rows.length === 0) return <PageLoader label="teams" />;
 
   if (error) return (
     <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "#ef4444" }}>

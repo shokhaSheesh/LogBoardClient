@@ -6,6 +6,7 @@ import {
   CalendarDays, FileText, AlertCircle, Info,
 } from "lucide-react";
 import { api, getCompanyId } from "../lib/api";
+import { PageLoader } from "../components/PageLoader";
 import { useAuth } from "../lib/auth";
 import { hasPerm } from "../lib/permissions";
 
@@ -442,6 +443,12 @@ export function PayoutsPage() {
     setPage(1);
   };
 
+  if (loading && payouts.length === 0) return (
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", backgroundColor: "var(--background)" }}>
+      <PageLoader label="payouts" />
+    </div>
+  );
+
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", backgroundColor: "var(--background)", overflow: "hidden" }}>
 
@@ -567,13 +574,6 @@ export function PayoutsPage() {
             </tr>
           </thead>
           <tbody>
-            {loading && payouts.length === 0 && (
-              <tr>
-                <td colSpan={12} style={{ padding: "56px 20px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 14, color: "var(--muted-foreground)" }}>
-                  Loading…
-                </td>
-              </tr>
-            )}
             {!loading && loadErr && payouts.length === 0 && (
               <tr>
                 <td colSpan={12} style={{ padding: "48px 20px" }}>
