@@ -9,6 +9,7 @@ import { menuPosition } from "../lib/menuPosition";
 import { UncompleteConfirm } from "./UncompleteConfirm";
 import { EldModal } from "./EldModal";
 import { PageLoader } from "./PageLoader";
+import { FormError, formErrorInModal, friendlyError, notify } from "./feedback";
 import {
   User, Users, Plus, Pencil, Trash2, MapPin, MessageSquare,
   X, Check, Search, ChevronDown, ChevronLeft, ChevronRight,
@@ -265,7 +266,7 @@ function CustomSelect({
           borderRadius: 7, color: disabled ? "var(--muted-foreground)" : "var(--foreground)",
           cursor: disabled ? "not-allowed" : "pointer",
           opacity: disabled ? 0.55 : 1,
-          boxShadow: error ? "0 0 0 3px rgba(239,68,68,0.10)" : open ? "0 0 0 3px rgba(59,130,246,0.12)" : "none",
+          boxShadow: error ? "0 0 0 3px rgba(239,68,68,0.10)" : open ? "0 0 0 3px var(--primary-soft)" : "none",
           transition: "border-color 0.15s, box-shadow 0.15s",
           outline: "none",
         }}
@@ -454,7 +455,7 @@ function UnitSelect({ value, label, endpoint, onChange, error = false, disabled 
           borderRadius: 7, color: disabled ? "var(--muted-foreground)" : "var(--foreground)",
           cursor: disabled ? "not-allowed" : "pointer",
           opacity: disabled ? 0.55 : 1,
-          boxShadow: error ? "0 0 0 3px rgba(239,68,68,0.10)" : open ? "0 0 0 3px rgba(59,130,246,0.12)" : "none",
+          boxShadow: error ? "0 0 0 3px rgba(239,68,68,0.10)" : open ? "0 0 0 3px var(--primary-soft)" : "none",
           transition: "border-color 0.15s, box-shadow 0.15s",
           outline: "none",
         }}
@@ -838,31 +839,6 @@ const TYPE_OPTS: SelectOpt[] = [
   { value: "C/D", label: "C/D — Company Driver"  },
 ];
 
-// ─── Toast ────────────────────────────────────────────────────────────────────
-
-function Toast({ msg, type, onClose }: { msg: string; type: "success" | "error"; onClose: () => void }) {
-  useEffect(() => {
-    const t = setTimeout(onClose, 3500);
-    return () => clearTimeout(t);
-  }, []);
-  return (
-    <div style={{
-      position: "fixed", top: 24, right: 24, zIndex: 9999,
-      backgroundColor: type === "success" ? "#10B981" : "#EF4444",
-      color: "#fff", borderRadius: 8, padding: "10px 16px",
-      display: "flex", alignItems: "center", gap: 8,
-      boxShadow: "0 4px 20px rgba(0,0,0,0.18)",
-      fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 500,
-    }}>
-      {type === "success" ? <Check size={15} /> : <AlertCircle size={15} />}
-      {msg}
-      <button onClick={onClose} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.75)", cursor: "pointer", display: "flex", padding: 0, marginLeft: 4 }}>
-        <X size={13} />
-      </button>
-    </div>
-  );
-}
-
 // ─── Field label ─────────────────────────────────────────────────────────────
 
 const PendingBadge = () => (
@@ -906,7 +882,7 @@ const FieldInput = ({ value, onChange, onBlur, placeholder, error, disabled }: {
     onFocus={(e) => {
       if (!disabled && !error) {
         e.currentTarget.style.borderColor = "var(--primary)";
-        e.currentTarget.style.boxShadow = "0 0 0 3px rgba(59,130,246,0.12)";
+        e.currentTarget.style.boxShadow = "0 0 0 3px var(--primary-soft)";
       }
     }}
     onBlur={(e) => {
@@ -1089,7 +1065,7 @@ function PayFields({ payType, payRate, onChange }: {
               }}
               placeholder={isPercent ? "e.g. 25" : "e.g. 0.55"}
               style={numStyle}
-              onFocus={(e) => { e.currentTarget.style.borderColor = "var(--primary)"; e.currentTarget.style.boxShadow = "0 0 0 3px rgba(59,130,246,0.12)"; }}
+              onFocus={(e) => { e.currentTarget.style.borderColor = "var(--primary)"; e.currentTarget.style.boxShadow = "0 0 0 3px var(--primary-soft)"; }}
               onBlur={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.boxShadow = "none"; }}
             />
           </div>
@@ -1102,7 +1078,8 @@ function PayFields({ payType, payRate, onChange }: {
   );
 }
 
-function SoloModal({ driver, onClose, onSave, canReorderLoads, saving, fieldErrors, canEditEquipment }: {
+function SoloModal({ driver, onClose, onSave, canReorderLoads, saving, error, fieldErrors, canEditEquipment }: {
+  error?: string | null;
   driver: Partial<SoloDriver>; onClose: () => void; onSave: (d: SoloDriver) => void;
   canReorderLoads?: boolean;
   saving?: boolean;
@@ -1194,7 +1171,7 @@ function SoloModal({ driver, onClose, onSave, canReorderLoads, saving, fieldErro
                 onChange={(e) => setForm((f) => ({ ...f, weeklyGrossTarget: e.target.value === "" ? undefined : Number(e.target.value) }))}
                 placeholder="e.g. 5000"
                 style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 10px 7px 22px", borderRadius: 6, height: 34, border: "1px solid var(--border)", backgroundColor: "var(--input-background)", color: "var(--foreground)", outline: "none", width: "100%", boxSizing: "border-box" }}
-                onFocus={(e) => { e.currentTarget.style.borderColor = "var(--primary)"; e.currentTarget.style.boxShadow = "0 0 0 3px rgba(59,130,246,0.12)"; }}
+                onFocus={(e) => { e.currentTarget.style.borderColor = "var(--primary)"; e.currentTarget.style.boxShadow = "0 0 0 3px var(--primary-soft)"; }}
                 onBlur={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.boxShadow = "none"; }}
               />
             </div>
@@ -1225,6 +1202,7 @@ function SoloModal({ driver, onClose, onSave, canReorderLoads, saving, fieldErro
         </div>
 
         {/* Footer */}
+        <FormError message={error} style={formErrorInModal} />
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, padding: "14px 20px", borderTop: "1px solid var(--border)" }}>
           <button onClick={onClose} style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 16px", borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "var(--muted)", color: "var(--foreground)", cursor: "pointer" }}>
             Cancel
@@ -1238,7 +1216,8 @@ function SoloModal({ driver, onClose, onSave, canReorderLoads, saving, fieldErro
   );
 }
 
-function TeamModal({ driver, onClose, onSave, canReorderLoads, saving, fieldErrors, canEditEquipment }: {
+function TeamModal({ driver, onClose, onSave, canReorderLoads, saving, error, fieldErrors, canEditEquipment }: {
+  error?: string | null;
   driver: Partial<TeamDriver>; onClose: () => void; onSave: (d: TeamDriver) => void;
   canReorderLoads?: boolean;
   saving?: boolean;
@@ -1340,7 +1319,7 @@ function TeamModal({ driver, onClose, onSave, canReorderLoads, saving, fieldErro
                 onChange={(e) => setForm((f) => ({ ...f, weeklyGrossTarget: e.target.value === "" ? undefined : Number(e.target.value) }))}
                 placeholder="e.g. 7000"
                 style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 10px 7px 22px", borderRadius: 6, height: 34, border: "1px solid var(--border)", backgroundColor: "var(--input-background)", color: "var(--foreground)", outline: "none", width: "100%", boxSizing: "border-box" }}
-                onFocus={(e) => { e.currentTarget.style.borderColor = "var(--primary)"; e.currentTarget.style.boxShadow = "0 0 0 3px rgba(59,130,246,0.12)"; }}
+                onFocus={(e) => { e.currentTarget.style.borderColor = "var(--primary)"; e.currentTarget.style.boxShadow = "0 0 0 3px var(--primary-soft)"; }}
                 onBlur={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.boxShadow = "none"; }}
               />
             </div>
@@ -1370,6 +1349,7 @@ function TeamModal({ driver, onClose, onSave, canReorderLoads, saving, fieldErro
           </label>
         </div>
 
+        <FormError message={error} style={formErrorInModal} />
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, padding: "14px 20px", borderTop: "1px solid var(--border)" }}>
           <button onClick={onClose} style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 16px", borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "var(--muted)", color: "var(--foreground)", cursor: "pointer" }}>
             Cancel
@@ -1394,7 +1374,7 @@ function DeleteConfirm({ label, onClose, onConfirm, busy = false, error }: { lab
         <div style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)", marginBottom: error ? 12 : 22 }}>
           <strong>{label}</strong> will be permanently removed.
         </div>
-        {error && <div style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "#EF4444", marginBottom: 16 }}>{error}</div>}
+        <FormError message={error} style={{ marginBottom: 16 }} />
         <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
           <button onClick={onClose} disabled={busy} style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 20px", borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "var(--muted)", color: "var(--foreground)", cursor: busy ? "default" : "pointer", opacity: busy ? 0.5 : 1 }}>Cancel</button>
           <button onClick={onConfirm} disabled={busy} style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, minWidth: 96, fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 20px", borderRadius: 6, border: "none", backgroundColor: "#EF4444", color: "#fff", cursor: busy ? "default" : "pointer", opacity: busy ? 0.8 : 1 }}>
@@ -1428,7 +1408,7 @@ function ImportModal({ entityLabel, endpoint, templateEndpoint, templateFile, on
     try {
       await api.download(`${templateEndpoint}?format=csv`, templateFile);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Couldn't download the template.");
+      setError(friendlyError(e, "Couldn't download the template."));
     } finally {
       setDownloading(false);
     }
@@ -1456,7 +1436,7 @@ function ImportModal({ entityLabel, endpoint, templateEndpoint, templateFile, on
       setResult(res);
       if (res.created > 0) onImported?.();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Import failed");
+      setError(friendlyError(e, "Import failed"));
     } finally {
       setSubmitting(false);
     }
@@ -1783,7 +1763,7 @@ function useDriverWeek(driverId: string) {
         if (cancelled) return;
         setData(null);
         // The recap exposes per-load revenue, so it needs loads.read on top of drivers.read.
-        setError(isForbidden(e) ? "You don't have access to this driver's earnings." : (e instanceof Error ? e.message : "Couldn't load this week."));
+        setError(isForbidden(e) ? "You don't have access to this driver's earnings." : (friendlyError(e, "Couldn't load this week.")));
       })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
@@ -1873,11 +1853,11 @@ function DriverDetail({ driver, onBack }: { driver: SoloDriver; onBack: () => vo
           }}>
             <div style={{
               width: 60, height: 60, borderRadius: "50%",
-              background: "linear-gradient(135deg, #2563EB 0%, #7C3AED 100%)",
+              background: "var(--primary-gradient)",
               color: "#fff",
               display: "flex", alignItems: "center", justifyContent: "center",
               fontFamily: "var(--font-sans)", fontSize: 20, fontWeight: 700, letterSpacing: "0.03em",
-              boxShadow: "0 4px 12px rgba(37,99,235,0.30)",
+              boxShadow: "0 4px 12px var(--primary-glow)",
             }}>
               {initials}
             </div>
@@ -2095,7 +2075,7 @@ function TeamDetail({ team, onBack }: { team: TeamDriver; onBack: () => void }) 
   ];
 
   const avatarGradients = [
-    "linear-gradient(135deg, #2563EB 0%, #7C3AED 100%)",
+    "var(--primary-gradient)",
     "linear-gradient(135deg, #0891B2 0%, #059669 100%)",
   ];
 
@@ -2384,7 +2364,7 @@ function Toolbar({
           }}
           onFocus={(e) => {
             e.currentTarget.style.borderColor = "var(--primary)";
-            e.currentTarget.style.boxShadow = "0 0 0 3px rgba(59,130,246,0.12)";
+            e.currentTarget.style.boxShadow = "0 0 0 3px var(--primary-soft)";
           }}
           onBlur={(e) => {
             e.currentTarget.style.borderColor = "var(--border)";
@@ -2434,7 +2414,6 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
   const [pageSize, setPageSize]               = useState(20);
   const [importing, setImporting]             = useState(false);
   const [eldOpen, setEldOpen]                 = useState(false);
-  const [toast, setToast]                     = useState<{ type: "success" | "error"; msg: string } | null>(null);
   const [fetchKey, setFetchKey]               = useState(0);
   const [fieldErrors, setFieldErrors]         = useState<{ truck?: string; trailer?: string }>({});
 
@@ -2470,11 +2449,11 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
     setRows((prev) => prev.map((d) => (d.id === id ? updated : d)));
     try {
       await api.put(`/drivers/${id}`, fromSolo(updated));
-      setToast({ type: "success", msg: "Status updated" });
+      notify.success("Status updated");
       setFetchKey((k) => k + 1);
     } catch (e) {
       setRows((prev) => prev.map((d) => (d.id === id ? existing : d)));
-      setToast({ type: "error", msg: e instanceof Error ? e.message : "Update failed" });
+      notify.error(friendlyError(e, "Update failed"));
     }
   };
 
@@ -2488,10 +2467,10 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
       const load = await api.get<any>(`/loads/${loadId}`);
       const stops = (load.stops ?? []).map((s: any) => ({ ...s, done: true }));
       await api.put(`/loads/${loadId}`, { ...load, status: "completed", stops });
-      setToast({ type: "success", msg: "Status updated" });
+      notify.success("Status updated");
       setFetchKey((k) => k + 1);
     } catch (e) {
-      setToast({ type: "error", msg: e instanceof Error ? e.message : "Update failed" });
+      notify.error(friendlyError(e, "Update failed"));
     }
   };
 
@@ -2510,15 +2489,17 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
   };
 
   // New drivers start as Company Driver — the common case.
-  const openCreate = () => { setEditing({ type: "C/D" }); setFieldErrors({}); setModal("create"); };
-  const openEdit   = (d: SoloDriver) => { setEditing(d); setFieldErrors({}); setModal("edit"); };
+  const [saveErr, setSaveErr] = useState<string | null>(null);
+  const openCreate = () => { setEditing({ type: "C/D" }); setFieldErrors({}); setSaveErr(null); setModal("create"); };
+  const openEdit   = (d: SoloDriver) => { setEditing(d); setFieldErrors({}); setSaveErr(null); setModal("edit"); };
   const save = async (d: SoloDriver) => {
     setSaving(true);
     setFieldErrors({});
+    setSaveErr(null);
     try {
       if (modal === "create") {
         await api.post<any>("/drivers", fromSolo(d));
-        setToast({ type: "success", msg: `${d.name} added successfully` });
+        notify.success(`${d.name} added successfully`);
       } else {
         // The modal only rearranges its own state on drag — the load order the user
         // left it in reaches the server here, folded into the same Save click as
@@ -2535,7 +2516,7 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
         }
         await api.put<any>(`/drivers/${d.id}`, body);
         if (queueChanged) await api.put(`/drivers/${d.id}/queue`, { load_ids: newTailIds });
-        setToast({ type: "success", msg: `${d.name} updated successfully` });
+        notify.success(`${d.name} updated successfully`);
       }
       setModal(null);
       setFetchKey((k) => k + 1);
@@ -2545,7 +2526,7 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
         // Keep the modal open so the user can fix the truck/trailer select
         setFieldErrors(fieldErr);
       } else {
-        setToast({ type: "error", msg: e instanceof Error ? e.message : "Save failed" });
+        setSaveErr(friendlyError(e, "Save failed")); // keep the modal open
       }
     } finally {
       setSaving(false);
@@ -2557,11 +2538,11 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
     setDelBusy(true);
     try {
       await api.delete(`/drivers/${deleting.id}`);
-      setToast({ type: "success", msg: `${deleting.name} removed` });
+      notify.success(`${deleting.name} removed`);
       setFetchKey((k) => k + 1);
       setDeleting(null);
     } catch (e) {
-      setDelErr(e instanceof Error ? e.message : "Delete failed");
+      setDelErr(friendlyError(e, "Delete failed"));
     } finally {
       setDelBusy(false);
     }
@@ -2610,7 +2591,7 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
               <tr
                 key={d.id}
                 style={{ backgroundColor: i % 2 === 0 ? "var(--card)" : "var(--background)" }}
-                onMouseEnter={(e) => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = "rgba(59,130,246,0.03)"; }}
+                onMouseEnter={(e) => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = "var(--primary-faint)"; }}
                 onMouseLeave={(e) => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = i % 2 === 0 ? "var(--card)" : "var(--background)"; }}
               >
                 <TD mono center>{i + 1 + (page - 1) * pageSize}</TD>
@@ -2691,7 +2672,7 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
       />
 
       {(modal === "create" || modal === "edit") && (
-        <SoloModal driver={editing} onClose={() => setModal(null)} onSave={save} canReorderLoads={canUpdate} saving={saving} fieldErrors={fieldErrors} canEditEquipment={canReadFleet} />
+        <SoloModal driver={editing} onClose={() => setModal(null)} onSave={save} canReorderLoads={canUpdate} saving={saving} error={saveErr} fieldErrors={fieldErrors} canEditEquipment={canReadFleet} />
       )}
       {deleting && (
         <DeleteConfirm label={deleting.name} busy={delBusy} error={delErr} onClose={() => { setDeleting(null); setDelErr(null); }} onConfirm={del} />
@@ -2710,7 +2691,6 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
       {eldOpen && (
         <EldModal canManage={canManageEld} onClose={() => setEldOpen(false)} onLinked={() => setFetchKey((k) => k + 1)} />
       )}
-      {toast && <Toast type={toast.type} msg={toast.msg} onClose={() => setToast(null)} />}
     </>
   );
 }
@@ -2742,7 +2722,6 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
   const [pageSize, setPageSize]               = useState(20);
   const [importing, setImporting]             = useState(false);
   const [eldOpen, setEldOpen]                 = useState(false);
-  const [toast, setToast]                     = useState<{ type: "success" | "error"; msg: string } | null>(null);
   const [fetchKey, setFetchKey]               = useState(0);
   const [fieldErrors, setFieldErrors]         = useState<{ truck?: string; trailer?: string }>({});
 
@@ -2778,11 +2757,11 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
     setRows((prev) => prev.map((d) => (d.id === id ? updated : d)));
     try {
       await api.put(`/drivers/${id}`, fromTeam(updated));
-      setToast({ type: "success", msg: "Status updated" });
+      notify.success("Status updated");
       setFetchKey((k) => k + 1);
     } catch (e) {
       setRows((prev) => prev.map((d) => (d.id === id ? existing : d)));
-      setToast({ type: "error", msg: e instanceof Error ? e.message : "Update failed" });
+      notify.error(friendlyError(e, "Update failed"));
     }
   };
 
@@ -2794,10 +2773,10 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
       const load = await api.get<any>(`/loads/${loadId}`);
       const stops = (load.stops ?? []).map((s: any) => ({ ...s, done: true }));
       await api.put(`/loads/${loadId}`, { ...load, status: "completed", stops });
-      setToast({ type: "success", msg: "Status updated" });
+      notify.success("Status updated");
       setFetchKey((k) => k + 1);
     } catch (e) {
-      setToast({ type: "error", msg: e instanceof Error ? e.message : "Update failed" });
+      notify.error(friendlyError(e, "Update failed"));
     }
   };
 
@@ -2815,15 +2794,17 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
   };
 
   // New drivers start as Company Driver — the common case.
-  const openCreate = () => { setEditing({ type: "C/D" }); setFieldErrors({}); setModal("create"); };
-  const openEdit   = (d: TeamDriver) => { setEditing(d); setFieldErrors({}); setModal("edit"); };
+  const [saveErr, setSaveErr] = useState<string | null>(null);
+  const openCreate = () => { setEditing({ type: "C/D" }); setFieldErrors({}); setSaveErr(null); setModal("create"); };
+  const openEdit   = (d: TeamDriver) => { setEditing(d); setFieldErrors({}); setSaveErr(null); setModal("edit"); };
   const save = async (d: TeamDriver) => {
     setSaving(true);
     setFieldErrors({});
+    setSaveErr(null);
     try {
       if (modal === "create") {
         await api.post<any>("/drivers", fromTeam(d));
-        setToast({ type: "success", msg: `${d.name1} & ${d.name2} added successfully` });
+        notify.success(`${d.name1} & ${d.name2} added successfully`);
       } else {
         // See the solo table's save() for why this reorder rides along with the field
         // save instead of firing on drag.
@@ -2835,7 +2816,7 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
         }
         await api.put<any>(`/drivers/${d.id}`, body);
         if (queueChanged) await api.put(`/drivers/${d.id}/queue`, { load_ids: newTailIds });
-        setToast({ type: "success", msg: `Team updated successfully` });
+        notify.success(`Team updated successfully`);
       }
       setModal(null);
       setFetchKey((k) => k + 1);
@@ -2844,7 +2825,7 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
       if (fieldErr) {
         setFieldErrors(fieldErr);
       } else {
-        setToast({ type: "error", msg: e instanceof Error ? e.message : "Save failed" });
+        setSaveErr(friendlyError(e, "Save failed")); // keep the modal open
       }
     } finally {
       setSaving(false);
@@ -2856,11 +2837,11 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
     setDelBusy(true);
     try {
       await api.delete(`/drivers/${deleting.id}`);
-      setToast({ type: "success", msg: `${deleting.name1} & ${deleting.name2} removed` });
+      notify.success(`${deleting.name1} & ${deleting.name2} removed`);
       setFetchKey((k) => k + 1);
       setDeleting(null);
     } catch (e) {
-      setDelErr(e instanceof Error ? e.message : "Delete failed");
+      setDelErr(friendlyError(e, "Delete failed"));
     } finally {
       setDelBusy(false);
     }
@@ -2911,7 +2892,7 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
               <tr
                 key={d.id}
                 style={{ backgroundColor: i % 2 === 0 ? "var(--card)" : "var(--background)" }}
-                onMouseEnter={(e) => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = "rgba(59,130,246,0.03)"; }}
+                onMouseEnter={(e) => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = "var(--primary-faint)"; }}
                 onMouseLeave={(e) => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = i % 2 === 0 ? "var(--card)" : "var(--background)"; }}
               >
                 <TD mono center>{i + 1 + (page - 1) * pageSize}</TD>
@@ -2995,7 +2976,7 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
       />
 
       {(modal === "create" || modal === "edit") && (
-        <TeamModal driver={editing} onClose={() => setModal(null)} onSave={save} canReorderLoads={canUpdate} saving={saving} fieldErrors={fieldErrors} canEditEquipment={canReadFleet} />
+        <TeamModal driver={editing} onClose={() => setModal(null)} onSave={save} canReorderLoads={canUpdate} saving={saving} error={saveErr} fieldErrors={fieldErrors} canEditEquipment={canReadFleet} />
       )}
       {deleting && (
         <DeleteConfirm label={`${deleting.name1} & ${deleting.name2}`} busy={delBusy} error={delErr} onClose={() => { setDeleting(null); setDelErr(null); }} onConfirm={del} />
@@ -3014,7 +2995,6 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
       {eldOpen && (
         <EldModal canManage={canManageEld} onClose={() => setEldOpen(false)} onLinked={() => setFetchKey((k) => k + 1)} />
       )}
-      {toast && <Toast type={toast.type} msg={toast.msg} onClose={() => setToast(null)} />}
     </>
   );
 }

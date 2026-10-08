@@ -129,7 +129,7 @@ export function AddressAutocomplete({ value, onChange, onSelect, onCoords, place
             fontFamily: "var(--font-sans)", fontSize: 13,
             color: "var(--foreground)",
             cursor: "pointer",
-            backgroundColor: i === activeIdx ? "rgba(59,130,246,0.08)" : "transparent",
+            backgroundColor: i === activeIdx ? "var(--primary-tint)" : "transparent",
             borderTop: i > 0 ? "1px solid var(--border)" : "none",
           }}
         >

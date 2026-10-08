@@ -17,6 +17,7 @@ import { geocodeCity, routeMiles, type LatLng } from "../lib/geo";
 import { cleanAppt } from "../lib/appt";
 import { AsyncSearchableSelect, type SelectOpt } from "./AsyncSelect";
 import { PageLoader } from "./PageLoader";
+import { FormError, formErrorInModal, friendlyError, notify } from "./feedback";
 import { AddressAutocomplete, type AddressParts } from "./AddressAutocomplete";
 import { UncompleteConfirm } from "./UncompleteConfirm";
 
@@ -206,7 +207,7 @@ function CustomSelect({
           backgroundColor: "var(--input-background)",
           border: `1px solid ${open ? "var(--primary)" : "var(--border)"}`,
           borderRadius: 7, color: "var(--foreground)", cursor: "pointer",
-          boxShadow: open ? "0 0 0 3px rgba(59,130,246,0.12)" : "none",
+          boxShadow: open ? "0 0 0 3px var(--primary-soft)" : "none",
           transition: "border-color 0.15s, box-shadow 0.15s", outline: "none",
         }}
       >
@@ -491,7 +492,7 @@ function extractErrorMessage(e: unknown): string {
     case "file_too_large":        return "That file is over the limit (10 MB for a PDF or image, 1 MB for text).";
     case "unsupported_media_type":return "That doesn't look like a PDF, image, or text file.";
     case "invalid_request":       return "The document was empty or unreadable.";
-    default:                      return e instanceof Error ? e.message : "Extraction failed.";
+    default:                      return friendlyError(e, "Extraction failed.");
   }
 }
 
@@ -888,7 +889,7 @@ function AppointmentInput({ value, onChange }: { value: string; onChange: (v: st
         borderRadius: 6, backgroundColor: "var(--input-background)", cursor: "pointer",
         fontFamily: "var(--font-mono)", fontSize: 13,
         color: value ? "var(--foreground)" : "var(--muted-foreground)",
-        boxShadow: open ? "0 0 0 3px rgba(59,130,246,0.12)" : "none",
+        boxShadow: open ? "0 0 0 3px var(--primary-soft)" : "none",
         outline: "none", textAlign: "left",
       }}>
         <CalendarDays size={13} style={{ color: "var(--muted-foreground)", flexShrink: 0 }} />
@@ -1020,7 +1021,8 @@ function ordinal(n: number): string {
 
 // ─── Modal ────────────────────────────────────────────────────────────────────
 
-function LoadModal({ load, onClose, onSave, saving = false }: {
+function LoadModal({ load, onClose, onSave, saving = false, error }: {
+  error?: string | null;
   load: Partial<Load>; onClose: () => void; onSave: (l: Load) => void;
   saving?: boolean;
 }) {
@@ -1208,7 +1210,7 @@ function LoadModal({ load, onClose, onSave, saving = false }: {
   };
   const labelStyle = { display: "flex" as const, flexDirection: "column" as const, gap: 5 };
   const capStyle: React.CSSProperties = { fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600, color: "var(--muted-foreground)", textTransform: "uppercase", letterSpacing: "0.06em" };
-  const focusInput = (e: React.FocusEvent<HTMLInputElement>) => { e.currentTarget.style.borderColor = "var(--primary)"; e.currentTarget.style.boxShadow = "0 0 0 3px rgba(59,130,246,0.12)"; };
+  const focusInput = (e: React.FocusEvent<HTMLInputElement>) => { e.currentTarget.style.borderColor = "var(--primary)"; e.currentTarget.style.boxShadow = "0 0 0 3px var(--primary-soft)"; };
   const blurInput  = (e: React.FocusEvent<HTMLInputElement>) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.boxShadow = "none"; };
 
   return (
@@ -1270,11 +1272,13 @@ function LoadModal({ load, onClose, onSave, saving = false }: {
                 valueLabel={form.dispatcher ?? ""}
                 // Company-plane read (users.read) — the owner-only /owner/* surface 403s for
                 // dispatchers, which left this select empty for exactly the people using it.
+                // ?role=dispatcher narrows it to who can actually be assigned: the owner plus
+                // everyone on the built-in Dispatcher role (the backend rejects anyone else).
                 // It's a bounded pick-list and the docs define no ?q=/paging on it, so fetch
                 // the whole list (omitting page_size returns all) and match here — passing a
                 // query the endpoint ignores would look like search while filtering nothing.
                 fetchPage={async (q) => {
-                  const rows = await api.get<any[]>("/company/users");
+                  const rows = await api.get<any[]>("/company/users?role=dispatcher");
                   const needle = q.trim().toLowerCase();
                   const opts = (rows ?? [])
                     .map((u: any) => ({ value: u.id, label: u.full_name ?? u.login ?? u.id }))
@@ -1485,6 +1489,7 @@ function LoadModal({ load, onClose, onSave, saving = false }: {
         </div>
 
         {/* Footer */}
+        <FormError message={error} style={formErrorInModal} />
         <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 10, padding: "14px 20px", borderTop: "1px solid var(--border)" }}>
           <button onClick={onClose} style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 16px", borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "var(--muted)", color: "var(--foreground)", cursor: "pointer" }}>Cancel</button>
           <button onClick={handleSave} disabled={saving} style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 16px", borderRadius: 6, border: "none", backgroundColor: "var(--primary)", color: "#fff", cursor: saving ? "default" : "pointer", display: "flex", alignItems: "center", gap: 6, opacity: saving ? 0.7 : 1 }}>
@@ -1507,7 +1512,7 @@ function DeleteConfirm({ label, onClose, onConfirm, busy = false, error }: { lab
         <div style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)", marginBottom: error ? 12 : 20 }}>
           Load <strong>{label}</strong> will be permanently removed.
         </div>
-        {error && <div style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "#EF4444", marginBottom: 16 }}>{error}</div>}
+        <FormError message={error} style={{ marginBottom: 16 }} />
         <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
           <button onClick={onClose} disabled={busy} style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 20px", borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "var(--muted)", color: "var(--foreground)", cursor: busy ? "default" : "pointer", opacity: busy ? 0.5 : 1 }}>Cancel</button>
           <button onClick={onConfirm} disabled={busy} style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, minWidth: 96, fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 20px", borderRadius: 6, border: "none", backgroundColor: "#EF4444", color: "#fff", cursor: busy ? "default" : "pointer", opacity: busy ? 0.8 : 1 }}>
@@ -1541,7 +1546,7 @@ function LoadDetail({ load, onBack }: { load: Load; onBack: () => void }) {
     setLogLoading(true);
     api.get<HistoryEvent[]>(`/board/history?entity_type=load&entity_id=${load.id}&limit=100`)
       .then((data) => setLog(data ?? []))
-      .catch((e) => setLogError(e instanceof Error ? e.message : "Failed to load"))
+      .catch((e) => setLogError(friendlyError(e, "Failed to load")))
       .finally(() => setLogLoading(false));
   }, [tab, load.id]);
 
@@ -1777,6 +1782,7 @@ export function LoadsPage() {
   const [modal, setModal]           = useState<"create" | "edit" | null>(null);
   const [extracting, setExtracting] = useState(false);
   const [saving, setSaving]         = useState(false);
+  const [saveErr, setSaveErr]       = useState<string | null>(null);
   const [editing, setEditing]       = useState<Partial<Load>>({});
   const [deleting, setDeleting]     = useState<Load | null>(null);
   const [delBusy, setDelBusy]       = useState(false);
@@ -1787,13 +1793,6 @@ export function LoadsPage() {
   const [page, setPage]             = useState(1);
   const [pageSize, setPageSize]     = useState(20);
   const [detailLoad, setDetail]     = useState<Load | null>(null);
-  const [toast, setToast]           = useState<{ type: "success" | "error"; msg: string } | null>(null);
-
-  useEffect(() => {
-    if (!toast) return;
-    const t = setTimeout(() => setToast(null), 3500);
-    return () => clearTimeout(t);
-  }, [toast]);
 
   // Deep-link from the board: /workspace/loads?edit=<load id> fetches that one load and
   // opens it straight into the edit modal, then strips the param so a refresh/back doesn't
@@ -1803,8 +1802,8 @@ export function LoadsPage() {
     if (!id) return;
     setSearchParams((p) => { p.delete("edit"); return p; }, { replace: true });
     api.get<BackendLoad>(`/loads/${id}`)
-      .then((b) => { setEditing(toLoad(b)); setModal("edit"); })
-      .catch((e) => setToast({ type: "error", msg: isForbidden(e) ? "You can't edit that load." : "Couldn't open that load." }));
+      .then((b) => { setEditing(toLoad(b)); setSaveErr(null); setModal("edit"); })
+      .catch((e) => notify.error(isForbidden(e) ? "You can't edit that load." : "Couldn't open that load."));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
@@ -1829,7 +1828,7 @@ export function LoadsPage() {
         setTotal(t);
         setDetail((prev) => prev ? (mapped.find((l) => l.id === prev.id) ?? null) : null);
       })
-      .catch((e) => setToast({ type: "error", msg: String(e) }))
+      .catch((e) => notify.error(friendlyError(e)))
       .finally(() => setLoading(false));
   }, [fetchKey, debouncedSearch, filterStatus, page, pageSize]);
 
@@ -1840,10 +1839,10 @@ export function LoadsPage() {
     setLoads((prev) => prev.map((l) => (l.id === id ? updated : l)));
     try {
       await api.put<BackendLoad>(`/loads/${id}`, toBackend(updated));
-      setToast({ type: "success", msg: "Status updated" });
+      notify.success("Status updated");
       setFetchKey((k) => k + 1);
     } catch (e) {
-      setToast({ type: "error", msg: e instanceof Error ? e.message : "Update failed" });
+      notify.error(friendlyError(e, "Update failed"));
       setFetchKey((k) => k + 1);
     }
   };
@@ -1856,24 +1855,26 @@ export function LoadsPage() {
     patchLoad(l.id, { status: s });
   };
 
-  const openCreate = () => { setEditing({}); setModal("create"); };
-  const openEdit   = (l: Load) => { setEditing(l); setModal("edit"); };
+  const openCreate = () => { setEditing({}); setSaveErr(null); setModal("create"); };
+  const openEdit   = (l: Load) => { setEditing(l); setSaveErr(null); setModal("edit"); };
 
   // The draft is never persisted by the extractor — drop it into the normal create
   // modal so a human reviews it, assigns driver/dispatcher, and saves via POST /loads.
   const openFromDraft = (draft: ExtractDraft) => {
     setExtracting(false);
     setEditing(draftToLoad(draft));
+    setSaveErr(null);
     setModal("create");
   };
 
   const save = async (l: Load) => {
     setSaving(true);
+    setSaveErr(null);
     const load = withCompletedStops(l);
     try {
       if (modal === "create") {
         await api.post<BackendLoad>("/loads", toBackend(load, { create: true }));
-        setToast({ type: "success", msg: `Load ${load.loadId || ""} created` });
+        notify.success(`Load ${load.loadId || ""} created`);
       } else {
         // Changing driver_id is a queue move, not a field edit: the server detaches the
         // old driver (rotating their deck) and slots the load onto the new one, where
@@ -1886,12 +1887,12 @@ export function LoadsPage() {
         const pickedStatus = load.status !== editing.status;
         const body = toBackend(load, { omitStatus: reassigning && !pickedStatus });
         await api.put<BackendLoad>(`/loads/${load.id}`, body);
-        setToast({ type: "success", msg: `Load ${load.loadId || ""} updated` });
+        notify.success(`Load ${load.loadId || ""} updated`);
       }
       setModal(null);
       setFetchKey((k) => k + 1);
     } catch (e) {
-      setToast({ type: "error", msg: String(e) });
+      setSaveErr(friendlyError(e, "Save failed")); // keep the modal open
     } finally {
       setSaving(false);
     }
@@ -1905,10 +1906,10 @@ export function LoadsPage() {
     try {
       await api.delete(`/loads/${deleting.id}`);
       setDeleting(null);
-      setToast({ type: "success", msg: `Load ${label} deleted` });
+      notify.success(`Load ${label} deleted`);
       setFetchKey((k) => k + 1);
     } catch (e) {
-      setDelErr(e instanceof Error ? e.message : "Delete failed");
+      setDelErr(friendlyError(e, "Delete failed"));
     } finally {
       setDelBusy(false);
     }
@@ -1925,22 +1926,6 @@ export function LoadsPage() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", backgroundColor: "var(--background)", overflow: "hidden" }}>
-      {toast && (
-        <div style={{
-          position: "fixed", top: 24, right: 24, zIndex: 9999,
-          backgroundColor: toast.type === "success" ? "#10B981" : "#EF4444",
-          color: "#fff", borderRadius: 8, padding: "10px 16px",
-          fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 500,
-          boxShadow: "0 4px 20px rgba(0,0,0,0.18)",
-          display: "flex", alignItems: "center", gap: 8,
-        }}>
-          {toast.type === "success" ? <Check size={15} /> : <AlertCircle size={15} />}
-          {toast.msg}
-          <button onClick={() => setToast(null)} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.75)", cursor: "pointer", display: "flex", padding: 0, marginLeft: 4 }}>
-            <X size={13} />
-          </button>
-        </div>
-      )}
       <div style={{ flex: 1, overflow: "hidden", padding: "20px 24px", display: "flex", flexDirection: "column" }}>
         <div style={{
           flex: 1, display: "flex", flexDirection: "column", overflow: "hidden",
@@ -1970,7 +1955,7 @@ export function LoadsPage() {
                   borderRadius: 7, color: "var(--foreground)", outline: "none", boxSizing: "border-box",
                   transition: "border-color 0.15s, box-shadow 0.15s",
                 }}
-                onFocus={(e) => { e.currentTarget.style.borderColor = "var(--primary)"; e.currentTarget.style.boxShadow = "0 0 0 3px rgba(59,130,246,0.12)"; }}
+                onFocus={(e) => { e.currentTarget.style.borderColor = "var(--primary)"; e.currentTarget.style.boxShadow = "0 0 0 3px var(--primary-soft)"; }}
                 onBlur={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.boxShadow = "none"; }}
               />
             </div>
@@ -2011,7 +1996,7 @@ export function LoadsPage() {
                   <tr
                     key={l.id}
                     style={{ backgroundColor: i % 2 === 0 ? "var(--card)" : "var(--background)" }}
-                    onMouseEnter={(e) => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = "rgba(59,130,246,0.03)"; }}
+                    onMouseEnter={(e) => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = "var(--primary-faint)"; }}
                     onMouseLeave={(e) => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = i % 2 === 0 ? "var(--card)" : "var(--background)"; }}
                   >
                     <td style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--muted-foreground)", textAlign: "center", verticalAlign: "middle" }}>
@@ -2077,7 +2062,7 @@ export function LoadsPage() {
                           return (
                             <div key={si} style={{ display: "flex", alignItems: "center", gap: 5 }}>
                               <span style={{ fontFamily: "var(--font-mono)", fontSize: 9, fontWeight: 700, color: "var(--muted-foreground)", flexShrink: 0, width: 30 }}>#{si + 1}</span>
-                              <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: isDone ? "var(--muted-foreground)" : isCurrent ? "#2563EB" : "var(--foreground)", textDecoration: isDone ? "line-through" : "none" }}>
+                              <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: isDone ? "var(--muted-foreground)" : isCurrent ? "var(--primary)" : "var(--foreground)", textDecoration: isDone ? "line-through" : "none" }}>
                                 {stop.appt || "—"}
                               </span>
                             </div>
@@ -2144,7 +2129,7 @@ export function LoadsPage() {
         <ExtractModal onClose={() => setExtracting(false)} onExtracted={openFromDraft} />
       )}
       {(modal === "create" || modal === "edit") && (
-        <LoadModal load={editing} onClose={() => setModal(null)} onSave={save} saving={saving} />
+        <LoadModal load={editing} onClose={() => setModal(null)} onSave={save} saving={saving} error={saveErr} />
       )}
       {deleting && (
         <DeleteConfirm label={deleting.loadId} busy={delBusy} error={delErr} onClose={() => { setDeleting(null); setDelErr(null); }} onConfirm={del} />

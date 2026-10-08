@@ -269,7 +269,7 @@ function Logo({ collapsed }: { collapsed: boolean }) {
         LB
       </div>
       {!collapsed && (
-        <span style={{ fontSize: 15, fontWeight: 700, color: "#F1F5F9", letterSpacing: "-0.01em" }}>
+        <span style={{ fontSize: 15, fontWeight: 700, color: "var(--sidebar-accent-foreground)", letterSpacing: "-0.01em" }}>
           Log Board
         </span>
       )}
@@ -356,12 +356,12 @@ function UserCard({ collapsed }: { collapsed: boolean }) {
         justifyContent: collapsed ? "center" : "flex-start",
       }}
     >
-      <div style={{ width: 34, height: 34, borderRadius: "50%", background: "linear-gradient(135deg, #3B82F6, #6366F1)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 600, color: "#fff", flexShrink: 0 }}>
+      <div style={{ width: 34, height: 34, borderRadius: "50%", background: "var(--primary-gradient)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 600, color: "#fff", flexShrink: 0 }}>
         {initials}
       </div>
       {!collapsed && (
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 13, fontWeight: 500, color: "#F1F5F9", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          <div style={{ fontSize: 13, fontWeight: 500, color: "var(--sidebar-accent-foreground)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {user?.full_name ?? "—"}
           </div>
           <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--sidebar-foreground)", opacity: 0.65, display: "flex", alignItems: "center", gap: 5 }}>
@@ -770,7 +770,7 @@ function NotificationBell() {
                   onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.backgroundColor = n.read ? "transparent" : "var(--secondary)"; }}
                 >
                   {/* Unread dot */}
-                  <div style={{ flexShrink: 0, width: 7, height: 7, borderRadius: "50%", backgroundColor: n.read ? "transparent" : "#3B82F6", marginTop: 5 }} />
+                  <div style={{ flexShrink: 0, width: 7, height: 7, borderRadius: "50%", backgroundColor: n.read ? "transparent" : "var(--primary)", marginTop: 5 }} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: n.read ? 400 : 600, color: "var(--foreground)", marginBottom: 2 }}>
                       {n.title}
@@ -901,32 +901,32 @@ function LockedIllustration() {
     <svg width="176" height="176" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-hidden="true">
       <defs>
         <linearGradient id="lockBody" x1="66" y1="86" x2="134" y2="152" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#60A5FA" />
-          <stop offset="1" stopColor="#3B82F6" />
+          <stop stopColor="#3CC47F" />
+          <stop offset="1" stopColor="#178A4C" />
         </linearGradient>
         <radialGradient id="lockGlow" cx="0.5" cy="0.5" r="0.5">
-          <stop stopColor="#3B82F6" stopOpacity="0.22" />
-          <stop offset="1" stopColor="#3B82F6" stopOpacity="0" />
+          <stop stopColor="#178A4C" stopOpacity="0.22" />
+          <stop offset="1" stopColor="#178A4C" stopOpacity="0" />
         </radialGradient>
       </defs>
 
       {/* soft glow + orbiting rings */}
       <circle cx="100" cy="100" r="82" fill="url(#lockGlow)" />
       <circle cx="100" cy="100" r="80" stroke="var(--border)" strokeWidth="1.5" strokeDasharray="3 7" opacity="0.9" />
-      <circle cx="100" cy="100" r="62" stroke="#3B82F6" strokeWidth="1.5" strokeDasharray="2 8" opacity="0.4" />
+      <circle cx="100" cy="100" r="62" stroke="#178A4C" strokeWidth="1.5" strokeDasharray="2 8" opacity="0.4" />
 
       {/* decorative motes */}
-      <circle cx="168" cy="66" r="3.5" fill="#3B82F6" opacity="0.5" />
-      <circle cx="34" cy="120" r="2.5" fill="#3B82F6" opacity="0.4" />
-      <circle cx="150" cy="150" r="2" fill="#3B82F6" opacity="0.35" />
+      <circle cx="168" cy="66" r="3.5" fill="#178A4C" opacity="0.5" />
+      <circle cx="34" cy="120" r="2.5" fill="#178A4C" opacity="0.4" />
+      <circle cx="150" cy="150" r="2" fill="#178A4C" opacity="0.35" />
 
       {/* padlock */}
       <path d="M78 92 V78 a22 22 0 0 1 44 0 V92" stroke="url(#lockBody)" strokeWidth="12" strokeLinecap="round" />
       <rect x="64" y="90" width="72" height="62" rx="16" fill="url(#lockBody)" />
       <rect x="64" y="90" width="72" height="62" rx="16" fill="#000" fillOpacity="0.05" />
       {/* keyhole */}
-      <circle cx="100" cy="115" r="9" fill="#1E3A8A" fillOpacity="0.6" />
-      <rect x="96" y="120" width="8" height="17" rx="4" fill="#1E3A8A" fillOpacity="0.6" />
+      <circle cx="100" cy="115" r="9" fill="#0E5A31" fillOpacity="0.6" />
+      <rect x="96" y="120" width="8" height="17" rx="4" fill="#0E5A31" fillOpacity="0.6" />
     </svg>
   );
 }

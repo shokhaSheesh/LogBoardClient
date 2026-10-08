@@ -89,7 +89,7 @@ function fmtDayLabel(dateStr: string): string {
 
 // ─── Color palettes ───────────────────────────────────────────────────────────
 
-const DRIVER_COLORS = ["#3B82F6", "#6366F1", "#8B5CF6", "#A78BFA", "#C4B5FD"];
+const DRIVER_COLORS = ["#178A4C", "#2FA366", "#58BC85", "#86D0A6", "#B5E3C7"];
 const DISP_COLORS   = ["#10B981", "#34D399", "#6EE7B7"];
 const RPM_COLORS2   = ["#F59E0B", "#FB923C", "#F97316", "#EA580C", "#DC2626"];
 
@@ -280,7 +280,7 @@ export function DashboardPage() {
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
 
               {/* Top 5 by Gross */}
-              <ChartCard title="Top 5 Drivers by Gross" subtitle="Total revenue earned this week" icon={<Trophy size={16} />} color="#3B82F6" bg="rgba(59,130,246,0.14)">
+              <ChartCard title="Top 5 Drivers by Gross" subtitle="Total revenue earned this week" icon={<Trophy size={16} />} color="var(--primary)" bg="var(--primary-soft)">
                 <>
                   <svg width={0} height={0} style={{ position: "absolute" }}>
                     <defs>
@@ -301,7 +301,7 @@ export function DashboardPage() {
                         tick={{ fontFamily: "var(--font-mono)", fontSize: 10, fill: "var(--muted-foreground)" }} axisLine={false} tickLine={false} />
                       <YAxis type="category" dataKey="shortName" width={72}
                         tick={{ fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: 500, fill: "var(--foreground)" }} axisLine={false} tickLine={false} />
-                      <Tooltip cursor={{ fill: "rgba(59,130,246,0.06)" }}
+                      <Tooltip cursor={{ fill: "var(--primary-tint)" }}
                         content={({ active, payload }) => {
                           if (!active || !payload?.length) return null;
                           const d = payload[0].payload as { shortName: string; gross: number; loads: number; rank: number; color: string };
@@ -414,15 +414,15 @@ export function DashboardPage() {
             </ChartCard>
 
             {/* Daily Gross Trend — one point per day of the selected week */}
-            <ChartCard title="Gross Revenue by Day" subtitle="Daily earnings across the selected week" icon={<TrendingUp size={16} />} color="#6366F1" bg="rgba(99,102,241,0.14)">
+            <ChartCard title="Gross Revenue by Day" subtitle="Daily earnings across the selected week" icon={<TrendingUp size={16} />} color="var(--primary)" bg="var(--primary-soft)">
               <ResponsiveContainer width="100%" height={280}>
                 <AreaChart
                   data={daily.map((d) => ({ dayLabel: fmtDayLabel(d.date), gross: d.gross, loads: d.completedLoads }))}
                   margin={{ top: 10, right: 12, left: 0, bottom: 4 }}>
                   <defs>
                     <linearGradient id="grossGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#6366F1" stopOpacity={0.3} />
-                      <stop offset="100%" stopColor="#6366F1" stopOpacity={0.02} />
+                      <stop offset="0%" stopColor="var(--primary)" stopOpacity={0.3} />
+                      <stop offset="100%" stopColor="var(--primary)" stopOpacity={0.02} />
                     </linearGradient>
                   </defs>
                   <CartesianGrid vertical={false} stroke="var(--border)" strokeDasharray="4 4" />
@@ -430,21 +430,21 @@ export function DashboardPage() {
                     tick={{ fontFamily: "var(--font-sans)", fontSize: 10, fill: "var(--muted-foreground)" }} axisLine={false} tickLine={false} />
                   <YAxis tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`}
                     tick={{ fontFamily: "var(--font-mono)", fontSize: 10, fill: "var(--muted-foreground)" }} axisLine={false} tickLine={false} width={44} />
-                  <Tooltip cursor={{ stroke: "#6366F1", strokeWidth: 1.5, strokeDasharray: "4 4" }}
+                  <Tooltip cursor={{ stroke: "var(--primary)", strokeWidth: 1.5, strokeDasharray: "4 4" }}
                     content={({ active, payload }) => {
                       if (!active || !payload?.length) return null;
                       const d = payload[0].payload as { dayLabel: string; gross: number; loads: number };
                       return (
                         <div style={{ backgroundColor: "#0F172A", border: "1px solid #1E293B", borderRadius: 8, padding: "10px 14px", boxShadow: "0 8px 24px rgba(0,0,0,0.4)" }}>
                           <div style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "#64748B", marginBottom: 4 }}>{d.dayLabel}</div>
-                          <div style={{ fontFamily: "var(--font-mono)", fontSize: 16, fontWeight: 700, color: "#818CF8" }}>${d.gross.toLocaleString()}</div>
+                          <div style={{ fontFamily: "var(--font-mono)", fontSize: 16, fontWeight: 700, color: "#3CC47F" }}>${d.gross.toLocaleString()}</div>
                           <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "#64748B", marginTop: 2 }}>{d.loads} loads completed</div>
                         </div>
                       );
                     }} />
-                  <Area type="monotone" dataKey="gross" stroke="#6366F1" strokeWidth={2.5} fill="url(#grossGrad)"
-                    dot={{ r: 3, fill: "#fff", stroke: "#6366F1", strokeWidth: 2 }}
-                    activeDot={{ r: 7, fill: "#6366F1", stroke: "#fff", strokeWidth: 2 }} />
+                  <Area type="monotone" dataKey="gross" stroke="var(--primary)" strokeWidth={2.5} fill="url(#grossGrad)"
+                    dot={{ r: 3, fill: "#fff", stroke: "var(--primary)", strokeWidth: 2 }}
+                    activeDot={{ r: 7, fill: "var(--primary)", stroke: "#fff", strokeWidth: 2 }} />
                 </AreaChart>
               </ResponsiveContainer>
             </ChartCard>

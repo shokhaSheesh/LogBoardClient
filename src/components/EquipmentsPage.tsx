@@ -5,6 +5,7 @@ import { useAuth } from "../lib/auth";
 import { hasPerm } from "../lib/permissions";
 import { driverDisplayName } from "../lib/driverName";
 import { PageLoader } from "./PageLoader";
+import { FormError, formErrorInModal, friendlyError, notify } from "./feedback";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -31,32 +32,6 @@ interface TrailerRow {
   make: string;
   model: string;
   vin: string;
-}
-
-// ─── Toast ────────────────────────────────────────────────────────────────────
-
-function Toast({ msg, type, onClose }: { msg: string; type: "success" | "error"; onClose: () => void }) {
-  useEffect(() => {
-    const t = setTimeout(onClose, 3500);
-    return () => clearTimeout(t);
-  }, []);
-  return (
-    <div style={{
-      position: "fixed", top: 24, right: 24, zIndex: 9999,
-      backgroundColor: type === "success" ? "#10B981" : "#EF4444",
-      color: "#fff", borderRadius: 8, padding: "10px 16px",
-      display: "flex", alignItems: "center", gap: 8,
-      boxShadow: "0 4px 20px rgba(0,0,0,0.18)",
-      fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 500,
-      animation: "slideUp 0.2s ease",
-    }}>
-      {type === "success" ? <Check size={15} /> : <AlertCircle size={15} />}
-      {msg}
-      <button onClick={onClose} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.75)", cursor: "pointer", display: "flex", padding: 0, marginLeft: 4 }}>
-        <X size={13} />
-      </button>
-    </div>
-  );
 }
 
 // ─── CustomSelect ─────────────────────────────────────────────────────────────
@@ -104,7 +79,7 @@ function CustomSelect({
           backgroundColor: "var(--input-background)",
           border: `1px solid ${open ? "var(--primary)" : "var(--border)"}`,
           borderRadius: 7, color: "var(--foreground)", cursor: "pointer",
-          boxShadow: open ? "0 0 0 3px rgba(59,130,246,0.12)" : "none",
+          boxShadow: open ? "0 0 0 3px var(--primary-soft)" : "none",
           transition: "border-color 0.15s, box-shadow 0.15s",
           outline: "none",
         }}
@@ -260,7 +235,7 @@ function AsyncSearchableSelect({ value, valueLabel, fetchPage, onChange, placeho
         borderRadius: 6, backgroundColor: "var(--input-background)",
         color: value ? "var(--foreground)" : "var(--muted-foreground)",
         cursor: "pointer", textAlign: "left", outline: "none",
-        boxShadow: open ? "0 0 0 3px rgba(59,130,246,0.12)" : "none",
+        boxShadow: open ? "0 0 0 3px var(--primary-soft)" : "none",
       }}>
         {icon && <span style={{ color: "var(--muted-foreground)", display: "flex", flexShrink: 0 }}>{icon}</span>}
         <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -438,10 +413,10 @@ function Pagination({
 
 const TH = ({ children, width, align = "left" }: { children: React.ReactNode; width?: number; align?: string }) => (
   <th style={{
-    padding: "8px 14px", textAlign: align as "left" | "center",
-    fontFamily: "var(--font-sans)", fontSize: 10, fontWeight: 600,
+    padding: "10px 14px", textAlign: align as "left" | "center",
+    fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600,
     color: "var(--muted-foreground)", letterSpacing: "0.07em",
-    textTransform: "uppercase", backgroundColor: "var(--muted)",
+    textTransform: "uppercase", backgroundColor: "var(--card)",
     borderBottom: "1px solid var(--border)",
     whiteSpace: "nowrap", userSelect: "none",
     width: width ?? "auto", minWidth: width ?? "auto",
@@ -453,9 +428,9 @@ const TH = ({ children, width, align = "left" }: { children: React.ReactNode; wi
 
 const TD = ({ children, mono = false, center = false }: { children: React.ReactNode; mono?: boolean; center?: boolean }) => (
   <td style={{
-    padding: "10px 14px",
+    padding: "12px 14px",
     fontFamily: mono ? "var(--font-mono)" : "var(--font-sans)",
-    fontSize: mono ? 11 : 12, color: "var(--foreground)",
+    fontSize: mono ? 12 : 13, color: "var(--foreground)",
     borderBottom: "1px solid var(--border)",
     verticalAlign: "middle", textAlign: center ? "center" : "left",
   }}>
@@ -463,26 +438,39 @@ const TD = ({ children, mono = false, center = false }: { children: React.ReactN
   </td>
 );
 
-function ActionBtn({ icon, color, bg, onClick }: { icon: React.ReactNode; color: string; bg: string; onClick: () => void }) {
+// Row actions stay quiet (grey) until hovered or focused, then take their meaning's colour.
+// An icon-only button says nothing to a screen reader (or on hover) without a label.
+function ActionBtn({ icon, tone, onClick, label }: { icon: React.ReactNode; tone: "edit" | "delete"; onClick: () => void; label: string }) {
+  const hot = tone === "delete"
+    ? { color: "#EF4444", bg: "rgba(239,68,68,0.12)" }
+    : { color: "var(--primary)", bg: "var(--primary-soft)" };
+  const on  = (e: React.SyntheticEvent<HTMLButtonElement>) => { e.currentTarget.style.color = hot.color; e.currentTarget.style.backgroundColor = hot.bg; };
+  const off = (e: React.SyntheticEvent<HTMLButtonElement>) => { e.currentTarget.style.color = "var(--muted-foreground)"; e.currentTarget.style.backgroundColor = "transparent"; };
   return (
-    <button onClick={onClick} style={{
-      width: 28, height: 28, borderRadius: 6, border: "none",
-      backgroundColor: bg, color, cursor: "pointer",
-      display: "inline-flex", alignItems: "center", justifyContent: "center",
-    }}
-      onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.opacity = "0.72"; }}
-      onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.opacity = "1"; }}
+    <button onClick={onClick} aria-label={label} title={label}
+      style={{ width: 30, height: 30, borderRadius: 7, border: "none", backgroundColor: "transparent", color: "var(--muted-foreground)", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", transition: "color 0.12s, background-color 0.12s" }}
+      onMouseEnter={on} onMouseLeave={off} onFocus={on} onBlur={off}
     >
       {icon}
     </button>
   );
 }
 
+// Closes a dialog on Escape, unless it is busy saving.
+function useEscape(onClose: () => void, busy = false) {
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => { if (e.key === "Escape" && !busy) onClose(); };
+    document.addEventListener("keydown", h);
+    return () => document.removeEventListener("keydown", h);
+  }, [onClose, busy]);
+}
+
 // ─── Modal ────────────────────────────────────────────────────────────────────
 
 type EquipRow = TruckRow | TrailerRow;
 
-function EquipModal({ title, row, onClose, onSave, saving = false, equipKind }: {
+function EquipModal({ title, row, onClose, onSave, saving = false, error, equipKind }: {
+  error?: string | null;
   title: string;
   row: Partial<EquipRow>;
   onClose: () => void;
@@ -495,6 +483,7 @@ function EquipModal({ title, row, onClose, onSave, saving = false, equipKind }: 
   const set = (k: keyof EquipRow, v: string) => setForm((f) => ({ ...f, [k]: v }));
   const touch = (k: keyof EquipRow) => setTouched((t) => ({ ...t, [k]: true }));
   const isNew = !row.id;
+  useEscape(onClose, saving);
 
   const handleSave = () => {
     setTouched({ unit: true });
@@ -503,11 +492,11 @@ function EquipModal({ title, row, onClose, onSave, saving = false, equipKind }: 
   };
 
   return (
-    <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
+    <div role="dialog" aria-modal="true" aria-label={title} style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div style={{ backgroundColor: "var(--card)", borderRadius: 12, width: 500, boxShadow: "0 20px 60px rgba(0,0,0,0.25)", overflow: "visible" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderBottom: "1px solid var(--border)", backgroundColor: "var(--muted)", borderRadius: "12px 12px 0 0" }}>
-          <span style={{ fontFamily: "var(--font-sans)", fontSize: 14, fontWeight: 600, color: "var(--foreground)" }}>{title}</span>
-          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted-foreground)" }}><X size={16} /></button>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderBottom: "1px solid var(--border)" }}>
+          <span style={{ fontFamily: "var(--font-sans)", fontSize: 15, fontWeight: 700, color: "var(--foreground)", letterSpacing: "-0.01em" }}>{title}</span>
+          <button onClick={onClose} aria-label="Close" style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted-foreground)" }}><X size={16} /></button>
         </div>
         <div style={{ padding: "20px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
           {/* Unit # and Driver side by side */}
@@ -583,6 +572,7 @@ function EquipModal({ title, row, onClose, onSave, saving = false, equipKind }: 
             />
           </label>
         </div>
+        <FormError message={error} style={formErrorInModal} />
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, padding: "14px 20px", borderTop: "1px solid var(--border)" }}>
           <button onClick={onClose} style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 16px", borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "var(--muted)", color: "var(--foreground)", cursor: "pointer" }}>Cancel</button>
           <button onClick={handleSave} disabled={saving} style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 16px", borderRadius: 6, border: "none", backgroundColor: "var(--primary)", color: "#fff", cursor: saving ? "not-allowed" : "pointer", opacity: saving ? 0.7 : 1, display: "flex", alignItems: "center", gap: 6 }}>
@@ -595,8 +585,9 @@ function EquipModal({ title, row, onClose, onSave, saving = false, equipKind }: 
 }
 
 function DeleteConfirm({ label, onClose, onConfirm, busy = false, error }: { label: string; onClose: () => void; onConfirm: () => void; busy?: boolean; error?: string | null }) {
+  useEscape(onClose, busy);
   return (
-    <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
+    <div role="dialog" aria-modal="true" aria-label="Remove equipment" style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div style={{ backgroundColor: "var(--card)", borderRadius: 12, width: 360, padding: 24, boxShadow: "0 20px 60px rgba(0,0,0,0.25)", textAlign: "center" }}>
         <div style={{ width: 44, height: 44, borderRadius: "50%", backgroundColor: "rgba(239,68,68,0.14)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
           <Trash2 size={20} color="#EF4444" />
@@ -605,7 +596,7 @@ function DeleteConfirm({ label, onClose, onConfirm, busy = false, error }: { lab
         <div style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)", marginBottom: error ? 12 : 20 }}>
           <strong>{label}</strong> will be permanently removed.
         </div>
-        {error && <div style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "#EF4444", marginBottom: 16 }}>{error}</div>}
+        <FormError message={error} style={{ marginBottom: 16 }} />
         <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
           <button onClick={onClose} disabled={busy} style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 20px", borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "var(--muted)", color: "var(--foreground)", cursor: busy ? "default" : "pointer", opacity: busy ? 0.5 : 1 }}>Cancel</button>
           <button onClick={onConfirm} disabled={busy} style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, minWidth: 100, fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 20px", borderRadius: 6, border: "none", backgroundColor: "#EF4444", color: "#fff", cursor: busy ? "default" : "pointer", opacity: busy ? 0.8 : 1 }}>
@@ -631,6 +622,7 @@ function ImportModal({ entityLabel, endpoint, onClose, onImported }: {
   const [error, setError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  useEscape(onClose, submitting);
 
   // Trucks and trailers share one template — identical columns.
   const downloadTemplate = async () => {
@@ -639,7 +631,7 @@ function ImportModal({ entityLabel, endpoint, onClose, onImported }: {
     try {
       await api.download("/equipments/import/template?format=csv", "equipment-template.csv");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Couldn't download the template.");
+      setError(friendlyError(e, "Couldn't download the template."));
     } finally {
       setDownloading(false);
     }
@@ -667,21 +659,21 @@ function ImportModal({ entityLabel, endpoint, onClose, onImported }: {
       setResult(res);
       if (res.created > 0) onImported?.();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Import failed");
+      setError(friendlyError(e, "Import failed"));
     } finally {
       setSubmitting(false);
     }
   };
 
   return (
-    <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }}>
+    <div role="dialog" aria-modal="true" aria-label={`Import ${entityLabel}s`} style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div style={{ backgroundColor: "var(--card)", borderRadius: 12, width: 520, boxShadow: "0 20px 60px rgba(0,0,0,0.22)" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderBottom: "1px solid var(--border)", backgroundColor: "var(--muted)", borderRadius: "12px 12px 0 0" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderBottom: "1px solid var(--border)" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-            <div style={{ width: 30, height: 30, borderRadius: 8, backgroundColor: "rgba(16,185,129,0.08)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <FileSpreadsheet size={15} color="#10B981" />
+            <div style={{ width: 30, height: 30, borderRadius: 8, backgroundColor: "var(--primary-soft)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <FileSpreadsheet size={15} style={{ color: "var(--primary)" }} />
             </div>
-            <span style={{ fontFamily: "var(--font-sans)", fontSize: 14, fontWeight: 600, color: "var(--foreground)" }}>
+            <span style={{ fontFamily: "var(--font-sans)", fontSize: 15, fontWeight: 700, color: "var(--foreground)", letterSpacing: "-0.01em" }}>
               Import {entityLabel}s
             </span>
           </div>
@@ -916,8 +908,8 @@ function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
   const [page, setPage]           = useState(1);
   const [pageSize, setPageSize]   = useState(20);
   const [saving, setSaving]       = useState(false);
+  const [saveErr, setSaveErr]     = useState<string | null>(null);
   const [fetchKey, setFetchKey]   = useState(0);
-  const [toast, setToast]         = useState<{ type: "success" | "error"; msg: string } | null>(null);
   useEffect(() => {
     const t = setTimeout(() => { setDebouncedQ(search); setPage(1); }, 350);
     return () => clearTimeout(t);
@@ -939,28 +931,29 @@ function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
       .finally(() => setLoading(false));
   }, [debouncedQ, page, pageSize, fetchKey]);
 
-  const openCreate = () => { setEditing({}); setModal("create"); };
-  const openEdit   = (r: TruckRow) => { setEditing(r); setModal("edit"); };
+  const openCreate = () => { setEditing({}); setSaveErr(null); setModal("create"); };
+  const openEdit   = (r: TruckRow) => { setEditing(r); setSaveErr(null); setModal("edit"); };
 
   const save = async (r: EquipRow) => {
     const d = r as TruckRow;
     // Only the writable fields — driver/driver_team/driver_name2/id are read-only (resolved).
     const payload = { unit: d.unit, driver_id: d.driver_id || null, make: d.make, model: d.model, vin: d.vin };
     setSaving(true);
+    setSaveErr(null);
     try {
       if (modal === "create") {
         await api.post<TruckRow>("/trucks", payload);
         setModal(null);
         setFetchKey((k) => k + 1);
-        setToast({ type: "success", msg: "Truck created successfully" });
+        notify.success("Truck created successfully");
       } else {
         await api.put<TruckRow>(`/trucks/${d.id}`, payload);
         setModal(null);
         setFetchKey((k) => k + 1);
-        setToast({ type: "success", msg: "Truck updated successfully" });
+        notify.success("Truck updated successfully");
       }
     } catch (e) {
-      setToast({ type: "error", msg: e instanceof Error ? e.message : "Save failed" });
+      setSaveErr(friendlyError(e, "Save failed")); // keep the modal open
     } finally {
       setSaving(false);
     }
@@ -973,10 +966,10 @@ function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
     try {
       await api.delete(`/trucks/${deleting.id}`);
       setFetchKey((k) => k + 1);
-      setToast({ type: "success", msg: `Truck ${deleting.unit} removed` });
+      notify.success(`Truck ${deleting.unit} removed`);
       setDeleting(null);
     } catch (e) {
-      setDelErr(e instanceof Error ? e.message : "Delete failed");
+      setDelErr(friendlyError(e, "Delete failed"));
     } finally {
       setDelBusy(false);
     }
@@ -998,7 +991,7 @@ function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search trucks…"
+              placeholder="Search trucks…" aria-label="Search trucks"
               style={{
                 fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 10px 7px 30px",
                 borderRadius: 7, border: "1px solid var(--border)", backgroundColor: "var(--card)",
@@ -1031,12 +1024,11 @@ function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
           <tbody>
             {rows.map((r, i) => (
               <tr key={r.id}
-                style={{ backgroundColor: i % 2 === 0 ? "var(--card)" : "var(--background)" }}
-                onMouseEnter={(e) => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = "rgba(59,130,246,0.03)"; }}
-                onMouseLeave={(e) => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = i % 2 === 0 ? "var(--card)" : "var(--background)"; }}
+                onMouseEnter={(e) => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = "var(--primary-faint)"; }}
+                onMouseLeave={(e) => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = ""; }}
               >
                 <TD mono center>{(page - 1) * pageSize + i + 1}</TD>
-                <td style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", verticalAlign: "middle" }}>
+                <td style={{ padding: "12px 14px", borderBottom: "1px solid var(--border)", verticalAlign: "middle" }}>
                   <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 600, color: "var(--primary)", backgroundColor: "var(--secondary)", borderRadius: 4, padding: "2px 8px" }}>
                     {r.unit}
                   </span>
@@ -1045,13 +1037,13 @@ function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
                 <TD>{r.make || "—"}</TD>
                 <TD>{r.model || "—"}</TD>
                 <TD mono>{r.vin || "—"}</TD>
-                <td style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", verticalAlign: "middle", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: r.odometer != null ? "var(--foreground)" : "var(--muted-foreground)" }}>
+                <td style={{ padding: "12px 14px", borderBottom: "1px solid var(--border)", verticalAlign: "middle", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12, color: r.odometer != null ? "var(--foreground)" : "var(--muted-foreground)" }}>
                   {r.odometer != null ? `${r.odometer.toLocaleString()} mi` : "—"}
                 </td>
                 <td style={{ padding: "8px 10px", borderBottom: "1px solid var(--border)", verticalAlign: "middle", textAlign: "center" }}>
-                  <div style={{ display: "inline-flex", gap: 5 }}>
-                    {canUpdate && <ActionBtn icon={<Pencil size={13} />} color="#3B82F6" bg="rgba(59,130,246,0.14)" onClick={() => openEdit(r)} />}
-                    {canDelete && <ActionBtn icon={<Trash2 size={13} />} color="#EF4444" bg="rgba(239,68,68,0.14)" onClick={() => setDeleting(r)} />}
+                  <div style={{ display: "inline-flex", gap: 2 }}>
+                    {canUpdate && <ActionBtn label={`Edit ${r.unit}`} tone="edit" icon={<Pencil size={14} />} onClick={() => openEdit(r)} />}
+                    {canDelete && <ActionBtn label={`Remove ${r.unit}`} tone="delete" icon={<Trash2 size={14} />} onClick={() => setDeleting(r)} />}
                     {!canUpdate && !canDelete && <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)" }}>—</span>}
                   </div>
                 </td>
@@ -1072,11 +1064,10 @@ function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
       <Pagination total={total} page={page} pageSize={pageSize} loading={loading} onPage={setPage} onPageSize={(s) => { setPageSize(s); setPage(1); }} />
 
       {(modal === "create" || modal === "edit") && (
-        <EquipModal title={modal === "create" ? "Add Truck" : "Edit Truck"} row={editing} onClose={() => setModal(null)} onSave={save} saving={saving} equipKind="truck" />
+        <EquipModal title={modal === "create" ? "Add Truck" : "Edit Truck"} row={editing} onClose={() => setModal(null)} onSave={save} saving={saving} error={saveErr} equipKind="truck" />
       )}
       {deleting && <DeleteConfirm label={deleting.unit} busy={delBusy} error={delErr} onClose={() => { setDeleting(null); setDelErr(null); }} onConfirm={del} />}
       {importing && <ImportModal entityLabel="Truck" endpoint="/trucks/import" onClose={() => setImporting(false)} onImported={() => setFetchKey((k) => k + 1)} />}
-      {toast && <Toast type={toast.type} msg={toast.msg} onClose={() => setToast(null)} />}
     </>
   );
 }
@@ -1103,8 +1094,8 @@ function TrailersTab({ onCountChange }: { onCountChange: (n: number) => void }) 
   const [page, setPage]           = useState(1);
   const [pageSize, setPageSize]   = useState(20);
   const [saving, setSaving]       = useState(false);
+  const [saveErr, setSaveErr]     = useState<string | null>(null);
   const [fetchKey, setFetchKey]   = useState(0);
-  const [toast, setToast]         = useState<{ type: "success" | "error"; msg: string } | null>(null);
   useEffect(() => {
     const t = setTimeout(() => { setDebouncedQ(search); setPage(1); }, 350);
     return () => clearTimeout(t);
@@ -1126,28 +1117,29 @@ function TrailersTab({ onCountChange }: { onCountChange: (n: number) => void }) 
       .finally(() => setLoading(false));
   }, [debouncedQ, page, pageSize, fetchKey]);
 
-  const openCreate = () => { setEditing({}); setModal("create"); };
-  const openEdit   = (r: TrailerRow) => { setEditing(r); setModal("edit"); };
+  const openCreate = () => { setEditing({}); setSaveErr(null); setModal("create"); };
+  const openEdit   = (r: TrailerRow) => { setEditing(r); setSaveErr(null); setModal("edit"); };
 
   const save = async (r: EquipRow) => {
     const d = r as TrailerRow;
     // Only the writable fields — driver/driver_team/driver_name2/id are read-only (resolved).
     const payload = { unit: d.unit, driver_id: d.driver_id || null, make: d.make, model: d.model, vin: d.vin };
     setSaving(true);
+    setSaveErr(null);
     try {
       if (modal === "create") {
         await api.post<TrailerRow>("/trailers", payload);
         setModal(null);
         setFetchKey((k) => k + 1);
-        setToast({ type: "success", msg: "Trailer created successfully" });
+        notify.success("Trailer created successfully");
       } else {
         await api.put<TrailerRow>(`/trailers/${d.id}`, payload);
         setModal(null);
         setFetchKey((k) => k + 1);
-        setToast({ type: "success", msg: "Trailer updated successfully" });
+        notify.success("Trailer updated successfully");
       }
     } catch (e) {
-      setToast({ type: "error", msg: e instanceof Error ? e.message : "Save failed" });
+      setSaveErr(friendlyError(e, "Save failed")); // keep the modal open
     } finally {
       setSaving(false);
     }
@@ -1160,10 +1152,10 @@ function TrailersTab({ onCountChange }: { onCountChange: (n: number) => void }) 
     try {
       await api.delete(`/trailers/${deleting.id}`);
       setFetchKey((k) => k + 1);
-      setToast({ type: "success", msg: `Trailer ${deleting.unit} removed` });
+      notify.success(`Trailer ${deleting.unit} removed`);
       setDeleting(null);
     } catch (e) {
-      setDelErr(e instanceof Error ? e.message : "Delete failed");
+      setDelErr(friendlyError(e, "Delete failed"));
     } finally {
       setDelBusy(false);
     }
@@ -1185,7 +1177,7 @@ function TrailersTab({ onCountChange }: { onCountChange: (n: number) => void }) 
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search trailers…"
+              placeholder="Search trailers…" aria-label="Search trailers"
               style={{
                 fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 10px 7px 30px",
                 borderRadius: 7, border: "1px solid var(--border)", backgroundColor: "var(--card)",
@@ -1217,13 +1209,12 @@ function TrailersTab({ onCountChange }: { onCountChange: (n: number) => void }) 
           <tbody>
             {rows.map((r, i) => (
               <tr key={r.id}
-                style={{ backgroundColor: i % 2 === 0 ? "var(--card)" : "var(--background)" }}
-                onMouseEnter={(e) => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = "rgba(59,130,246,0.03)"; }}
-                onMouseLeave={(e) => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = i % 2 === 0 ? "var(--card)" : "var(--background)"; }}
+                onMouseEnter={(e) => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = "var(--primary-faint)"; }}
+                onMouseLeave={(e) => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = ""; }}
               >
                 <TD mono center>{(page - 1) * pageSize + i + 1}</TD>
-                <td style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", verticalAlign: "middle" }}>
-                  <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 600, color: "#8B5CF6", backgroundColor: "rgba(139,92,246,0.14)", borderRadius: 4, padding: "2px 8px" }}>
+                <td style={{ padding: "12px 14px", borderBottom: "1px solid var(--border)", verticalAlign: "middle" }}>
+                  <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 600, color: "var(--primary)", backgroundColor: "var(--secondary)", borderRadius: 4, padding: "2px 8px" }}>
                     {r.unit}
                   </span>
                 </td>
@@ -1232,9 +1223,9 @@ function TrailersTab({ onCountChange }: { onCountChange: (n: number) => void }) 
                 <TD>{r.model || "—"}</TD>
                 <TD mono>{r.vin || "—"}</TD>
                 <td style={{ padding: "8px 10px", borderBottom: "1px solid var(--border)", verticalAlign: "middle", textAlign: "center" }}>
-                  <div style={{ display: "inline-flex", gap: 5 }}>
-                    {canUpdate && <ActionBtn icon={<Pencil size={13} />} color="#3B82F6" bg="rgba(59,130,246,0.14)" onClick={() => openEdit(r)} />}
-                    {canDelete && <ActionBtn icon={<Trash2 size={13} />} color="#EF4444" bg="rgba(239,68,68,0.14)" onClick={() => setDeleting(r)} />}
+                  <div style={{ display: "inline-flex", gap: 2 }}>
+                    {canUpdate && <ActionBtn label={`Edit ${r.unit}`} tone="edit" icon={<Pencil size={14} />} onClick={() => openEdit(r)} />}
+                    {canDelete && <ActionBtn label={`Remove ${r.unit}`} tone="delete" icon={<Trash2 size={14} />} onClick={() => setDeleting(r)} />}
                     {!canUpdate && !canDelete && <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)" }}>—</span>}
                   </div>
                 </td>
@@ -1255,11 +1246,10 @@ function TrailersTab({ onCountChange }: { onCountChange: (n: number) => void }) 
       <Pagination total={total} page={page} pageSize={pageSize} loading={loading} onPage={setPage} onPageSize={(s) => { setPageSize(s); setPage(1); }} />
 
       {(modal === "create" || modal === "edit") && (
-        <EquipModal title={modal === "create" ? "Add Trailer" : "Edit Trailer"} row={editing} onClose={() => setModal(null)} onSave={save} saving={saving} equipKind="trailer" />
+        <EquipModal title={modal === "create" ? "Add Trailer" : "Edit Trailer"} row={editing} onClose={() => setModal(null)} onSave={save} saving={saving} error={saveErr} equipKind="trailer" />
       )}
       {deleting && <DeleteConfirm label={deleting.unit} busy={delBusy} error={delErr} onClose={() => { setDeleting(null); setDelErr(null); }} onConfirm={del} />}
       {importing && <ImportModal entityLabel="Trailer" endpoint="/trailers/import" onClose={() => setImporting(false)} onImported={() => setFetchKey((k) => k + 1)} />}
-      {toast && <Toast type={toast.type} msg={toast.msg} onClose={() => setToast(null)} />}
     </>
   );
 }
@@ -1273,41 +1263,54 @@ export function EquipmentsPage() {
   const [truckCount,   setTruckCount]   = useState<number | null>(null);
   const [trailerCount, setTrailerCount] = useState<number | null>(null);
 
-  const tabs: { id: TabId; label: string; count: number | null; icon: React.ReactNode; color: string; bg: string }[] = [
-    { id: "trucks",   label: "Trucks",   count: truckCount,   icon: <Truck     size={15} />, color: "#3B82F6", bg: "rgba(59,130,246,0.14)" },
-    { id: "trailers", label: "Trailers", count: trailerCount, icon: <Container size={15} />, color: "#8B5CF6", bg: "rgba(139,92,246,0.14)" },
+  const tabs: { id: TabId; label: string; count: number | null; icon: React.ReactNode }[] = [
+    { id: "trucks",   label: "Trucks",   count: truckCount,   icon: <Truck     size={15} /> },
+    { id: "trailers", label: "Trailers", count: trailerCount, icon: <Container size={15} /> },
   ];
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", backgroundColor: "var(--background)" }}>
+      {/* Page title */}
+      <div style={{ backgroundColor: "var(--card)", padding: "18px 24px 8px", flexShrink: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <Truck size={20} style={{ color: "var(--primary)" }} />
+          <span style={{ fontFamily: "var(--font-sans)", fontSize: 20, fontWeight: 700, color: "var(--foreground)", letterSpacing: "-0.01em" }}>Equipment</span>
+        </div>
+        <div style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)", marginTop: 2 }}>
+          Your trucks and trailers, and who is driving them
+        </div>
+      </div>
+
       {/* Tab bar */}
-      <div style={{ backgroundColor: "var(--card)", borderBottom: "1px solid var(--border)", padding: "0 24px", flexShrink: 0, display: "flex", alignItems: "flex-end", gap: 2 }}>
+      <div role="tablist" aria-label="Equipment type" style={{ backgroundColor: "var(--card)", borderBottom: "1px solid var(--border)", padding: "0 12px", flexShrink: 0, display: "flex", alignItems: "flex-end", gap: 2 }}>
         {tabs.map((t) => {
           const active = tab === t.id;
           return (
             <button
               key={t.id}
+              role="tab"
+              aria-selected={active}
               onClick={() => setTab(t.id)}
               style={{
                 display: "inline-flex", alignItems: "center", gap: 8,
-                padding: "12px 18px",
+                padding: "12px 14px",
                 fontFamily: "var(--font-sans)", fontSize: 13,
-                fontWeight: active ? 600 : 400,
-                color: active ? t.color : "var(--muted-foreground)",
+                fontWeight: active ? 600 : 500,
+                color: active ? "var(--primary)" : "var(--muted-foreground)",
                 backgroundColor: "transparent",
                 border: "none",
-                borderBottom: active ? `2px solid ${t.color}` : "2px solid transparent",
-                cursor: "pointer", transition: "all 0.15s",
+                borderBottom: active ? "2px solid var(--primary)" : "2px solid transparent",
+                cursor: "pointer", transition: "color 0.15s, border-color 0.15s",
                 marginBottom: -1,
               }}
             >
-              <span style={{ opacity: active ? 1 : 0.55 }}>{t.icon}</span>
+              <span style={{ display: "flex", opacity: active ? 1 : 0.7 }}>{t.icon}</span>
               {t.label}
               {t.count !== null && (
                 <span style={{
-                  fontFamily: "var(--font-mono)", fontSize: 10, fontWeight: 700,
-                  color: active ? t.color : "var(--muted-foreground)",
-                  backgroundColor: active ? t.bg : "var(--muted)",
+                  fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 700,
+                  color: active ? "var(--secondary-foreground)" : "var(--muted-foreground)",
+                  backgroundColor: active ? "var(--primary-soft)" : "var(--muted)",
                   borderRadius: 10, padding: "1px 7px",
                 }}>
                   {t.count}

@@ -10,6 +10,7 @@ import { menuPosition } from "../lib/menuPosition";
 import { driverDisplayName } from "../lib/driverName";
 import { boardWsUrl } from "../lib/ws";
 import { PageLoader } from "./PageLoader";
+import { friendlyError, notify } from "./feedback";
 import { cleanAppt } from "../lib/appt";
 import { UncompleteConfirm } from "./UncompleteConfirm";
 
@@ -720,7 +721,7 @@ function HistoryPanel({ events, loading, onClose, onRevert }: {
       const code = e instanceof ApiError ? e.code : undefined;
       setRevertErr(
         (code && REVERT_ERROR_TEXT[code]) ||
-        (e instanceof Error ? e.message : "Undo failed")
+        (friendlyError(e, "Undo failed"))
       );
     } finally {
       setReverting(false);
@@ -930,7 +931,6 @@ export function DispatchTable() {
   const [historyOpen,    setHistoryOpen]    = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [locks,          setLocks]          = useState<Record<string, BoardLock>>({}); // keyed by driver_id
-  const [toast,          setToast]          = useState<string | null>(null); // transient error banner
 
   const wsRef         = useRef<WebSocket | null>(null);
   // The websocket handler is bound once; read the panel's open state through a ref
@@ -954,13 +954,6 @@ export function DispatchTable() {
 
   useEffect(() => { historyOpenRef.current = historyOpen; }, [historyOpen]);
 
-  // Auto-dismiss the error banner.
-  useEffect(() => {
-    if (!toast) return;
-    const t = setTimeout(() => setToast(null), 3500);
-    return () => clearTimeout(t);
-  }, [toast]);
-
   // ── Fetch board ────────────────────────────────────────────────────────────
 
   const fetchBoard = async () => {
@@ -969,7 +962,7 @@ export function DispatchTable() {
       setRows((data ?? []).map(fromBoardRow).sort(byBoardOrder));
       setError(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load board");
+      setError(friendlyError(e, "Failed to load board"));
     } finally {
       setLoading(false);
     }
@@ -1217,7 +1210,7 @@ export function DispatchTable() {
     } catch (e) {
       // Roll back optimistic update on failure and tell the user (the revert is otherwise silent)
       setRows((prev) => prev.map((d) => d.driverId === driverId ? driver : d));
-      setToast(e instanceof Error ? e.message : "Couldn't save the change — reverted.");
+      notify.error(friendlyError(e, "Couldn't save the change — reverted."));
     }
   };
 
@@ -1282,7 +1275,7 @@ export function DispatchTable() {
       // WS snapshot pushes the authoritative rows (driver → covered/ready, queue rotated).
     } catch (e) {
       rollback();
-      setToast(e instanceof Error ? e.message : "Couldn't complete the load — reverted.");
+      notify.error(friendlyError(e, "Couldn't complete the load — reverted."));
     }
   };
 
@@ -1357,12 +1350,6 @@ export function DispatchTable() {
       {/* Copy buttons stay hidden until their value is hovered — via CSS so :hover beats
           the default (inline opacity would win and never let the rule show it). */}
       <style>{`.cp-btn{opacity:0;transition:opacity .12s} .cp-wrap:hover .cp-btn{opacity:1} .cp-btn.cp-done{opacity:1}`}</style>
-      {toast && (
-        <div style={{ position: "fixed", top: 20, right: 20, zIndex: 10000, display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", borderRadius: 8, backgroundColor: "var(--card)", border: "1px solid #EF4444", boxShadow: "0 10px 30px rgba(0,0,0,0.16)", maxWidth: 360 }}>
-          <AlertCircle size={15} style={{ color: "#EF4444", flexShrink: 0 }} />
-          <span style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--foreground)" }}>{toast}</span>
-        </div>
-      )}
       {uncompleting && (
         <UncompleteConfirm
           to={uncompleting.to}

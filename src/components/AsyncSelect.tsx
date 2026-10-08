@@ -89,7 +89,7 @@ export function AsyncSearchableSelect({ value, valueLabel, fetchPage, onChange, 
         borderRadius: 6, backgroundColor: "var(--input-background)",
         color: value ? "var(--foreground)" : "var(--muted-foreground)",
         cursor: "pointer", textAlign: "left", outline: "none",
-        boxShadow: open ? "0 0 0 3px rgba(59,130,246,0.12)" : "none",
+        boxShadow: open ? "0 0 0 3px var(--primary-soft)" : "none",
       }}>
         {icon && <span style={{ color: "var(--muted-foreground)", display: "flex", flexShrink: 0 }}>{icon}</span>}
         <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>

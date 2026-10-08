@@ -108,6 +108,10 @@ async function request<T>(
   });
 
   if (res.status === 401) {
+    // A wrong password is a 401 too (invalid_credentials). That is a form error, not
+    // an expired session — it must reach the caller instead of forcing a sign-out.
+    const json = await res.json().catch(() => ({}));
+    if (json?.error?.code === "invalid_credentials") throw apiError(json, res.status);
     clearToken();
     window.location.href = "/login";
     throw new Error("Unauthorized");

@@ -5,8 +5,9 @@ import {
   ChevronLeft, ChevronRight, Pencil, Check,
   CalendarDays, FileText, AlertCircle, Info,
 } from "lucide-react";
-import { api, getCompanyId } from "../lib/api";
+import { api } from "../lib/api";
 import { PageLoader } from "../components/PageLoader";
+import { FormError, formErrorInModal, friendlyError, notify } from "../components/feedback";
 import { useAuth } from "../lib/auth";
 import { hasPerm } from "../lib/permissions";
 
@@ -67,7 +68,8 @@ function toPayout(b: BackendPayout): Payout {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function fmtMoney(n: number) { return `$${Math.abs(n).toLocaleString()}`; }
+// Sign-aware: a negative net must read "-$50", not "$50".
+function fmtMoney(n: number) { return `${n < 0 ? "-" : ""}$${Math.abs(n).toLocaleString()}`; }
 
 function fmtDate(iso: string): string {
   if (!iso) return "—";
@@ -79,15 +81,16 @@ function fmtDate(iso: string): string {
 
 type DateMode = "day" | "week" | "month";
 
-function startOfWeek(d: Date): Date {
+// weekStart is the company's Work Week setting (0=Sunday … 6=Saturday), so "Week" here
+// covers the same seven days as the Gross and Dashboard pages.
+function startOfWeek(d: Date, weekStart: number): Date {
   const r = new Date(d);
-  const dow = r.getDay();
-  r.setDate(r.getDate() + (dow === 0 ? -6 : 1 - dow));
+  r.setDate(r.getDate() - ((r.getDay() - weekStart + 7) % 7));
   r.setHours(0, 0, 0, 0);
   return r;
 }
 
-function toApiRange(mode: DateMode, anchor: Date): { from: string; to: string } {
+function toApiRange(mode: DateMode, anchor: Date, weekStart: number): { from: string; to: string } {
   const fmt = (d: Date) => {
     const y = d.getFullYear();
     const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -96,7 +99,7 @@ function toApiRange(mode: DateMode, anchor: Date): { from: string; to: string } 
   };
   if (mode === "day") return { from: fmt(anchor), to: fmt(anchor) };
   if (mode === "week") {
-    const mon = startOfWeek(anchor);
+    const mon = startOfWeek(anchor, weekStart);
     const sun = new Date(mon); sun.setDate(mon.getDate() + 6);
     return { from: fmt(mon), to: fmt(sun) };
   }
@@ -105,16 +108,16 @@ function toApiRange(mode: DateMode, anchor: Date): { from: string; to: string } 
   return { from: fmt(first), to: fmt(last) };
 }
 
-function fmtDateLabel(mode: DateMode, anchor: Date): string {
+function fmtDateLabel(mode: DateMode, anchor: Date, weekStart: number): string {
   const M = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-  if (mode === "day") return `${M[anchor.getMonth()]} ${anchor.getDate()}, ${String(anchor.getFullYear()).slice(2)}'`;
+  if (mode === "day") return `${M[anchor.getMonth()]} ${anchor.getDate()}, ${anchor.getFullYear()}`;
   if (mode === "week") {
-    const mon = startOfWeek(anchor);
+    const mon = startOfWeek(anchor, weekStart);
     const sun = new Date(mon); sun.setDate(mon.getDate() + 6);
     const sameMo = mon.getMonth() === sun.getMonth();
     return sameMo
-      ? `${M[mon.getMonth()]} ${mon.getDate()}–${sun.getDate()}, ${String(anchor.getFullYear()).slice(2)}'`
-      : `${M[mon.getMonth()]} ${mon.getDate()} – ${M[sun.getMonth()]} ${sun.getDate()}, ${String(anchor.getFullYear()).slice(2)}'`;
+      ? `${M[mon.getMonth()]} ${mon.getDate()}–${sun.getDate()}, ${anchor.getFullYear()}`
+      : `${M[mon.getMonth()]} ${mon.getDate()} – ${M[sun.getMonth()]} ${sun.getDate()}, ${anchor.getFullYear()}`;
   }
   return `${M[anchor.getMonth()]} ${anchor.getFullYear()}`;
 }
@@ -138,6 +141,13 @@ function AdjustModal({ payout, onSave, onClose, saving, error }: {
   const [notes,    setNotes]    = useState(payout.notes);
 
   const previewNet = payout.rate + (Number(added) || 0) - (Number(deducted) || 0);
+  const negative = Number(added) < 0 || Number(deducted) < 0;
+
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => { if (e.key === "Escape" && !saving) onClose(); };
+    document.addEventListener("keydown", h);
+    return () => document.removeEventListener("keydown", h);
+  }, [saving, onClose]);
 
   const inputStyle = {
     padding: "7px 10px", borderRadius: 7, border: "1px solid var(--border)",
@@ -149,18 +159,18 @@ function AdjustModal({ payout, onSave, onClose, saving, error }: {
 
   return createPortal(
     <>
-      <div onClick={onClose} style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.35)", zIndex: 400 }} />
-      <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)", zIndex: 401, width: 480, backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 14, boxShadow: "0 24px 64px rgba(0,0,0,0.22)", display: "flex", flexDirection: "column", maxHeight: "90vh", overflow: "hidden" }}>
+      <div onClick={() => { if (!saving) onClose(); }} style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: 400 }} />
+      <div role="dialog" aria-modal="true" aria-label="Adjust payout" style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)", zIndex: 401, width: 480, backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 14, boxShadow: "0 24px 64px rgba(0,0,0,0.22)", display: "flex", flexDirection: "column", maxHeight: "90vh", overflow: "hidden" }}>
         {/* Header */}
         <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "16px 20px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
-          <div style={{ width: 34, height: 34, borderRadius: 9, backgroundColor: "rgba(16,185,129,0.14)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <DollarSign size={17} style={{ color: "#10B981" }} />
+          <div style={{ width: 34, height: 34, borderRadius: 9, backgroundColor: "var(--primary-soft)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <DollarSign size={17} style={{ color: "var(--primary)" }} />
           </div>
           <div style={{ flex: 1 }}>
             <div style={{ fontFamily: "var(--font-sans)", fontSize: 15, fontWeight: 700, color: "var(--foreground)" }}>Adjust Payout</div>
             <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--muted-foreground)" }}>{payout.loadRef} · {payout.driverName}</div>
           </div>
-          <button onClick={onClose} style={{ width: 30, height: 30, display: "flex", alignItems: "center", justifyContent: "center", border: "none", borderRadius: 7, backgroundColor: "transparent", cursor: "pointer", color: "var(--muted-foreground)" }}
+          <button onClick={onClose} aria-label="Close" style={{ width: 30, height: 30, display: "flex", alignItems: "center", justifyContent: "center", border: "none", borderRadius: 7, backgroundColor: "transparent", cursor: "pointer", color: "var(--muted-foreground)" }}
             onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--muted)"; }}
             onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = "transparent"; }}>
             <X size={16} />
@@ -185,24 +195,31 @@ function AdjustModal({ payout, onSave, onClose, saving, error }: {
         <div style={{ padding: "20px", display: "flex", flexDirection: "column", gap: 14, overflowY: "auto" }}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-              <label style={labelStyle}>Added ($)</label>
-              <input type="number" min={0} value={added} onChange={(e) => setAdded(e.target.value)} placeholder="0" style={inputStyle} />
+              <label htmlFor="payout-added" style={labelStyle}>Added ($)</label>
+              <input id="payout-added" autoFocus type="number" min={0} value={added} onChange={(e) => setAdded(e.target.value)} placeholder="0" style={inputStyle} />
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-              <label style={labelStyle}>Deducted ($)</label>
-              <input type="number" min={0} value={deducted} onChange={(e) => setDeducted(e.target.value)} placeholder="0" style={inputStyle} />
+              <label htmlFor="payout-deducted" style={labelStyle}>Deducted ($)</label>
+              <input id="payout-deducted" type="number" min={0} value={deducted} onChange={(e) => setDeducted(e.target.value)} placeholder="0" style={inputStyle} />
             </div>
           </div>
+
+          {negative && (
+            <span style={{ marginTop: -6, fontFamily: "var(--font-sans)", fontSize: 11, color: "#EF4444" }}>
+              Enter amounts as positive numbers — use Deducted to take money off.
+            </span>
+          )}
 
           {/* Net preview */}
           <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8, padding: "8px 12px", borderRadius: 8, backgroundColor: "var(--muted)", border: "1px solid var(--border)" }}>
             <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)" }}>Net Payout:</span>
-            <span style={{ fontFamily: "var(--font-mono)", fontSize: 15, fontWeight: 700, color: previewNet >= 0 ? "#10B981" : "#EF4444" }}>{fmtMoney(previewNet)}</span>
+            <span style={{ fontFamily: "var(--font-mono)", fontSize: 15, fontWeight: 700, color: previewNet >= 0 ? "var(--foreground)" : "#EF4444" }}>{fmtMoney(previewNet)}</span>
           </div>
 
           <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-            <label style={{ ...labelStyle, fontFamily: "var(--font-sans)" }}>Notes</label>
+            <label htmlFor="payout-notes" style={{ ...labelStyle, fontFamily: "var(--font-sans)" }}>Notes</label>
             <input
+              id="payout-notes"
               value={notes} onChange={(e) => setNotes(e.target.value)}
               placeholder="Optional notes…"
               style={{ ...inputStyle, fontFamily: "var(--font-sans)" }}
@@ -222,15 +239,15 @@ function AdjustModal({ payout, onSave, onClose, saving, error }: {
         </div>
 
         {/* Footer */}
+        <FormError message={error} style={formErrorInModal} />
         <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8, padding: "14px 20px", borderTop: "1px solid var(--border)", flexShrink: 0 }}>
-          {error && <span style={{ marginRight: "auto", fontFamily: "var(--font-sans)", fontSize: 12, color: "#EF4444" }}>{error}</span>}
           <button onClick={onClose} disabled={saving}
             style={{ padding: "8px 18px", borderRadius: 8, border: "1px solid var(--border)", backgroundColor: "var(--card)", fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 500, color: "var(--foreground)", cursor: saving ? "default" : "pointer", opacity: saving ? 0.5 : 1 }}>
             Cancel
           </button>
           <button onClick={() => onSave(Number(added) || 0, Number(deducted) || 0, notes.trim())}
-            disabled={saving}
-            style={{ padding: "8px 20px", borderRadius: 8, border: "none", backgroundColor: saving ? "var(--muted)" : "var(--primary)", fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, color: saving ? "var(--muted-foreground)" : "#fff", cursor: saving ? "not-allowed" : "pointer" }}>
+            disabled={saving || negative}
+            style={{ padding: "8px 20px", borderRadius: 8, border: "none", backgroundColor: saving || negative ? "var(--muted)" : "var(--primary)", fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, color: saving || negative ? "var(--muted-foreground)" : "#fff", cursor: saving || negative ? "not-allowed" : "pointer" }}>
             {saving ? "Saving…" : "Save"}
           </button>
         </div>
@@ -244,7 +261,7 @@ function AdjustModal({ payout, onSave, onClose, saving, error }: {
 
 function TH({ children, width, align = "left" }: { children: React.ReactNode; width?: number; align?: "left" | "right" | "center" }) {
   return (
-    <th style={{ width, minWidth: width, padding: "8px 14px", textAlign: align, fontFamily: "var(--font-sans)", fontSize: 10, fontWeight: 600, color: "var(--muted-foreground)", textTransform: "uppercase", letterSpacing: "0.07em", whiteSpace: "nowrap", borderBottom: "1px solid var(--border)", backgroundColor: "var(--muted)", position: "sticky", top: 0, zIndex: 2 }}>
+    <th style={{ width, minWidth: width, padding: "10px 14px", textAlign: align, fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600, color: "var(--muted-foreground)", textTransform: "uppercase", letterSpacing: "0.07em", whiteSpace: "nowrap", borderBottom: "1px solid var(--border)", backgroundColor: "var(--card)", position: "sticky", top: 0, zIndex: 2 }}>
       {children}
     </th>
   );
@@ -286,6 +303,12 @@ function CompactSelect({ value, options, onChange }: { value: number; options: n
 
 // ─── Pagination ───────────────────────────────────────────────────────────────
 
+const PBtn = ({ children, active = false, disabled = false, onClick, label }: { children: React.ReactNode; active?: boolean; disabled?: boolean; onClick: () => void; label?: string }) => (
+  <button onClick={onClick} disabled={disabled} aria-label={label} aria-current={active ? "page" : undefined} style={{ minWidth: 30, height: 30, borderRadius: 6, padding: "0 6px", border: active ? "1.5px solid var(--primary)" : "1px solid var(--border)", backgroundColor: active ? "var(--primary)" : "transparent", color: active ? "#fff" : disabled ? "var(--muted-foreground)" : "var(--foreground)", fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: active ? 600 : 400, cursor: disabled ? "default" : "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", opacity: disabled ? 0.38 : 1, outline: "none" }}>
+    {children}
+  </button>
+);
+
 function Pagination({ page, total, pageSize, onPage, onPageSize, loading = false }: {
   page: number; total: number; pageSize: number;
   onPage: (p: number) => void; onPageSize: (s: number) => void; loading?: boolean;
@@ -305,12 +328,6 @@ function Pagination({ page, total, pageSize, onPage, onPageSize, loading = false
     pages.push(totalPages);
   }
 
-  const PBtn = ({ children, active = false, disabled = false, onClick }: { children: React.ReactNode; active?: boolean; disabled?: boolean; onClick: () => void }) => (
-    <button onClick={onClick} disabled={disabled} style={{ minWidth: 30, height: 30, borderRadius: 6, padding: "0 6px", border: active ? "1.5px solid var(--primary)" : "1px solid var(--border)", backgroundColor: active ? "var(--primary)" : "transparent", color: active ? "#fff" : disabled ? "var(--muted-foreground)" : "var(--foreground)", fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: active ? 600 : 400, cursor: disabled ? "default" : "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", opacity: disabled ? 0.38 : 1, outline: "none" }}>
-      {children}
-    </button>
-  );
-
   return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 16px", borderTop: "1px solid var(--border)", backgroundColor: "var(--card)", flexShrink: 0 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -323,17 +340,25 @@ function Pagination({ page, total, pageSize, onPage, onPageSize, loading = false
         <CompactSelect value={pageSize} options={PAGE_SIZES as unknown as number[]} onChange={(v) => { onPageSize(v); onPage(1); }} />
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-        <PBtn disabled={loading || page <= 1} onClick={() => onPage(page - 1)}><ChevronLeft size={14} /></PBtn>
+        <PBtn label="Previous page" disabled={loading || page <= 1} onClick={() => onPage(page - 1)}><ChevronLeft size={14} /></PBtn>
         {pages.map((p, i) =>
           p === "…"
             ? <span key={`e${i}`} style={{ padding: "0 4px", fontSize: 13, color: "var(--muted-foreground)", lineHeight: "30px" }}>…</span>
             : <PBtn key={p} active={p === page} disabled={loading && p !== page} onClick={() => onPage(p as number)}>{p}</PBtn>
         )}
-        <PBtn disabled={loading || page >= totalPages} onClick={() => onPage(page + 1)}><ChevronRight size={14} /></PBtn>
+        <PBtn label="Next page" disabled={loading || page >= totalPages} onClick={() => onPage(page + 1)}><ChevronRight size={14} /></PBtn>
       </div>
     </div>
   );
 }
+
+// ─── Table body cell ──────────────────────────────────────────────────────────
+
+const TD = ({ children, align, noOverflow }: { children: React.ReactNode; align?: string; noOverflow?: boolean }) => (
+  <td style={{ padding: "12px 14px", borderBottom: "1px solid var(--border)", verticalAlign: "middle", textAlign: (align as "left" | "right" | "center") ?? "left", ...(noOverflow ? {} : { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }) }}>
+    {children}
+  </td>
+);
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
@@ -344,6 +369,7 @@ export function PayoutsPage() {
   const { user } = useAuth();
   const canAdjust = hasPerm(user, "payouts", "update");
   const today = new Date(); today.setHours(0, 0, 0, 0);
+  const weekStart = user?.company?.week_start_day ?? 1;
 
   const [payouts, setPayouts]           = useState<Payout[]>([]);
   const [total, setTotal]               = useState(0);
@@ -363,29 +389,29 @@ export function PayoutsPage() {
   const [editing, setEditing]           = useState<Payout | null>(null);
   const [saving, setSaving]             = useState(false);
   const [saveErr, setSaveErr]           = useState<string | null>(null);
-  const [toast, setToast]               = useState<{ type: "success" | "error"; msg: string } | null>(null);
 
   const [page, setPage]                 = useState(1);
   const [pageSize, setPageSize]         = useState<PageSize>(20);
   const filterRef = useRef<HTMLDivElement>(null);
 
+  // The dispatcher filter offers two groups, merged: everyone who can dispatch today (the
+  // owner + the built-in Dispatcher role), and everyone named on a past payout — so someone
+  // who has since changed role can still be filtered for. Either request may be refused
+  // (users.read is not implied by payouts.read); the other still fills the list.
   useEffect(() => {
-    if (!toast) return;
-    const t = setTimeout(() => setToast(null), 3000);
-    return () => clearTimeout(t);
-  }, [toast]);
-
-  // Fetch dispatchers (board users) once on mount
-  useEffect(() => {
-    const companyId = getCompanyId();
-    api.get<any[]>(`/owner/companies/${companyId}/users`)
-      .then((users) => {
-        setDispatchers((users ?? []).map((u: any) => ({
-          id: u.id,
-          name: u.full_name ?? u.login ?? u.id,
-        })));
-      })
-      .catch(() => {});
+    let cancelled = false;
+    Promise.allSettled([
+      api.get<any[]>("/company/users?role=dispatcher"),
+      api.get<{ id: string; name: string }[]>("/payouts/dispatchers"),
+    ]).then(([current, past]) => {
+      if (cancelled) return;
+      const byId = new Map<string, DispatcherOpt>();
+      // Past first, so a current user's live name wins over an older payout's snapshot.
+      if (past.status === "fulfilled") for (const d of past.value ?? []) byId.set(d.id, { id: d.id, name: d.name || d.id });
+      if (current.status === "fulfilled") for (const u of current.value ?? []) byId.set(u.id, { id: u.id, name: u.full_name ?? u.login ?? u.id });
+      setDispatchers([...byId.values()].sort((a, b) => a.name.localeCompare(b.name)));
+    });
+    return () => { cancelled = true; };
   }, []);
 
   // Debounce search
@@ -404,9 +430,12 @@ export function PayoutsPage() {
 
   // Fetch payouts
   useEffect(() => {
+    // Filters can change faster than the server answers — only the latest request may
+    // write to the table, or a slow earlier answer would overwrite a newer one.
+    let cancelled = false;
     setLoading(true);
     setLoadErr(null);
-    const dateRange = dateMode ? toApiRange(dateMode, anchor) : { from: undefined, to: undefined };
+    const dateRange = dateMode ? toApiRange(dateMode, anchor, weekStart) : { from: undefined, to: undefined };
     api.getPayouts<BackendPayout>({
       q:             debouncedSearch || undefined,
       dispatcher_id: dispFilter?.id || undefined,
@@ -415,11 +444,14 @@ export function PayoutsPage() {
       page,
       page_size:     pageSize,
     }).then(({ items, total: t, totals: tots }) => {
+      if (cancelled) return;
       setPayouts((items ?? []).map(toPayout));
       setTotal(t);
       setTotals(tots);
-    }).catch((e) => setLoadErr(e instanceof Error ? e.message : "Couldn't load payouts.")).finally(() => setLoading(false));
-  }, [fetchKey, debouncedSearch, dispFilter, dateMode, anchor, page, pageSize]);
+    }).catch((e) => { if (!cancelled) setLoadErr(friendlyError(e, "Couldn't load payouts.")); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [fetchKey, debouncedSearch, dispFilter, dateMode, anchor, page, pageSize, weekStart]);
 
   const handleSave = async (added: number, deducted: number, notes: string) => {
     if (!editing) return;
@@ -430,9 +462,9 @@ export function PayoutsPage() {
       setPayouts((prev) => prev.map((p) => p.id === editing.id ? toPayout(updated as BackendPayout) : p));
       setFetchKey((k) => k + 1); // refetch totals
       setEditing(null);
-      setToast({ type: "success", msg: "Payout updated" });
+      notify.success("Payout updated");
     } catch (e) {
-      setSaveErr(e instanceof Error ? e.message : "Couldn't save the adjustment."); // keep modal open
+      setSaveErr(friendlyError(e, "Couldn't save the adjustment.")); // keep modal open
     } finally {
       setSaving(false);
     }
@@ -442,12 +474,6 @@ export function PayoutsPage() {
     if (dateMode === m) { setDateMode(null); } else { setDateMode(m); setAnchor(today); }
     setPage(1);
   };
-
-  if (loading && payouts.length === 0) return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%", backgroundColor: "var(--background)" }}>
-      <PageLoader label="payouts" />
-    </div>
-  );
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", backgroundColor: "var(--background)", overflow: "hidden" }}>
@@ -462,13 +488,19 @@ export function PayoutsPage() {
         />
       )}
 
-      {toast && (
-        <div style={{ position: "fixed", top: 24, right: 24, zIndex: 9999, display: "flex", alignItems: "center", gap: 10, padding: "10px 16px", borderRadius: 8, backgroundColor: toast.type === "success" ? "#10B981" : "#EF4444", color: "#fff", fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 500, boxShadow: "0 4px 12px rgba(0,0,0,0.15)", animation: "slideUp 0.2s ease" }}>
-          {toast.msg}
-        </div>
-      )}
+      <div style={{ flex: 1, overflow: "hidden", padding: "20px 24px", display: "flex", flexDirection: "column", gap: 16 }}>
 
-      <div style={{ flex: 1, overflow: "hidden", padding: "20px 24px", display: "flex", flexDirection: "column" }}>
+      {/* Page title */}
+      <div style={{ flexShrink: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <DollarSign size={20} style={{ color: "var(--primary)" }} />
+          <span style={{ fontFamily: "var(--font-sans)", fontSize: 20, fontWeight: 700, color: "var(--foreground)", letterSpacing: "-0.01em" }}>Payouts</span>
+        </div>
+        <div style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)", marginTop: 2 }}>
+          What each completed load pays, with any amounts added or deducted
+        </div>
+      </div>
+
       <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 12 }}>
 
       {/* ── Toolbar ── */}
@@ -476,13 +508,13 @@ export function PayoutsPage() {
         {/* Search */}
         <div style={{ position: "relative", flex: "1 1 220px", maxWidth: 300 }}>
           <Search size={13} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--muted-foreground)", pointerEvents: "none" }} />
-          <input value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} placeholder="Search driver, load, broker…"
+          <input value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} placeholder="Search driver, load, broker…" aria-label="Search payouts"
             style={{ width: "100%", height: 34, paddingLeft: 30, paddingRight: 10, borderRadius: 7, border: "1px solid var(--border)", backgroundColor: "var(--input-background)", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--foreground)", outline: "none", boxSizing: "border-box" }} />
         </div>
 
         {/* Dispatcher filter */}
         <div ref={filterRef} style={{ position: "relative" }}>
-          <button onClick={() => setFilterOpen((v) => !v)}
+          <button onClick={() => setFilterOpen((v) => !v)} aria-haspopup="listbox" aria-expanded={filterOpen}
             style={{ display: "flex", alignItems: "center", gap: 6, height: 34, padding: "0 12px", borderRadius: 7, border: "1px solid var(--border)", backgroundColor: dispFilter ? "var(--primary)" : "var(--card)", fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 500, color: dispFilter ? "#fff" : "var(--foreground)", cursor: "pointer", whiteSpace: "nowrap", outline: "none" }}>
             {dispFilter ? dispFilter.name.split(" ")[0] : "All Dispatchers"}
             <ChevronDown size={13} style={{ color: dispFilter ? "#ffffffaa" : "var(--muted-foreground)" }} />
@@ -509,7 +541,7 @@ export function PayoutsPage() {
         {/* Date range picker */}
         <div style={{ display: "flex", alignItems: "center", gap: 0, borderRadius: 8, border: "1px solid var(--border)", overflow: "hidden", flexShrink: 0 }}>
           {(["day", "week", "month"] as DateMode[]).map((m) => (
-            <button key={m} onClick={() => selectMode(m)}
+            <button key={m} onClick={() => selectMode(m)} aria-pressed={dateMode === m}
               style={{ padding: "8px 14px", fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: dateMode === m ? 700 : 500, color: dateMode === m ? "#fff" : "var(--muted-foreground)", backgroundColor: dateMode === m ? "var(--primary)" : "transparent", border: "none", borderRight: m !== "month" ? "1px solid var(--border)" : "none", cursor: "pointer", textTransform: "capitalize", outline: "none", transition: "background-color 0.12s" }}>
               {m.charAt(0).toUpperCase() + m.slice(1)}
             </button>
@@ -519,16 +551,16 @@ export function PayoutsPage() {
         {/* Date nav */}
         {dateMode && (
           <div style={{ display: "flex", alignItems: "center", gap: 0, borderRadius: 8, border: "1px solid var(--border)", overflow: "hidden", flexShrink: 0 }}>
-            <button onClick={() => { setAnchor((a) => shiftAnchor(dateMode, a, -1)); setPage(1); }}
+            <button aria-label={`Previous ${dateMode}`} onClick={() => { setAnchor((a) => shiftAnchor(dateMode, a, -1)); setPage(1); }}
               style={{ width: 32, height: 34, display: "flex", alignItems: "center", justifyContent: "center", border: "none", borderRight: "1px solid var(--border)", backgroundColor: "transparent", cursor: "pointer", color: "var(--foreground)", outline: "none" }}
               onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--muted)"; }}
               onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = "transparent"; }}>
               <ChevronLeft size={14} />
             </button>
             <div style={{ padding: "0 14px", fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 600, color: "var(--foreground)", whiteSpace: "nowrap", lineHeight: "34px" }}>
-              {fmtDateLabel(dateMode, anchor)}
+              {fmtDateLabel(dateMode, anchor, weekStart)}
             </div>
-            <button onClick={() => { setAnchor((a) => shiftAnchor(dateMode, a, 1)); setPage(1); }}
+            <button aria-label={`Next ${dateMode}`} onClick={() => { setAnchor((a) => shiftAnchor(dateMode, a, 1)); setPage(1); }}
               style={{ width: 32, height: 34, display: "flex", alignItems: "center", justifyContent: "center", border: "none", borderLeft: "1px solid var(--border)", backgroundColor: "transparent", cursor: "pointer", color: "var(--foreground)", outline: "none" }}
               onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--muted)"; }}
               onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = "transparent"; }}>
@@ -536,8 +568,6 @@ export function PayoutsPage() {
             </button>
           </div>
         )}
-
-        <div style={{ flex: 1 }} />
       </div>
 
       {/* ── Table — dim existing rows while a page-change refetch is in flight ── */}
@@ -554,8 +584,8 @@ export function PayoutsPage() {
             <col style={{ width: 100 }} />{/* Deducted */}
             <col style={{ width: 110 }} />{/* Net */}
             <col style={{ width: 200 }} />{/* Notes */}
-            <col style={{ width: 110 }} />{/* Date */}
-            <col style={{ width: 60 }} /> {/* Actions */}
+            <col style={{ width: 132 }} />{/* Date */}
+            <col style={{ width: 80 }} /> {/* Actions */}
           </colgroup>
           <thead>
             <tr>
@@ -570,10 +600,15 @@ export function PayoutsPage() {
               <TH align="right">Net</TH>
               <TH>Notes</TH>
               <TH>Completed</TH>
-              <TH align="center">Edit</TH>
+              <TH align="center">Adjust</TH>
             </tr>
           </thead>
           <tbody>
+            {/* The loader lives in the table: the toolbar stays put (and keeps focus) while
+                a filter change is in flight. With rows on screen they're dimmed instead. */}
+            {loading && payouts.length === 0 && (
+              <tr><td colSpan={12} style={{ padding: 0 }}><PageLoader label="payouts" /></td></tr>
+            )}
             {!loading && loadErr && payouts.length === 0 && (
               <tr>
                 <td colSpan={12} style={{ padding: "48px 20px" }}>
@@ -592,25 +627,19 @@ export function PayoutsPage() {
                 </td>
               </tr>
             )}
-            {payouts.map((p, idx) => {
-              const TD = ({ children, align, noOverflow }: { children: React.ReactNode; align?: string; noOverflow?: boolean }) => (
-                <td style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", verticalAlign: "middle", textAlign: (align as "left" | "right" | "center") ?? "left", ...(noOverflow ? {} : { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }) }}>
-                  {children}
-                </td>
-              );
+            {payouts.map((p) => {
               return (
                 <tr key={p.id}
-                  style={{ backgroundColor: idx % 2 === 0 ? "var(--card)" : "var(--background)" }}
-                  onMouseEnter={(e) => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = "rgba(59,130,246,0.03)"; }}
-                  onMouseLeave={(e) => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = idx % 2 === 0 ? "var(--card)" : "var(--background)"; }}>
+                  onMouseEnter={(e) => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = "var(--primary-faint)"; }}
+                  onMouseLeave={(e) => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = ""; }}>
 
-                  <TD><span style={{ fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: 500, color: "var(--foreground)" }}>{p.dispatcher || "—"}</span></TD>
-                  <TD><span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--foreground)" }}>{p.driverName}</span></TD>
+                  <TD><span style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 500, color: "var(--foreground)" }}>{p.dispatcher || "—"}</span></TD>
+                  <TD><span style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--foreground)" }}>{p.driverName}</span></TD>
                   <TD noOverflow><span style={{ display: "inline-block", whiteSpace: "nowrap", fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 600, color: "var(--primary)", backgroundColor: "var(--secondary)", borderRadius: 4, padding: "2px 8px" }}>{p.loadRef || "—"}</span></TD>
-                  <TD><span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--foreground)" }}>{p.broker || "—"}</span></TD>
+                  <TD><span style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--foreground)" }}>{p.broker || "—"}</span></TD>
                   <TD>
                     {p.origin && p.destination
-                      ? <span style={{ fontFamily: "var(--font-sans)", fontSize: 12 }}>
+                      ? <span style={{ fontFamily: "var(--font-sans)", fontSize: 13 }}>
                           <span style={{ color: "var(--foreground)" }}>{p.origin}</span>
                           <span style={{ margin: "0 5px", color: "var(--muted-foreground)", opacity: 0.5 }}>→</span>
                           <span style={{ color: "var(--foreground)" }}>{p.destination}</span>
@@ -619,36 +648,36 @@ export function PayoutsPage() {
                   </TD>
                   <TD align="right"><span style={{ fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 600, color: "var(--foreground)" }}>{fmtMoney(p.rate)}</span></TD>
                   <TD align="right">
-                    {p.added > 0 ? <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 600, color: "#3B82F6" }}>+{fmtMoney(p.added)}</span> : <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--muted-foreground)" }}>—</span>}
+                    {p.added > 0 ? <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 600, color: "var(--primary)" }}>+{fmtMoney(p.added)}</span> : <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--muted-foreground)" }}>—</span>}
                   </TD>
                   <TD align="right">
                     {p.deducted > 0 ? <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 600, color: "#EF4444" }}>-{fmtMoney(p.deducted)}</span> : <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--muted-foreground)" }}>—</span>}
                   </TD>
-                  <TD align="right"><span style={{ fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 700, color: p.net >= p.rate ? "#10B981" : "#F59E0B" }}>{fmtMoney(p.net)}</span></TD>
+                  <TD align="right"><span style={{ fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 700, color: "var(--foreground)" }}>{fmtMoney(p.net)}</span></TD>
                   <TD>
                     {p.notes
                       ? <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
                           <FileText size={11} style={{ color: "var(--muted-foreground)", flexShrink: 0 }} />
-                          <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)" }}>{p.notes}</span>
+                          <span style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>{p.notes}</span>
                         </span>
                       : <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--muted-foreground)" }}>—</span>}
                   </TD>
                   <TD noOverflow>
-                    <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                    <span style={{ display: "flex", alignItems: "center", gap: 5, whiteSpace: "nowrap" }}>
                       <CalendarDays size={11} style={{ color: "var(--muted-foreground)", flexShrink: 0 }} />
                       <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--muted-foreground)" }}>{fmtDate(p.completedAt)}</span>
                     </span>
                   </TD>
                   <TD align="center" noOverflow>
                     {canAdjust ? (
-                      <button onClick={() => setEditing(p)}
-                        style={{ width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "transparent", cursor: "pointer", color: "var(--muted-foreground)", outline: "none" }}
-                        onMouseEnter={(e) => { const b = e.currentTarget as HTMLButtonElement; b.style.backgroundColor = "var(--muted)"; b.style.color = "var(--foreground)"; }}
-                        onMouseLeave={(e) => { const b = e.currentTarget as HTMLButtonElement; b.style.backgroundColor = "transparent"; b.style.color = "var(--muted-foreground)"; }}>
-                        <Pencil size={12} />
+                      <button onClick={() => { setSaveErr(null); setEditing(p); }} aria-label={`Adjust payout for ${p.loadRef || p.driverName}`} title="Adjust payout"
+                        style={{ width: 30, height: 30, display: "inline-flex", alignItems: "center", justifyContent: "center", borderRadius: 7, border: "none", backgroundColor: "transparent", cursor: "pointer", color: "var(--muted-foreground)", transition: "color 0.12s, background-color 0.12s" }}
+                        onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--primary-soft)"; e.currentTarget.style.color = "var(--primary)"; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = "var(--muted-foreground)"; }}>
+                        <Pencil size={14} />
                       </button>
                     ) : (
-                      <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)" }}>—</span>
+                      <span style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>—</span>
                     )}
                   </TD>
                 </tr>
@@ -656,18 +685,18 @@ export function PayoutsPage() {
             })}
           </tbody>
 
-          {/* Totals footer — from server, covers all pages */}
+          {/* Totals footer — from server, covers all pages; pinned so it's always in view */}
           {total > 0 && payouts.length > 0 && (
             <tfoot>
               <tr style={{ backgroundColor: "var(--card)" }}>
-                <td colSpan={5} style={{ padding: "10px 14px", borderTop: "2px solid var(--border)", fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: 600, color: "var(--muted-foreground)" }}>
-                  Totals ({total} records)
+                <td colSpan={5} style={{ padding: "10px 14px", position: "sticky", bottom: 0, backgroundColor: "var(--card)", boxShadow: "inset 0 1px 0 var(--border)", fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, color: "var(--muted-foreground)" }}>
+                  Totals ({total} {total === 1 ? "record" : "records"})
                 </td>
-                <td style={{ padding: "10px 14px", borderTop: "2px solid var(--border)", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 700, color: "var(--foreground)" }}>{fmtMoney(totals.rate)}</td>
-                <td style={{ padding: "10px 14px", borderTop: "2px solid var(--border)", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 700, color: "#3B82F6" }}>{totals.added > 0 ? `+${fmtMoney(totals.added)}` : "—"}</td>
-                <td style={{ padding: "10px 14px", borderTop: "2px solid var(--border)", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 700, color: "#EF4444" }}>{totals.deducted > 0 ? `-${fmtMoney(totals.deducted)}` : "—"}</td>
-                <td style={{ padding: "10px 14px", borderTop: "2px solid var(--border)", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 700, color: "#10B981" }}>{fmtMoney(totals.net)}</td>
-                <td colSpan={3} style={{ borderTop: "2px solid var(--border)" }} />
+                <td style={{ padding: "10px 14px", position: "sticky", bottom: 0, backgroundColor: "var(--card)", boxShadow: "inset 0 1px 0 var(--border)", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 700, color: "var(--foreground)" }}>{fmtMoney(totals.rate)}</td>
+                <td style={{ padding: "10px 14px", position: "sticky", bottom: 0, backgroundColor: "var(--card)", boxShadow: "inset 0 1px 0 var(--border)", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 700, color: "var(--primary)" }}>{totals.added > 0 ? `+${fmtMoney(totals.added)}` : "—"}</td>
+                <td style={{ padding: "10px 14px", position: "sticky", bottom: 0, backgroundColor: "var(--card)", boxShadow: "inset 0 1px 0 var(--border)", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 700, color: "#EF4444" }}>{totals.deducted > 0 ? `-${fmtMoney(totals.deducted)}` : "—"}</td>
+                <td style={{ padding: "10px 14px", position: "sticky", bottom: 0, backgroundColor: "var(--card)", boxShadow: "inset 0 1px 0 var(--border)", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 700, color: "var(--foreground)" }}>{fmtMoney(totals.net)}</td>
+                <td colSpan={3} style={{ position: "sticky", bottom: 0, backgroundColor: "var(--card)", boxShadow: "inset 0 1px 0 var(--border)" }} />
               </tr>
             </tfoot>
           )}

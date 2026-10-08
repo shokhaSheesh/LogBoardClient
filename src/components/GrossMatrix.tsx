@@ -1,10 +1,14 @@
 import { useState, useMemo, useEffect, useRef } from "react";
-import { Search, Calendar, Check, ChevronDown, ChevronLeft, ChevronRight, AlertCircle, X, Users, Rows3 } from "lucide-react";
+import { Search, Calendar, Check, ChevronDown, ChevronLeft, ChevronRight, AlertCircle, X, Users, Rows3, BarChart3 } from "lucide-react";
 import { createPortal } from "react-dom";
 import { Status, STATUS_CONFIG, ALL_STATUSES } from "../lib/statuses";
 import { api, getCompanyId } from "../lib/api";
 import { PageLoader } from "./PageLoader";
+import { friendlyError, notify } from "./feedback";
 import { driverDisplayName } from "../lib/driverName";
+import { useAuth } from "../lib/auth";
+import { hasPerm } from "../lib/permissions";
+import { useTheme } from "../lib/theme";
 
 type CellType = Status | "load" | "empty";
 
@@ -103,41 +107,48 @@ function colLabel(iso: string) {
 }
 function fmt(n: number) { return `$${n.toLocaleString()}`; }
 
-// ─── Cell display styles ──────────────────────────────────────────────────────
-
-function cellStyle(type: CellType): { bg: string; color: string; label?: string } {
-  if (type === "load")  return { bg: "var(--card)", color: "var(--foreground)" };
-  if (type === "empty") return { bg: "var(--muted)", color: "var(--muted-foreground)" };
-  const s = STATUS_CONFIG[type as Status];
-  return { bg: s.bg, color: s.color, label: s.label.toUpperCase() };
-}
-
-const TYPE_OPTIONS: { type: CellType; label: string }[] = [
-  { type: "load",  label: "Load"  },
-  { type: "empty", label: "Empty" },
-  ...ALL_STATUSES.map((s) => ({ type: s as CellType, label: STATUS_CONFIG[s].label })),
-];
-
-const DAY_W = 116;
+const DAY_W = 104;
 
 // ─── Day cell display ─────────────────────────────────────────────────────────
 
-function DayCellContent({ cell }: { cell: DayCell }) {
-  const s = cellStyle(cell.type);
+// A status day is a soft chip — the status colour as a tint behind darker text of the same
+// hue — instead of a full-bleed colour block, so a week of statuses doesn't drown out the
+// money. The hue still comes straight from STATUS_CONFIG, so it matches the Board.
+function chipColors(status: Status, dark: boolean): { bg: string; color: string } {
+  const c = STATUS_CONFIG[status].bg;
+  return dark
+    ? { bg: `color-mix(in srgb, ${c} 24%, var(--card))`, color: `color-mix(in srgb, ${c} 55%, #fff)` }
+    : { bg: `color-mix(in srgb, ${c} 15%, var(--card))`, color: `color-mix(in srgb, ${c} 72%, #000)` };
+}
+
+function StatusChip({ status, dark, block = false }: { status: Status; dark: boolean; block?: boolean }) {
+  const c = chipColors(status, dark);
+  return (
+    <span style={{
+      display: block ? "block" : "inline-block", textAlign: "center",
+      fontFamily: "var(--font-sans)", fontSize: 11.5, fontWeight: 700, whiteSpace: "nowrap",
+      padding: block ? "7px 0" : "3px 10px", borderRadius: 6,
+      backgroundColor: c.bg, color: c.color,
+    }}>
+      {STATUS_CONFIG[status].label}
+    </span>
+  );
+}
+
+function DayCellContent({ cell, dark }: { cell: DayCell; dark: boolean }) {
   if (cell.type === "load") {
     return cell.amount !== undefined ? (
       <>
-        <div style={{ fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: 700, color: "var(--foreground)", lineHeight: 1.2 }}>{fmt(cell.amount)}</div>
-        {/* Full width + inherited text-align:center so the ref sits under the amount,
-            not jammed left; truncates within the cell instead of spilling. */}
-        <div title={cell.loadId} style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "var(--muted-foreground)", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "100%" }}>{cell.loadId}</div>
+        <div style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 700, color: "var(--foreground)", lineHeight: 1.25, fontVariantNumeric: "tabular-nums" }}>{fmt(cell.amount)}</div>
+        {/* Truncates within the cell instead of spilling; the full ref is in the tooltip. */}
+        <div title={cell.loadId} style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--muted-foreground)", lineHeight: 1.25, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "100%" }}>{cell.loadId}</div>
       </>
     ) : (
-      <div title={cell.loadId} style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--muted-foreground)" }}>{cell.loadId ?? "—"}</div>
+      <div title={cell.loadId} style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--muted-foreground)" }}>{cell.loadId ?? "—"}</div>
     );
   }
-  if (cell.type === "empty") return null;
-  return <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 700, color: s.color, letterSpacing: "0.05em", textTransform: "uppercase" }}>{s.label}</span>;
+  if (cell.type === "empty") return <span style={{ color: "var(--border)" }}>·</span>;
+  return <StatusChip status={cell.type as Status} dark={dark} />;
 }
 
 // ─── Multi-select load ID picker ───────────────────────────────────────────────
@@ -146,14 +157,30 @@ function DayCellContent({ cell }: { cell: DayCell }) {
 // string, so multiple picks are joined with "/" — the same joined-ref shape the
 // backend sends for the automatic (system-tracked) multi-load case.
 
-function LoadMultiSelect({ selected, driverId, onChange }: {
+interface LoadOpt { id: string; payout: number; route: string; }
+
+// "Dallas, TX → Atlanta, GA" from a load's first and last stop; "" when it has no usable stops.
+function loadRoute(l: any): string {
+  const stops: any[] = Array.isArray(l?.stops) ? l.stops : [];
+  const place = (s: any) => [s?.city, s?.state].filter(Boolean).join(", ");
+  if (stops.length < 2) return "";
+  const from = place(stops[0]), to = place(stops[stops.length - 1]);
+  return from && to ? `${from} → ${to}` : "";
+}
+
+// Closed, it is one field showing what's picked. Clicking it opens the list in place
+// (search on top, results scrolling inside, more pages loading as you reach the bottom).
+// Nothing is fetched until it is opened.
+function LoadMultiSelect({ selected, driverId, onChange, open, onOpenChange }: {
   selected: string[];
   driverId: string;
   onChange: (ids: string[], sumPayout: number) => void;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 }) {
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
-  const [items, setItems] = useState<{ id: string; payout: number }[]>([]);
+  const [items, setItems] = useState<LoadOpt[]>([]);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -175,7 +202,7 @@ function LoadMultiSelect({ selected, driverId, onChange }: {
     try {
       const { items: rows, total: t } = await api.getList<any>("/loads", { driver_id: driverId, q: q || undefined, page: pageNum, page_size: 20 });
       if (id !== reqId.current) return;
-      const opts = (rows ?? []).map((l: any) => ({ id: String(l.load_id ?? l.id), payout: l.payout ?? 0 }));
+      const opts: LoadOpt[] = (rows ?? []).map((l: any) => ({ id: String(l.load_id ?? l.id), payout: l.payout ?? 0, route: loadRoute(l) }));
       opts.forEach((o) => payoutRef.current.set(o.id, o.payout));
       setItems((prev) => (replace ? opts : [...prev, ...opts]));
       setTotal(t);
@@ -187,12 +214,17 @@ function LoadMultiSelect({ selected, driverId, onChange }: {
     }
   };
 
-  // Fresh page-1 fetch on mount and whenever the (debounced) search changes.
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  // Fresh page-1 fetch when the list opens and whenever the (debounced) search changes.
   useEffect(() => {
+    if (!open) return;
     setItems([]); setTotal(0); setPage(1);
     void loadPage(1, debouncedQuery, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [driverId, debouncedQuery]);
+  }, [open, driverId, debouncedQuery]);
+
+  useEffect(() => { if (open) searchRef.current?.focus(); }, [open]);
 
   const onScroll = () => {
     const el = listRef.current;
@@ -210,320 +242,317 @@ function LoadMultiSelect({ selected, driverId, onChange }: {
   }
 
   return (
-    <div style={{ position: "relative" }}>
-      {selected.length > 0 && (
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 6 }}>
-          {selected.map((id) => (
-            <span key={id} style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 6px", borderRadius: 5, backgroundColor: "var(--secondary)", border: "1px solid var(--border)", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--secondary-foreground)" }}>
-              {id}
-              <button
-                type="button"
-                onMouseDown={(e) => { e.preventDefault(); toggle(id); }}
-                style={{ border: "none", background: "none", cursor: "pointer", color: "var(--secondary-foreground)", display: "flex", padding: 0 }}
-              >
-                <X size={10} />
-              </button>
+    <div>
+      {/* The field */}
+      <button
+        type="button"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => { onOpenChange(!open); setQuery(""); }}
+        style={{
+          display: "flex", alignItems: "center", gap: 8, width: "100%", minHeight: 36, padding: "5px 10px",
+          borderRadius: 8, border: `1px solid ${open ? "var(--primary)" : "var(--border)"}`,
+          boxShadow: open ? "0 0 0 3px var(--primary-soft)" : "none",
+          backgroundColor: "var(--card)", cursor: "pointer", textAlign: "left",
+          transition: "border-color 0.15s, box-shadow 0.15s", outline: "none",
+        }}
+      >
+        <span style={{ flex: 1, minWidth: 0, display: "flex", flexWrap: "wrap", gap: 4 }}>
+          {selected.length === 0 ? (
+            <span style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>Select loads…</span>
+          ) : selected.map((id) => (
+            <span key={id} style={{ display: "inline-flex", alignItems: "center", gap: 4, maxWidth: "100%", padding: "2px 5px 2px 8px", borderRadius: 5, backgroundColor: "var(--primary-soft)", fontFamily: "var(--font-mono)", fontSize: 11.5, color: "var(--secondary-foreground)" }}>
+              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{id}</span>
+              {/* A span, not a button: this sits inside the field's own button. */}
+              <span role="button" tabIndex={0} aria-label={`Remove ${id}`}
+                onClick={(e) => { e.stopPropagation(); toggle(id); }}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); toggle(id); } }}
+                style={{ display: "flex", cursor: "pointer", flexShrink: 0 }}>
+                <X size={11} />
+              </span>
             </span>
           ))}
-        </div>
-      )}
-      <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
-        <Search size={12} style={{ position: "absolute", left: 8, color: "var(--muted-foreground)", pointerEvents: "none" }} />
+        </span>
+        <ChevronDown size={14} style={{ color: "var(--muted-foreground)", flexShrink: 0, transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s" }} />
+      </button>
+
+      {open && (<>
+      <div style={{ position: "relative", display: "flex", alignItems: "center", margin: "6px 0" }}>
+        <Search size={13} style={{ position: "absolute", left: 10, color: "var(--muted-foreground)", pointerEvents: "none" }} />
         <input
+          ref={searchRef}
           type="text"
-          placeholder="Search load ID…"
+          placeholder="Search load…"
+          aria-label="Search this driver's loads"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           style={{
-            width: "100%", paddingLeft: 26, paddingRight: 8, height: 30,
-            borderRadius: 6, border: "1px solid var(--border)",
-            fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--foreground)",
-            backgroundColor: "var(--input-background)",
-            outline: "none", boxSizing: "border-box",
+            width: "100%", paddingLeft: 30, paddingRight: 10, height: 34,
+            borderRadius: 8, border: "1px solid var(--border)",
+            fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--foreground)",
+            backgroundColor: "var(--card)", outline: "none", boxSizing: "border-box",
           }}
-          onMouseDown={(e) => e.stopPropagation()}
           onKeyDown={(e) => {
-            if (e.key === "Escape") { e.stopPropagation(); }
-            if (e.key === "Enter" && items.length === 1) { e.preventDefault(); e.stopPropagation(); toggle(items[0].id); setQuery(""); }
+            // Enter here picks a load (when the search has narrowed to one) — it must never
+            // bubble up and save the whole cell. Escape clears the search first.
+            if (e.key === "Enter") {
+              e.preventDefault(); e.stopPropagation();
+              if (items.length === 1) { toggle(items[0].id); setQuery(""); }
+            }
+            // Escape steps back one level at a time: clear the search, then close the list —
+            // only an Escape with the list closed cancels the whole edit.
+            if (e.key === "Escape") { e.stopPropagation(); if (query) setQuery(""); else onOpenChange(false); }
           }}
         />
       </div>
+
       {/* Inline, bounded list (scrolls internally, infinite-loads on scroll) — never
           an absolute dropdown that could run off the bottom of the screen. */}
       <div
         ref={listRef}
         onScroll={onScroll}
         style={{
-          marginTop: 4, border: "1px solid var(--border)", borderRadius: 6, backgroundColor: "var(--card)",
-          maxHeight: 150, overflowY: "auto", scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent",
+          border: "1px solid var(--border)", borderRadius: 8, backgroundColor: "var(--card)",
+          maxHeight: 200, overflowY: "auto", scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent",
         }}
-        onMouseDown={(e) => e.stopPropagation()}
       >
-        {items.map((load) => {
+        {items.map((load, i) => {
           const isSel = selected.includes(load.id);
           return (
             <button
               key={load.id}
-              onMouseDown={(e) => { e.preventDefault(); toggle(load.id); }}
+              type="button"
+              role="checkbox"
+              aria-checked={isSel}
+              onClick={() => toggle(load.id)}
               style={{
-                display: "flex", alignItems: "center", gap: 8,
-                width: "100%", padding: "6px 10px", border: "none",
-                backgroundColor: isSel ? "var(--secondary)" : "transparent",
+                display: "grid", gridTemplateColumns: "16px minmax(0, 1fr) auto", alignItems: "center", gap: 9,
+                width: "100%", padding: "8px 11px", border: "none",
+                borderTop: i === 0 ? "none" : "1px solid var(--border)",
+                backgroundColor: isSel ? "var(--primary-soft)" : "transparent",
                 cursor: "pointer", textAlign: "left",
               }}
-              onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = isSel ? "var(--accent)" : "var(--muted)"; }}
-              onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = isSel ? "var(--secondary)" : "transparent"; }}
+              onMouseEnter={(e) => { if (!isSel) e.currentTarget.style.backgroundColor = "var(--muted)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = isSel ? "var(--primary-soft)" : "transparent"; }}
             >
-              <span style={{ width: 14, height: 14, borderRadius: 3, border: `1.5px solid ${isSel ? "var(--primary)" : "var(--border)"}`, backgroundColor: isSel ? "var(--primary)" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                {isSel && <Check size={10} color="#fff" />}
+              <span style={{ width: 16, height: 16, borderRadius: 4, border: `1.5px solid ${isSel ? "var(--primary)" : "var(--switch-background)"}`, backgroundColor: isSel ? "var(--primary)" : "transparent", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                {isSel && <Check size={11} color="#fff" strokeWidth={3} />}
               </span>
-              <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--foreground)", flex: 1 }}>{load.id}</span>
-              <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 600, color: "#10B981" }}>${load.payout.toLocaleString()}</span>
+              <span style={{ minWidth: 0 }}>
+                <span style={{ display: "block", fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--foreground)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{load.id}</span>
+                {load.route && <span style={{ display: "block", fontFamily: "var(--font-sans)", fontSize: 11, color: "var(--muted-foreground)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{load.route}</span>}
+              </span>
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 600, color: "var(--foreground)" }}>${load.payout.toLocaleString()}</span>
             </button>
           );
         })}
         {loading && (
-          <div style={{ padding: "8px 10px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 11, color: "var(--muted-foreground)" }}>Loading…</div>
+          <div style={{ padding: "10px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)" }}>Loading…</div>
         )}
         {!loading && items.length === 0 && (
-          <div style={{ padding: "10px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 11, color: "var(--muted-foreground)" }}>No loads found</div>
+          <div style={{ padding: "12px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)" }}>
+            {query ? "No loads match that search" : "This driver has no loads yet"}
+          </div>
         )}
       </div>
+      </>)}
     </div>
   );
 }
 
 // ─── Cell edit panel (portal) ─────────────────────────────────────────────────
 
+// What a day holds: money from loads, a status, or nothing.
+type EditMode = "load" | "status" | "clear";
+
 interface EditState {
   driverId: string;
+  driverName: string;
   date: string;
   rect: DOMRect;
-  type: CellType;
+  mode: EditMode;
+  status: Status | null; // the picked status (mode "status"); null until one is chosen
   amount: string;
   loadIds: string[]; // the day's selected loads — joined with "/" on save
 }
 
+const MODE_TABS: { mode: EditMode; label: string }[] = [
+  { mode: "load", label: "Load" }, { mode: "status", label: "Status" }, { mode: "clear", label: "Clear" },
+];
+
+const editCap: React.CSSProperties = {
+  fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600, letterSpacing: "0.06em",
+  textTransform: "uppercase", color: "var(--muted-foreground)", marginBottom: 6,
+};
+
 function CellEditPanel({
-  edit,
-  onType,
-  onAmount,
-  onLoadsChange,
-  onSave,
-  onCancel,
+  edit, dark, onMode, onStatus, onAmount, onLoadsChange, onSave, onCancel,
 }: {
   edit: EditState;
-  onType: (t: CellType) => void;
+  dark: boolean;
+  onMode: (m: EditMode) => void;
+  onStatus: (s: Status) => void;
   onAmount: (v: string) => void;
   onLoadsChange: (ids: string[], sumPayout: number) => void;
   onSave: () => void;
   onCancel: () => void;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
-  const amountRef = useRef<HTMLInputElement>(null);
+  const [loadsOpen, setLoadsOpen] = useState(false);
+  // Nothing to save in Status mode until a status is picked.
+  const canSave = edit.mode !== "status" || edit.status !== null;
 
-  // Focus amount input when switching to load
-  useEffect(() => {
-    if (edit.type === "load") amountRef.current?.focus();
-  }, [edit.type]);
-
-  // Auto-focus amount on mount if load type
-  useEffect(() => {
-    if (edit.type === "load") amountRef.current?.select();
-  }, []);
+  // Take focus on open so Enter / Esc work straight away.
+  useEffect(() => { panelRef.current?.focus(); }, []);
 
   // Position the panel so it always fits on screen: open below the cell when there's
   // room, otherwise flip above (whichever side has more space), and cap the height to
   // the space actually available at that top — the panel scrolls internally past that,
   // so the Save/Cancel row is always reachable no matter which row the cell is in.
-  const PANEL_W = 248;
+  const PANEL_W = 328;
   const GAP = 6;
   const vw = window.innerWidth;
   const vh = window.innerHeight;
-  const left = Math.min(edit.rect.left, vw - PANEL_W - 8);
-  const desired    = edit.type === "load" ? 420 : 130;
+  const left = Math.max(8, Math.min(edit.rect.left, vw - PANEL_W - 8));
+  const desired    = edit.mode === "load" ? (loadsOpen ? 520 : 290) : edit.mode === "status" ? 360 : 190;
   const spaceBelow = vh - edit.rect.bottom - GAP;
   const spaceAbove = edit.rect.top - GAP;
   const openUp = spaceBelow < desired && spaceAbove > spaceBelow;
-  const top = openUp
-    ? Math.max(8, edit.rect.top - Math.min(desired, spaceAbove) - GAP)
-    : edit.rect.bottom + GAP;
-  const panelMaxHeight = vh - top - 8;
+  // Opening upward anchors the panel's BOTTOM to the cell, so it hugs the cell whatever
+  // its height turns out to be (it grows when the load list opens).
+  const place: React.CSSProperties = openUp
+    ? { bottom: vh - edit.rect.top + GAP, maxHeight: spaceAbove - 8 }
+    : { top: edit.rect.bottom + GAP, maxHeight: spaceBelow - 8 };
 
   function handleKey(e: React.KeyboardEvent) {
-    if (e.key === "Enter")  { e.preventDefault(); onSave(); }
-    if (e.key === "Escape") { e.preventDefault(); onCancel(); }
+    if (e.key === "Escape") { e.preventDefault(); onCancel(); return; }
+    // Enter saves from the panel or the amount field — but on a button (a tab, a status,
+    // Cancel, the load field) it must do what that button does, not save the cell.
+    if (e.key === "Enter" && !(e.target as HTMLElement).closest('button, [role="button"]')) {
+      e.preventDefault();
+      if (canSave) onSave();
+    }
   }
+  // Leaving Load mode closes its list, so coming back starts from the closed field.
+  useEffect(() => { if (edit.mode !== "load") setLoadsOpen(false); }, [edit.mode]);
 
-  const s = (type: CellType) => cellStyle(type);
+  const dayLabel = new Date(edit.date + "T00:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
 
   return createPortal(
     <>
-      {/* Invisible backdrop — click outside saves */}
-      <div
-        style={{ position: "fixed", inset: 0, zIndex: 9998 }}
-        onMouseDown={onSave}
-      />
+      {/* Invisible backdrop — a click outside DISCARDS the edit. It used to save, which
+          turned every stray click into a change nobody meant to make. */}
+      <div style={{ position: "fixed", inset: 0, zIndex: 9998 }} onMouseDown={onCancel} />
       <div
         ref={panelRef}
+        role="dialog"
+        aria-label={`Edit ${edit.driverName}, ${dayLabel}`}
+        tabIndex={-1}
         onKeyDown={handleKey}
         style={{
-          position: "fixed", top, left, zIndex: 9999, width: PANEL_W,
-          backgroundColor: "var(--card)", border: "1.5px solid var(--primary)",
-          borderRadius: 10, boxShadow: "0 8px 32px rgba(0,0,0,0.35)",
-          padding: 10, display: "flex", flexDirection: "column", gap: 8,
-          maxHeight: panelMaxHeight, overflowY: "auto",
+          position: "fixed", ...place, left, zIndex: 9999, width: PANEL_W,
+          backgroundColor: "var(--card)", border: "1px solid var(--border)",
+          borderRadius: 12, boxShadow: "0 16px 40px rgba(0,0,0,0.22)",
+          padding: 14, display: "flex", flexDirection: "column", gap: 12,
+          overflowY: "auto", outline: "none",
         }}
-        onMouseDown={(e) => e.stopPropagation()}
       >
-        {/* Type chips */}
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-          {TYPE_OPTIONS.map((opt) => {
-            const active = edit.type === opt.type;
+        {/* Who and when */}
+        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10 }}>
+          <span style={{ fontFamily: "var(--font-sans)", fontSize: 14, fontWeight: 700, color: "var(--foreground)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{edit.driverName}</span>
+          <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--muted-foreground)", flexShrink: 0 }}>{dayLabel}</span>
+        </div>
+
+        {/* Mode */}
+        <div role="tablist" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 3, padding: 3, borderRadius: 8, backgroundColor: "var(--muted)" }}>
+          {MODE_TABS.map(({ mode, label }) => {
+            const active = edit.mode === mode;
             return (
-              <button
-                key={opt.type}
-                onMouseDown={(e) => { e.preventDefault(); onType(opt.type); }}
+              <button key={mode} type="button" role="tab" aria-selected={active} onClick={() => onMode(mode)}
                 style={{
-                  padding: "3px 8px", borderRadius: 5, border: active ? "1.5px solid transparent" : "1px solid var(--border)",
-                  backgroundColor: active ? s(opt.type).bg : "var(--muted)",
-                  color: active ? s(opt.type).color : "var(--foreground)",
-                  fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: active ? 700 : 400,
-                  cursor: "pointer", outline: "none",
-                  boxShadow: active ? "0 0 0 2px var(--primary)" : "none",
-                }}
-              >
-                {opt.label}
+                  padding: "6px 0", borderRadius: 6, border: "none", cursor: "pointer",
+                  fontFamily: "var(--font-sans)", fontSize: 12.5, fontWeight: 600,
+                  backgroundColor: active ? "var(--card)" : "transparent",
+                  color: active ? "var(--foreground)" : "var(--muted-foreground)",
+                  boxShadow: active ? "0 1px 2px rgba(0,0,0,0.12)" : "none",
+                }}>
+                {label}
               </button>
             );
           })}
         </div>
 
-        {/* Load fields */}
-        {edit.type === "load" && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            <div style={{ position: "relative" }}>
-              <span style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--muted-foreground)", pointerEvents: "none" }}>$</span>
-              <input
-                ref={amountRef}
-                type="number"
-                min={0}
-                placeholder="Amount"
-                value={edit.amount}
-                onChange={(e) => onAmount(e.target.value)}
-                style={{ width: "100%", paddingLeft: 20, paddingRight: 8, height: 30, borderRadius: 6, border: "1px solid var(--border)", fontFamily: "var(--font-mono)", fontSize: 13, color: "var(--foreground)", backgroundColor: "var(--input-background)", outline: "none", boxSizing: "border-box" }}
-                onFocus={(e) => { e.currentTarget.style.borderColor = "var(--primary)"; }}
-                onBlur={(e)  => { e.currentTarget.style.borderColor = "var(--border)"; }}
-              />
+        {edit.mode === "load" && (
+          <>
+            <div>
+              <div style={editCap}>Loads completed that day</div>
+              <LoadMultiSelect selected={edit.loadIds} driverId={edit.driverId} onChange={onLoadsChange} open={loadsOpen} onOpenChange={setLoadsOpen} />
             </div>
-            <LoadMultiSelect
-              selected={edit.loadIds}
-              driverId={edit.driverId}
-              onChange={(ids, sumPayout) => onLoadsChange(ids, sumPayout)}
-            />
+            <div>
+              <div style={editCap}>Amount</div>
+              <div style={{ position: "relative" }}>
+                <span style={{ position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)", fontFamily: "var(--font-mono)", fontSize: 13, color: "var(--muted-foreground)", pointerEvents: "none" }}>$</span>
+                <input
+                  type="number"
+                  min={0}
+                  placeholder="0"
+                  aria-label="Amount"
+                  value={edit.amount}
+                  onChange={(e) => onAmount(e.target.value)}
+                  style={{ width: "100%", paddingLeft: 24, paddingRight: 10, height: 36, borderRadius: 8, border: "1px solid var(--border)", fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 600, color: "var(--foreground)", backgroundColor: "var(--card)", outline: "none", boxSizing: "border-box" }}
+                  onFocus={(e) => { e.currentTarget.style.borderColor = "var(--primary)"; e.currentTarget.style.boxShadow = "0 0 0 3px var(--primary-soft)"; }}
+                  onBlur={(e)  => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.boxShadow = "none"; }}
+                />
+              </div>
+              <div style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "var(--muted-foreground)", marginTop: 5 }}>
+                {edit.loadIds.length > 0
+                  ? `Filled from the ${edit.loadIds.length === 1 ? "load" : `${edit.loadIds.length} loads`} you ticked — you can change it.`
+                  : "Tick loads above to fill this in, or type an amount."}
+              </div>
+            </div>
+          </>
+        )}
+
+        {edit.mode === "status" && (
+          <div>
+            <div style={editCap}>What the driver was doing</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 6 }}>
+              {ALL_STATUSES.map((s) => {
+                const active = edit.status === s;
+                return (
+                  <button key={s} type="button" aria-pressed={active} onClick={() => onStatus(s)}
+                    style={{ padding: 0, border: "none", borderRadius: 6, background: "none", cursor: "pointer", boxShadow: active ? "0 0 0 2px var(--primary)" : "none" }}>
+                    <StatusChip status={s} dark={dark} block />
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {edit.mode === "clear" && (
+          <div style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)", lineHeight: 1.5 }}>
+            Saving will empty this day: no load, no amount and no status.
           </div>
         )}
 
         {/* Actions — sticky to the panel bottom so they stay reachable if it scrolls */}
-        <div style={{ position: "sticky", bottom: -10, backgroundColor: "var(--card)", paddingTop: 8, marginTop: -2, borderTop: "1px solid var(--border)" }}>
-          <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
-            <button
-              onMouseDown={(e) => { e.preventDefault(); onCancel(); }}
-              style={{ padding: "4px 12px", borderRadius: 5, border: "1px solid var(--border)", backgroundColor: "var(--muted)", fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)", cursor: "pointer", outline: "none" }}
-            >
+        <div style={{ position: "sticky", bottom: -14, backgroundColor: "var(--card)", paddingTop: 10, paddingBottom: 2, borderTop: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+          <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "var(--muted-foreground)" }}>Enter saves · Esc cancels</span>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button type="button" onClick={onCancel}
+              style={{ padding: "7px 14px", borderRadius: 8, border: "1px solid var(--border)", backgroundColor: "var(--card)", fontFamily: "var(--font-sans)", fontSize: 12.5, fontWeight: 600, color: "var(--foreground)", cursor: "pointer" }}>
               Cancel
             </button>
-            <button
-              onMouseDown={(e) => { e.preventDefault(); onSave(); }}
-              style={{ padding: "4px 12px", borderRadius: 5, border: "none", backgroundColor: "var(--primary)", fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: 600, color: "var(--primary-foreground)", cursor: "pointer", outline: "none" }}
-            >
+            <button type="button" onClick={onSave} disabled={!canSave}
+              style={{ padding: "7px 14px", borderRadius: 8, border: "none", backgroundColor: canSave ? "var(--primary)" : "var(--muted)", fontFamily: "var(--font-sans)", fontSize: 12.5, fontWeight: 600, color: canSave ? "var(--primary-foreground)" : "var(--muted-foreground)", cursor: canSave ? "pointer" : "default" }}>
               Save
             </button>
-          </div>
-          <div style={{ fontFamily: "var(--font-sans)", fontSize: 10, color: "var(--muted-foreground)", textAlign: "right", marginTop: 4 }}>
-            Enter to save · Esc to cancel
           </div>
         </div>
       </div>
     </>,
     document.body
-  );
-}
-
-
-// ─── Inline number editor (Target / Co.Profit) ────────────────────────────────
-
-function InlineNumberEdit({ value, onSave, prefix = "$", allowNeg = false, readOnly = false }: {
-  value: number | undefined;
-  onSave?: (v: number | undefined) => void;
-  prefix?: string;
-  allowNeg?: boolean;
-  readOnly?: boolean;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState("");
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  function open() {
-    setDraft(value !== undefined ? String(value) : "");
-    setEditing(true);
-    setTimeout(() => inputRef.current?.select(), 0);
-  }
-
-  function commit() {
-    const n = draft.trim() === "" ? undefined : Number(draft.replace(/[^0-9.-]/g, ""));
-    onSave?.(isNaN(n as number) ? undefined : n);
-    setEditing(false);
-  }
-
-  function handleKey(e: React.KeyboardEvent) {
-    if (e.key === "Enter")  { e.preventDefault(); commit(); }
-    if (e.key === "Escape") { setEditing(false); }
-  }
-
-  if (editing) {
-    return (
-      <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
-        <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--muted-foreground)" }}>{prefix}</span>
-        <input
-          ref={inputRef}
-          type="number"
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onBlur={commit}
-          onKeyDown={handleKey}
-          style={{ width: 72, height: 24, padding: "0 4px", borderRadius: 4, border: "1.5px solid var(--primary)", fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--foreground)", backgroundColor: "var(--input-background)", outline: "none", textAlign: "right" }}
-        />
-      </div>
-    );
-  }
-
-  const displayInner = (
-    <>
-      {value !== undefined ? (
-        <span style={{ fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap" }}>
-          {allowNeg && value < 0 ? `-$${Math.abs(value).toLocaleString()}` : fmt(value)}
-        </span>
-      ) : (
-        <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--muted-foreground)" }}>—</span>
-      )}
-    </>
-  );
-
-  if (readOnly) {
-    return <div style={{ display: "inline-flex", alignItems: "center", gap: 2, padding: "1px 3px" }}>{displayInner}</div>;
-  }
-
-  return (
-    <div
-      onClick={open}
-      title="Click to edit"
-      style={{ cursor: "text", display: "inline-flex", alignItems: "center", gap: 2, borderRadius: 4, padding: "1px 3px", transition: "background 0.1s" }}
-      onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "rgba(59,130,246,0.08)"; }}
-      onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "transparent"; }}
-    >
-      {displayInner}
-    </div>
   );
 }
 
@@ -659,8 +688,8 @@ function DateRangePicker({ from, to, onChange }: DateRangePickerProps) {
             const d     = Number(iso.slice(8));
             let bg = "transparent", color = inMonth ? "var(--foreground)" : "var(--muted-foreground)", br = "6px", fw: number | string = 400;
             if (inRng) { bg = "var(--secondary)"; color = "var(--secondary-foreground)"; br = "0"; }
-            if (isS)   { bg = "#3B82F6"; color = "#fff"; br = "6px 0 0 6px"; fw = 700; }
-            if (isE)   { bg = "#3B82F6"; color = "#fff"; br = "0 6px 6px 0"; fw = 700; }
+            if (isS)   { bg = "var(--primary)"; color = "#fff"; br = "6px 0 0 6px"; fw = 700; }
+            if (isE)   { bg = "var(--primary)"; color = "#fff"; br = "0 6px 6px 0"; fw = 700; }
             if (isS && isE) br = "6px";
             return (
               <div key={iso} style={{ height: 30, backgroundColor: bg, borderRadius: br, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
@@ -699,7 +728,7 @@ function DateRangePicker({ from, to, onChange }: DateRangePickerProps) {
             return (
               <button key={m}
                 onMouseDown={(e) => { e.preventDefault(); setDispMonth(idx); setView("days"); }}
-                style={{ padding: "9px 0", borderRadius: 7, border: "none", fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: active ? 700 : 400, backgroundColor: active ? "#3B82F6" : "var(--muted)", color: active ? "#fff" : "var(--foreground)", cursor: "pointer" }}
+                style={{ padding: "9px 0", borderRadius: 7, border: "none", fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: active ? 700 : 400, backgroundColor: active ? "var(--primary)" : "var(--muted)", color: active ? "#fff" : "var(--foreground)", cursor: "pointer" }}
                 onMouseEnter={(e) => { if (!active) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--border)"; }}
                 onMouseLeave={(e) => { if (!active) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--muted)"; }}>
                 {m}
@@ -727,7 +756,7 @@ function DateRangePicker({ from, to, onChange }: DateRangePickerProps) {
             return (
               <button key={y}
                 onMouseDown={(e) => { e.preventDefault(); setDispYear(y); setView("months"); }}
-                style={{ padding: "9px 0", borderRadius: 7, border: "none", fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: active ? 700 : 400, backgroundColor: active ? "#3B82F6" : "var(--muted)", color: active ? "#fff" : "var(--foreground)", cursor: "pointer" }}
+                style={{ padding: "9px 0", borderRadius: 7, border: "none", fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: active ? 700 : 400, backgroundColor: active ? "var(--primary)" : "var(--muted)", color: active ? "#fff" : "var(--foreground)", cursor: "pointer" }}
                 onMouseEnter={(e) => { if (!active) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--border)"; }}
                 onMouseLeave={(e) => { if (!active) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--muted)"; }}>
                 {y}
@@ -747,12 +776,12 @@ function DateRangePicker({ from, to, onChange }: DateRangePickerProps) {
     <>
       <div ref={anchorRef} onClick={openPicker} style={{ flexShrink: 0 }}>
         <button style={{
-          display: "inline-flex", alignItems: "center", gap: 7, height: 32, padding: "0 12px",
-          fontFamily: "var(--font-sans)", fontSize: 13,
-          backgroundColor: "var(--input-background)",
+          display: "inline-flex", alignItems: "center", gap: 7, height: 34, padding: "0 12px",
+          fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600,
+          backgroundColor: "var(--card)",
           border: `1px solid ${open ? "var(--primary)" : "var(--border)"}`,
-          borderRadius: 6, color: "var(--foreground)", cursor: "pointer",
-          boxShadow: open ? "0 0 0 3px rgba(59,130,246,0.12)" : "none", outline: "none",
+          borderRadius: 8, color: "var(--foreground)", cursor: "pointer",
+          boxShadow: open ? "0 0 0 3px var(--primary-soft)" : "none", outline: "none",
           whiteSpace: "nowrap",
         }}>
           <Calendar size={13} style={{ color: "var(--muted-foreground)", flexShrink: 0 }} />
@@ -793,9 +822,44 @@ function getWeekRange(startDay: number): { from: Date; to: Date } {
   return { from, to };
 }
 
+const MAX_DAYS = 90;
+
+// Column widths. The driver column is pinned left and the four summary columns are pinned
+// right; R holds each summary column's distance from the right edge, left→right:
+// Total · Driver pay · Target · Co. profit.
+const DRV_W = 200;
+const SUM_W = { total: 104, pay: 104, target: 124, profit: 104 };
+const R = { profit: 0, target: SUM_W.profit, pay: SUM_W.profit + SUM_W.target, total: SUM_W.profit + SUM_W.target + SUM_W.pay };
+
+const money = (n: number) => (n < 0 ? `-$${Math.abs(n).toLocaleString()}` : fmt(n));
+
+// A tint over an opaque base. Pinned (sticky) cells must stay opaque or the scrolled day
+// cells show through them, so the tint rides as a background *image* on a solid colour.
+const tintOver = (c: string) => `linear-gradient(${c}, ${c})`;
+
+function Kpi({ label, value, note }: { label: string; value: string; note?: string }) {
+  return (
+    <div style={{ backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 10, padding: "12px 14px", minWidth: 0 }}>
+      <div style={{ fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--muted-foreground)" }}>{label}</div>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 6, flexWrap: "wrap" }}>
+        <span style={{ fontFamily: "var(--font-sans)", fontSize: 21, fontWeight: 700, letterSpacing: "-0.02em", color: "var(--foreground)", fontVariantNumeric: "tabular-nums" }}>{value}</span>
+        {note && <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)" }}>{note}</span>}
+      </div>
+    </div>
+  );
+}
+
 export function GrossMatrix() {
+  const { user } = useAuth();
+  const { theme } = useTheme();
+  const dark = theme === "dark";
+  // Reading the matrix and changing it are separate permissions — without gross.update the
+  // cells aren't clickable at all, rather than opening an editor whose save is refused.
+  const canEdit = hasPerm(user, "gross", "update");
+
   const pad  = (n: number) => String(n).padStart(2, "0");
   const fmtD = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const todayIso = fmtD(new Date());
 
   // weekStartDay is a sane placeholder until the first /gross response echoes the
   // company's real setting — never persisted or read from localStorage anymore.
@@ -804,26 +868,21 @@ export function GrossMatrix() {
   const [rows,     setRows]     = useState<DriverRow[]>([]);
   const [loading,  setLoading]  = useState(true);
   const [loadErr,  setLoadErr]  = useState<string | null>(null); // fetch failure
-  const [toast,    setToast]    = useState<string | null>(null); // transient save-error banner
   const [search,   setSearch]   = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo,   setDateTo]   = useState("");
   const [viewMode, setViewMode] = useState<"all" | "teams">("all"); // one table vs a section per team
   const [teams,    setTeams]    = useState<{ id: string; name: string; driverIds: Set<string>; userNames: string[] }[]>([]);
 
-  // Auto-dismiss the save-error banner.
-  useEffect(() => {
-    if (!toast) return;
-    const t = setTimeout(() => setToast(null), 3500);
-    return () => clearTimeout(t);
-  }, [toast]);
-
-  // Teams (dispatch pods) for the "By team" view — same fetch/shape as the board.
+  // Teams (dispatch pods) for the "By team" view — same fetch/shape as the board: the
+  // company-plane /company/teams (gated on teams.read), not the owner-only /owner/* surface,
+  // which 403s for a dispatcher and used to leave them with no "By team" toggle at all.
   useEffect(() => {
     const companyId = getCompanyId();
     if (!companyId) return;
     const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    api.get<{ id: string; name: string; driver_ids?: string[]; user_names?: string[] }[]>(`/owner/companies/${companyId}/teams`)
+    api.get<{ id: string; name: string; driver_ids?: string[]; user_names?: string[] }[]>("/company/teams")
       .then((data) => {
         setTeams((data ?? []).map((t) => ({
           id: t.id, name: t.name, driverIds: new Set(t.driver_ids ?? []),
@@ -837,15 +896,21 @@ export function GrossMatrix() {
   // Fetch gross data. Omit from/to to let the backend pick the default current
   // week (anchored to the company's week_start_day) — we then sync our state
   // from whatever range + week_start_day it echoes back, rather than guessing.
-  const loadGross = (from?: string, to?: string, q?: string) => {
-    setLoading(true);
-    setLoadErr(null);
+  //
+  // Only the latest request may write: week changes and typing can outrun the server,
+  // and a slow earlier answer must not overwrite a newer one. `silent` refreshes the
+  // numbers in place (after a cell save) without the loading state.
+  const reqId = useRef(0);
+  const loadGross = (from?: string, to?: string, q?: string, silent = false) => {
+    const id = ++reqId.current;
+    if (!silent) { setLoading(true); setLoadErr(null); }
     const qs = new URLSearchParams();
     if (from && to) { qs.set("from", from); qs.set("to", to); }
     if (q) qs.set("q", q);
     const query = qs.toString();
     api.get<any>(`/gross${query ? `?${query}` : ""}`)
       .then((data) => {
+        if (id !== reqId.current) return;
         if (typeof data?.week_start_day === "number") setWeekStartDay(data.week_start_day);
         if (data?.from) setDateFrom(data.from);
         if (data?.to)   setDateTo(data.to);
@@ -853,19 +918,24 @@ export function GrossMatrix() {
         // miles/rpm now come straight from the ledger on each row — no client derivation.
         setRows(items.map(toDriverRow));
       })
-      .catch((e) => setLoadErr(e instanceof Error ? e.message : "Couldn't load gross data."))
-      .finally(() => setLoading(false));
+      .catch((e) => { if (id === reqId.current && !silent) setLoadErr(friendlyError(e, "Couldn't load gross data.")); })
+      .finally(() => { if (id === reqId.current) setLoading(false); });
   };
 
   // Initial load — server picks the default current week
   useEffect(() => { loadGross(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Re-fetch when the search text changes (once the initial range has loaded)
+  // The rows filter instantly as you type; the server is only asked once typing pauses.
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
   useEffect(() => {
     if (!dateFrom || !dateTo) return;
-    loadGross(dateFrom, dateTo, search);
+    loadGross(dateFrom, dateTo, debouncedSearch);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search]);
+  }, [debouncedSearch]);
 
   // Re-snap to the current week whenever the Settings tab saves a new week_start_day
   useEffect(() => {
@@ -874,12 +944,12 @@ export function GrossMatrix() {
       if (typeof newStart !== "number") return;
       setWeekStartDay(newStart);
       const range = getWeekRange(newStart);
-      loadGross(fmtD(range.from), fmtD(range.to), search);
+      loadGross(fmtD(range.from), fmtD(range.to), debouncedSearch);
     };
     window.addEventListener("week-settings-changed", handler);
     return () => window.removeEventListener("week-settings-changed", handler);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search]);
+  }, [debouncedSearch]);
 
   function shiftWeek(dir: -1 | 1) {
     if (!dateFrom) return;
@@ -891,29 +961,41 @@ export function GrossMatrix() {
     const newFrom = fmtD(d);
     d.setDate(d.getDate() + 6);
     const newTo = fmtD(d);
-    loadGross(newFrom, newTo, search);
+    loadGross(newFrom, newTo, debouncedSearch);
   }
+
+  const thisWeek = getWeekRange(weekStartDay);
+  const isThisWeek = dateFrom === fmtD(thisWeek.from) && dateTo === fmtD(thisWeek.to);
 
   // Cell editing
   const [editState, setEditState] = useState<EditState | null>(null);
 
-  function openCellEdit(driverId: string, date: string, cell: DayCell, e: React.MouseEvent) {
-    e.stopPropagation();
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+  function openCellEdit(driver: DriverRow, date: string, cell: DayCell, el: HTMLElement) {
+    if (!canEdit) return;
     // The stored ref is a single "/"-joined string (see toDriverRow) — split it back
     // into individual ids so previously-saved loads show pre-checked in the picker.
     const loadIds = cell.loadId ? cell.loadId.split("/").map((s) => s.trim()).filter(Boolean) : [];
-    setEditState({ driverId, date, rect, type: cell.type, amount: cell.amount !== undefined ? String(cell.amount) : "", loadIds });
+    const isStatus = cell.type !== "load" && cell.type !== "empty";
+    setEditState({
+      driverId: driver.id, driverName: driver.name, date, rect: el.getBoundingClientRect(),
+      // An empty day opens on Load — entering money is what the grid is mostly used for.
+      mode: isStatus ? "status" : "load",
+      status: isStatus ? (cell.type as Status) : null,
+      amount: cell.amount !== undefined ? String(cell.amount) : "",
+      loadIds,
+    });
   }
 
   function commitCellEdit() {
     if (!editState) return;
+    if (editState.mode === "status" && !editState.status) return;
     const { driverId, date } = editState;
     const prevCell = rows.find((d) => d.id === driverId)?.dateMap[date]; // for rollback
     const joinedLoadId = editState.loadIds.join("/") || undefined;
-    const newCell: DayCell = editState.type === "load"
-      ? { type: "load", amount: editState.amount ? Number(editState.amount) : undefined, loadId: joinedLoadId }
-      : { type: editState.type };
+    const newCell: DayCell =
+      editState.mode === "load"   ? { type: "load", amount: editState.amount ? Number(editState.amount) : undefined, loadId: joinedLoadId }
+      : editState.mode === "status" ? { type: editState.status as Status }
+      : { type: "empty" };
     // optimistic update
     setRows((prev) => prev.map((d) => d.id === driverId
       ? { ...d, dateMap: { ...d.dateMap, [date]: newCell } }
@@ -922,9 +1004,13 @@ export function GrossMatrix() {
     api.patch("/gross", {
       driver_id: driverId,
       date,
-      type:      editState.type,
+      type:      newCell.type,
       amount:    newCell.type === "load" ? newCell.amount : undefined,
       load_id:   newCell.type === "load" ? newCell.loadId : undefined,
+    }).then(() => {
+      // The row's Total, Driver pay, Co. profit and rate per mile are computed by the
+      // backend — pull them again so they agree with the cell that just changed.
+      loadGross(dateFrom, dateTo, debouncedSearch, true);
     }).catch((e) => {
       // Roll the cell back to its previous value and tell the user
       setRows((prev) => prev.map((d) => {
@@ -933,19 +1019,20 @@ export function GrossMatrix() {
         if (prevCell) dateMap[date] = prevCell; else delete dateMap[date];
         return { ...d, dateMap };
       }));
-      setToast(e instanceof Error ? e.message : "Couldn't save the change — reverted.");
+      notify.error(friendlyError(e, "Couldn't save the change — reverted."));
     });
     setEditState(null);
   }
 
   function cancelCellEdit() { setEditState(null); }
 
-  // Row-level field saves
-  // Date columns
-  const dates = useMemo(() => {
+  // Date columns. A very long range is capped — and says so (see the notice below).
+  const allDates = useMemo(() => {
     if (!dateFrom || !dateTo || dateFrom > dateTo) return [];
-    return getDatesInRange(dateFrom, dateTo).slice(0, 90);
+    return getDatesInRange(dateFrom, dateTo);
   }, [dateFrom, dateTo]);
+  const dates = useMemo(() => allDates.slice(0, MAX_DAYS), [allDates]);
+  const truncated = allDates.length > MAX_DAYS;
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
@@ -957,6 +1044,19 @@ export function GrossMatrix() {
       const cell = driver.dateMap[iso];
       return s + (cell?.type === "load" && cell.amount ? cell.amount : 0);
     }, 0);
+  }
+
+  // Sums over a set of rows — the summary strip uses it for everything on screen, each
+  // table for its own rows. (The backend's `totals` are company-wide and ignore ?q=, which
+  // would contradict the visible rows under a search or a team split.)
+  function summarize(list: DriverRow[]) {
+    const gross  = list.reduce((s, d) => s + (d.weekTotal ?? rangeTotal(d)), 0);
+    const profit = list.reduce((s, d) => s + d.companyProfit, 0);
+    const miles  = list.reduce((s, d) => s + d.miles, 0);
+    // Driver pay is optional (backend may not send it yet) — only total the rows that have it.
+    const anyPay = list.some((d) => d.driverPay != null);
+    const pay    = list.reduce((s, d) => s + (d.driverPay ?? 0), 0);
+    return { gross, profit, miles, rpm: miles > 0 ? gross / miles : null, anyPay, pay };
   }
 
   // "By team" view: a separate table per team (plus an "Unassigned" section), each with
@@ -973,26 +1073,21 @@ export function GrossMatrix() {
         })()
       : [];
 
-  const rangeDays = dates.length;
-
-
-  // Right-edge offsets for the sticky summary columns, left→right:
-  // Total(110) · Driver Pay(120) · Target(120) · Co. Profit(120). Total is leftmost, so
-  // it carries the 2px divider from the scrolling day cells (see thStickyRight).
-  const R = { total: 360, driverPay: 240, target: 120, profit: 0 };
+  const all = summarize(filtered);
+  const navBtn: React.CSSProperties = {
+    display: "inline-flex", alignItems: "center", justifyContent: "center", width: 34, height: 34,
+    borderRadius: 8, border: "1px solid var(--border)", backgroundColor: "var(--card)",
+    color: "var(--muted-foreground)", cursor: "pointer", flexShrink: 0,
+  };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", backgroundColor: "var(--background)", overflow: "hidden" }}>
-      {toast && (
-        <div style={{ position: "fixed", top: 20, right: 20, zIndex: 10000, display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", borderRadius: 8, backgroundColor: "var(--card)", border: "1px solid #EF4444", boxShadow: "0 10px 30px rgba(0,0,0,0.16)", maxWidth: 360 }}>
-          <AlertCircle size={15} style={{ color: "#EF4444", flexShrink: 0 }} />
-          <span style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--foreground)" }}>{toast}</span>
-        </div>
-      )}
       {editState && (
         <CellEditPanel
           edit={editState}
-          onType={(t) => setEditState((s) => s ? { ...s, type: t, amount: t === "load" ? s.amount : "", loadIds: t === "load" ? s.loadIds : [] } : s)}
+          dark={dark}
+          onMode={(m) => setEditState((s) => s ? { ...s, mode: m } : s)}
+          onStatus={(st) => setEditState((s) => s ? { ...s, status: st } : s)}
           onAmount={(v) => setEditState((s) => s ? { ...s, amount: v } : s)}
           onLoadsChange={(ids, sumPayout) => setEditState((s) => s ? { ...s, loadIds: ids, amount: String(sumPayout) } : s)}
           onSave={commitCellEdit}
@@ -1000,99 +1095,111 @@ export function GrossMatrix() {
         />
       )}
 
-      <div style={{ flex: 1, overflow: "hidden", padding: "20px 24px", display: "flex", flexDirection: "column" }}>
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", backgroundColor: "var(--card)", borderRadius: 12, overflow: "hidden", border: "1px solid var(--border)" }}>
+      <div style={{ flex: 1, overflow: "hidden", padding: "20px 24px", display: "flex", flexDirection: "column", gap: 16 }}>
 
-          {/* Toolbar */}
-          <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 16px", borderBottom: "1px solid var(--border)", backgroundColor: "var(--card)", flexShrink: 0 }}>
-            <h2 style={{ fontFamily: "var(--font-sans)", fontSize: 14, fontWeight: 600, color: "var(--foreground)", flexShrink: 0, margin: 0 }}>Gross Revenue Matrix</h2>
-            <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--muted-foreground)", backgroundColor: "var(--muted)", borderRadius: 4, padding: "2px 8px", flexShrink: 0 }}>{filtered.length} drivers</span>
-            {rangeDays > 0 && (
-              <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--muted-foreground)", backgroundColor: "var(--muted)", borderRadius: 4, padding: "2px 8px", flexShrink: 0 }}>
-                {rangeDays} {rangeDays === 1 ? "day" : "days"}
-              </span>
-            )}
+        {/* Title + controls */}
+        <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: "12px 18px", flexWrap: "wrap", flexShrink: 0 }}>
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <BarChart3 size={20} style={{ color: "var(--primary)" }} />
+              <span style={{ fontFamily: "var(--font-sans)", fontSize: 20, fontWeight: 700, color: "var(--foreground)", letterSpacing: "-0.01em" }}>Gross</span>
+            </div>
+            <div style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)", marginTop: 2 }}>
+              What each driver grossed, day by day
+            </div>
+          </div>
 
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             {/* View toggle: one table vs a section per team */}
             {teams.length > 0 && (
-              <div style={{ display: "inline-flex", border: "1px solid var(--border)", borderRadius: 7, overflow: "hidden", flexShrink: 0 }}>
+              <div role="group" aria-label="View" style={{ display: "inline-flex", height: 34, border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden", backgroundColor: "var(--card)", flexShrink: 0 }}>
                 {([["all", "All drivers", Rows3], ["teams", "By team", Users]] as const).map(([m, label, Icon]) => (
-                  <button key={m} onClick={() => setViewMode(m)} title={label}
-                    style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 30, height: 28, border: "none", cursor: "pointer", backgroundColor: viewMode === m ? "var(--primary)" : "transparent", color: viewMode === m ? "#fff" : "var(--muted-foreground)" }}>
-                    <Icon size={13} />
+                  <button key={m} onClick={() => setViewMode(m)} aria-pressed={viewMode === m}
+                    style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "0 12px", border: "none", cursor: "pointer", fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: viewMode === m ? 600 : 500, backgroundColor: viewMode === m ? "var(--primary)" : "transparent", color: viewMode === m ? "var(--primary-foreground)" : "var(--muted-foreground)", outline: "none" }}>
+                    <Icon size={14} /> {label}
                   </button>
                 ))}
               </div>
             )}
 
-            <div style={{ flex: 1 }} />
+            <div style={{ display: "inline-flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+              <button onClick={() => shiftWeek(-1)} aria-label="Previous week" title="Previous week" style={navBtn}
+                onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--muted)"; e.currentTarget.style.color = "var(--foreground)"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "var(--card)"; e.currentTarget.style.color = "var(--muted-foreground)"; }}>
+                <ChevronLeft size={15} />
+              </button>
+              <DateRangePicker from={dateFrom} to={dateTo} onChange={(f, t) => loadGross(f, t, debouncedSearch)} />
+              <button onClick={() => shiftWeek(1)} aria-label="Next week" title="Next week" style={navBtn}
+                onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--muted)"; e.currentTarget.style.color = "var(--foreground)"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "var(--card)"; e.currentTarget.style.color = "var(--muted-foreground)"; }}>
+                <ChevronRight size={15} />
+              </button>
+            </div>
+
+            <button onClick={() => loadGross(fmtD(thisWeek.from), fmtD(thisWeek.to), debouncedSearch)} disabled={isThisWeek}
+              style={{ height: 34, padding: "0 12px", borderRadius: 8, border: "1px solid var(--border)", backgroundColor: "var(--card)", fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 500, color: isThisWeek ? "var(--muted-foreground)" : "var(--foreground)", cursor: isThisWeek ? "default" : "pointer", opacity: isThisWeek ? 0.6 : 1, flexShrink: 0 }}>
+              This week
+            </button>
 
             <div style={{ position: "relative", flexShrink: 0 }}>
-              <Search size={13} style={{ position: "absolute", left: 9, top: "50%", transform: "translateY(-50%)", color: "var(--muted-foreground)", pointerEvents: "none" }} />
-              <input value={search} onChange={(e) => { setSearch(e.target.value); }} placeholder="Search drivers…"
-                style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "5px 10px 5px 28px", height: 32, width: 200, borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "var(--input-background)", color: "var(--foreground)", outline: "none" }}
-                onFocus={(e) => { e.currentTarget.style.borderColor = "var(--primary)"; e.currentTarget.style.boxShadow = "0 0 0 3px rgba(59,130,246,0.12)"; }}
+              <Search size={13} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--muted-foreground)", pointerEvents: "none" }} />
+              <input value={search} onChange={(e) => { setSearch(e.target.value); }} placeholder="Search drivers…" aria-label="Search drivers"
+                style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "0 10px 0 30px", height: 34, width: 200, borderRadius: 8, border: "1px solid var(--border)", backgroundColor: "var(--card)", color: "var(--foreground)", outline: "none", transition: "border-color 0.15s, box-shadow 0.15s" }}
+                onFocus={(e) => { e.currentTarget.style.borderColor = "var(--primary)"; e.currentTarget.style.boxShadow = "0 0 0 3px var(--primary-soft)"; }}
                 onBlur={(e)  => { e.currentTarget.style.borderColor = "var(--border)";  e.currentTarget.style.boxShadow = "none"; }}
               />
             </div>
-
-            <button
-              onClick={() => shiftWeek(-1)}
-              title="Previous week"
-              style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 30, height: 30, borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "var(--input-background)", color: "var(--muted-foreground)", cursor: "pointer", flexShrink: 0, outline: "none" }}
-              onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--muted)"; (e.currentTarget as HTMLButtonElement).style.color = "var(--foreground)"; }}
-              onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--input-background)"; (e.currentTarget as HTMLButtonElement).style.color = "var(--muted-foreground)"; }}
-            >
-              <ChevronLeft size={15} />
-            </button>
-
-            <DateRangePicker
-              from={dateFrom}
-              to={dateTo}
-              onChange={(f, t) => loadGross(f, t, search)}
-            />
-
-            <button
-              onClick={() => shiftWeek(1)}
-              title="Next week"
-              style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 30, height: 30, borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "var(--input-background)", color: "var(--muted-foreground)", cursor: "pointer", flexShrink: 0, outline: "none" }}
-              onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--muted)"; (e.currentTarget as HTMLButtonElement).style.color = "var(--foreground)"; }}
-              onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--input-background)"; (e.currentTarget as HTMLButtonElement).style.color = "var(--muted-foreground)"; }}
-            >
-              <ChevronRight size={15} />
-            </button>
           </div>
+        </div>
 
-          {/* Table */}
-          <div style={{ flex: 1, overflow: "auto", scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent" }}>
-            {loading ? (
+        {/* Summary of the rows on screen */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 12, flexShrink: 0 }}>
+          <Kpi label="Gross" value={money(all.gross)} note={`${filtered.length} ${filtered.length === 1 ? "driver" : "drivers"}`} />
+          <Kpi label="Driver pay" value={all.anyPay ? money(all.pay) : "—"} />
+          <Kpi label="Company profit" value={money(all.profit)} />
+          <Kpi label="Rate per mile" value={`$${(all.rpm ?? 0).toFixed(2)}`} note={`${all.miles.toLocaleString()} mi`} />
+        </div>
+
+        {truncated && (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 12px", borderRadius: 8, backgroundColor: "rgba(245,158,11,0.10)", border: "1px solid rgba(245,158,11,0.35)", fontFamily: "var(--font-sans)", fontSize: 12.5, color: "var(--foreground)", flexShrink: 0 }}>
+            <AlertCircle size={14} style={{ color: "#D97706", flexShrink: 0 }} />
+            This range is {allDates.length} days long. Only the first {MAX_DAYS} days are shown — pick a shorter range to see the rest.
+          </div>
+        )}
+
+        {/* Matrix */}
+        <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", backgroundColor: "var(--card)", borderRadius: 12, overflow: "hidden", border: "1px solid var(--border)" }}>
+          {/* The loader lives in here, so the controls above stay put (and keep focus) while a
+              week change or a search is in flight. With rows on screen they're dimmed instead. */}
+          <div style={{ flex: 1, overflow: "auto", scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent", opacity: loading && rows.length > 0 ? 0.5 : 1, pointerEvents: loading ? "none" : "auto", transition: "opacity 0.15s" }}>
+            {loading && rows.length === 0 ? (
               <PageLoader label="gross" />
-            ) : dates.length === 0 ? (
-              <div style={{ padding: "60px 20px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
-                Select a valid date range to display data.
-              </div>
             ) : loadErr ? (
               <div style={{ padding: "60px 20px", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
                 <AlertCircle size={20} style={{ color: "#EF4444" }} />
                 <span style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "#EF4444" }}>{loadErr}</span>
-                <button onClick={() => loadGross(dateFrom, dateTo, search)} style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--primary)", background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}>Retry</button>
+                <button onClick={() => loadGross(dateFrom, dateTo, debouncedSearch)} style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "6px 14px", borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "var(--card)", color: "var(--foreground)", cursor: "pointer" }}>Try again</button>
+              </div>
+            ) : dates.length === 0 ? (
+              <div style={{ padding: "60px 20px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
+                Select a valid date range to display data.
               </div>
             ) : viewMode === "teams" && teamGroups.length > 0 ? (
-              <div style={{ display: "flex", flexDirection: "column", gap: 28, padding: "16px 16px 24px" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 20, padding: 16 }}>
                 {teamGroups.map((g) => (
                   <div key={g.name} style={{ border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden" }}>
                     {/* Section header — plain block above the table, so it never scrolls
                         horizontally with the table's own scroll. */}
-                    <div style={{ padding: "10px 14px", backgroundColor: "var(--muted)", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                      <Users size={13} style={{ color: "var(--primary)", flexShrink: 0 }} />
-                      <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: 700, color: "var(--foreground)" }}>{g.name}</span>
+                    <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                      <Users size={14} style={{ color: "var(--primary)", flexShrink: 0 }} />
+                      <span style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 700, color: "var(--foreground)" }}>{g.name}</span>
                       {!g.isUnassigned && g.userNames.length > 0 && (
-                        <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "var(--muted-foreground)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                          ({g.userNames.join(", ")})
+                        <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {g.userNames.join(", ")}
                         </span>
                       )}
-                      <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, fontWeight: 600, color: "var(--muted-foreground)", backgroundColor: "var(--secondary)", borderRadius: 10, padding: "1px 7px", marginLeft: "auto" }}>
-                        {g.drivers.length}
+                      <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)", marginLeft: "auto" }}>
+                        {g.drivers.length} {g.drivers.length === 1 ? "driver" : "drivers"}
                       </span>
                     </div>
                     <div style={{ overflowX: "auto" }}>
@@ -1103,7 +1210,6 @@ export function GrossMatrix() {
               </div>
             ) : renderGrossTable(filtered)}
           </div>
-
         </div>
       </div>
     </div>
@@ -1112,220 +1218,181 @@ export function GrossMatrix() {
   // One full gross table (thead+tbody+totals row) for the given driver list — used for
   // the single "All drivers" table, and once per section in the "By team" view.
   function renderGrossTable(driversList: DriverRow[]) {
-    // Footer sums the rows actually on screen, so it reconciles with them under a
-    // search filter or a team split. (The backend's `totals` are company-wide and
-    // ignore ?q=, which would contradict the visible rows.)
-    const groupTotal  = driversList.reduce((s, d) => s + (d.weekTotal ?? rangeTotal(d)), 0);
-    const groupProfit = driversList.reduce((s, d) => s + d.companyProfit, 0);
-    const groupMiles  = driversList.reduce((s, d) => s + d.miles, 0);
-    const groupRpm    = groupMiles > 0 ? groupTotal / groupMiles : null;
-    // Driver pay is optional (backend may not send it yet) — only total the rows that have it.
-    const anyPay      = driversList.some((d) => d.driverPay != null);
-    const groupPay    = driversList.reduce((s, d) => s + (d.driverPay ?? 0), 0);
+    const g = summarize(driversList);
+    const edge = "1px solid var(--border)";
+    const todayTint = tintOver("var(--primary-faint)");
+
+    const th: React.CSSProperties = {
+      height: 44, padding: "0 10px", textAlign: "center", whiteSpace: "nowrap",
+      fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase",
+      color: "var(--muted-foreground)", backgroundColor: "var(--card)", borderBottom: edge,
+      position: "sticky", top: 0, zIndex: 20,
+    };
+    const sumTh = (right: number, width: number, first = false): React.CSSProperties => ({
+      ...th, textAlign: "right", padding: "0 12px", width, minWidth: width, right, zIndex: 22,
+      backgroundColor: "var(--background)", borderLeft: first ? edge : "none",
+    });
+    const sumTd = (right: number, width: number, first = false): React.CSSProperties => ({
+      width, minWidth: width, padding: "0 12px", textAlign: "right", verticalAlign: "middle",
+      borderBottom: edge, borderLeft: first ? edge : "none",
+      backgroundColor: "var(--background)", position: "sticky", right, zIndex: 9,
+    });
+    const totTd: React.CSSProperties = {
+      height: 48, padding: "0 10px", textAlign: "center", verticalAlign: "middle", whiteSpace: "nowrap",
+      fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 700, color: "var(--foreground)", fontVariantNumeric: "tabular-nums",
+      backgroundColor: "var(--card)", boxShadow: "inset 0 1px 0 var(--border)",
+      position: "sticky", bottom: 0, zIndex: 15,
+    };
+    const sumAmount: React.CSSProperties = { fontFamily: "var(--font-sans)", fontSize: 13.5, fontWeight: 700, color: "var(--foreground)", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" };
+    const sumNote: React.CSSProperties = { fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--muted-foreground)", whiteSpace: "nowrap" };
+
     return (
-              <table style={{ borderCollapse: "separate", borderSpacing: 0, tableLayout: "fixed", minWidth: "100%" }}>
-                <thead>
-                  <tr style={{ position: "sticky", top: 0, zIndex: 20, backgroundColor: "#0F172A" }}>
-                    <th style={thLeft({ width: 200, left: 0, textAlign: "left" })}>Driver Name</th>
-                    <th style={thLeft({ width: 72,  left: 200, borderRight: "2px solid #334155" })}>Unit</th>
-                    {dates.map((iso) => {
-                      const { day, date } = colLabel(iso);
-                      const isWeekend = new Date(iso + "T00:00:00").getDay() % 6 === 0;
-                      return (
-                        <th key={iso} style={{ ...thDay(), width: DAY_W, minWidth: DAY_W, backgroundColor: isWeekend ? "#1E293B" : "#0F172A" }}>
-                          <div style={{ lineHeight: 1.2 }}>
-                            <div>{day}</div>
-                            <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "#64748B", marginTop: 1 }}>{date}</div>
-                          </div>
-                        </th>
-                      );
-                    })}
-                    <th style={thStickyRight({ width: 110, right: R.total })}>Total</th>
-                    <th style={thStickyRight({ width: 120, right: R.driverPay })}>Driver Pay</th>
-                    <th style={thStickyRight({ width: 120, right: R.target })}>Target</th>
-                    <th style={thStickyRight({ width: 120, right: R.profit, borderRight: "none" })}>Co. Profit</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {driversList.length === 0 ? (
-                    <tr>
-                      <td colSpan={2 + dates.length + 4} style={{ padding: "48px 20px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
-                        No drivers match your search.
-                      </td>
-                    </tr>
-                  ) : driversList.map((driver, i) => {
-                    const isEven   = i % 2 === 0;
-                    const rowBg    = isEven ? "var(--card)" : "var(--background)";
-                    const total    = driver.weekTotal ?? rangeTotal(driver);
-                    // rpm is 0 when the driver earned with no recorded mileage — there's
-                    // no meaningful quotient, so show "—" instead of $0.00/mi.
-                    const driverRpm = driver.miles > 0 ? driver.rpm : null;
-                    // Target may be unset (0/undefined) — keep the same layout regardless: $0 / 0% / empty bar.
-                    const targetPct = driver.weeklyTarget ? Math.min(100, Math.round((total / driver.weeklyTarget) * 100)) : 0;
-                    const barColor  = targetPct >= 100 ? "#10B981" : targetPct >= 70 ? "#F59E0B" : "#3B82F6";
-                    // Blue/neutral/green/red column tints, as low-alpha overlays so they read
-                    // over either rowBg, light or dark. They ride as a background *image* on an
-                    // opaque background *color*: these three columns are sticky-right, and a
-                    // translucent backgroundColor would let the scrolled day cells bleed through.
-                    const tint      = (c: string) => `linear-gradient(${c}, ${c})`;
-                    const totalBg   = isEven ? tint("rgba(59,130,246,0.07)") : tint("rgba(59,130,246,0.13)");
-                    const targetBg  = isEven ? tint("rgba(148,163,184,0.05)") : tint("rgba(148,163,184,0.10)");
-                    const profitBg  = driver.companyProfit >= 0
-                      ? (isEven ? tint("rgba(16,185,129,0.07)") : tint("rgba(16,185,129,0.13)"))
-                      : (isEven ? tint("rgba(239,68,68,0.06)")  : tint("rgba(239,68,68,0.11)"));
-                    const payBg     = isEven ? tint("rgba(245,158,11,0.07)") : tint("rgba(245,158,11,0.13)");
+      <table style={{ borderCollapse: "separate", borderSpacing: 0, tableLayout: "fixed", minWidth: "100%" }}>
+        <thead>
+          <tr>
+            <th style={{ ...th, width: DRV_W, minWidth: DRV_W, textAlign: "left", padding: "0 14px", left: 0, zIndex: 22, borderRight: edge }}>Driver</th>
+            {dates.map((iso) => {
+              const { day, date } = colLabel(iso);
+              const isToday = iso === todayIso;
+              return (
+                <th key={iso} style={{ ...th, width: DAY_W, minWidth: DAY_W, backgroundImage: isToday ? todayTint : undefined }}>
+                  <div style={{ lineHeight: 1.25 }}>
+                    <div>{day}</div>
+                    <div style={{ fontFamily: "var(--font-mono)", fontSize: 12, letterSpacing: 0, color: isToday ? "var(--primary)" : "var(--foreground)" }}>{date}</div>
+                  </div>
+                </th>
+              );
+            })}
+            <th style={sumTh(R.total, SUM_W.total, true)}>Total</th>
+            <th style={sumTh(R.pay, SUM_W.pay)}>Driver pay</th>
+            <th style={sumTh(R.target, SUM_W.target)}>Target</th>
+            <th style={sumTh(R.profit, SUM_W.profit)}>Co. profit</th>
+          </tr>
+        </thead>
+        <tbody>
+          {driversList.length === 0 ? (
+            <tr>
+              <td colSpan={1 + dates.length + 4} style={{ padding: "48px 20px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
+                No drivers match your search.
+              </td>
+            </tr>
+          ) : driversList.map((driver) => {
+            const total    = driver.weekTotal ?? rangeTotal(driver);
+            // rpm is 0 when the driver has no recorded mileage — shown as $0.00/mi.
+            const driverRpm = driver.miles > 0 ? driver.rpm : null;
+            // Target may be unset (0/undefined) — keep the same layout regardless: $0 / 0% / empty bar.
+            const targetPct = driver.weeklyTarget ? Math.min(100, Math.round((total / driver.weeklyTarget) * 100)) : 0;
 
-                    return (
-                      <tr key={driver.id}>
-                        {/* Driver Name */}
-                        <td style={{ width: 200, minWidth: 200, padding: "0 12px", verticalAlign: "middle", borderRight: "1px solid var(--border)", borderBottom: "1px solid var(--border)", backgroundColor: rowBg, position: "sticky", left: 0, zIndex: 10 }}>
-                          <div style={{ fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: 600, color: "var(--foreground)", whiteSpace: "nowrap" }}>{driver.name}</div>
-                          <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--muted-foreground)" }}>({driver.driverType})</div>
-                        </td>
-                        {/* Unit */}
-                        <td style={{ width: 72, minWidth: 72, padding: "0 8px", textAlign: "center", verticalAlign: "middle", borderRight: "2px solid var(--border)", borderBottom: "1px solid var(--border)", fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 500, color: "var(--foreground)", backgroundColor: rowBg, position: "sticky", left: 200, zIndex: 10 }}>
-                          {driver.unit}
-                        </td>
+            return (
+              <tr key={driver.id}>
+                {/* Driver — name, with unit and type on the second line */}
+                <td style={{ width: DRV_W, minWidth: DRV_W, height: 54, padding: "0 14px", verticalAlign: "middle", borderRight: edge, borderBottom: edge, backgroundColor: "var(--card)", position: "sticky", left: 0, zIndex: 10 }}>
+                  <div title={driver.name} style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, color: "var(--foreground)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{driver.name}</div>
+                  <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--muted-foreground)", whiteSpace: "nowrap" }}>
+                    {[driver.unit, driver.driverType].filter(Boolean).join(" · ")}
+                  </div>
+                </td>
 
-                        {/* Day cells — click to edit */}
-                        {dates.map((iso) => {
-                          const cell = driver.dateMap[iso] ?? { type: "empty" as CellType };
-                          const cs   = cellStyle(cell.type);
-                          const isActive = editState?.driverId === driver.id && editState?.date === iso;
-                          const isLoad   = cell.type === "load";
-                          const isBg     = !isLoad && cell.type !== "empty";
-                          return (
-                            <td
-                              key={iso}
-                              onClick={(e) => openCellEdit(driver.id, iso, cell, e)}
-                              style={{
-                                width: DAY_W, minWidth: DAY_W,
-                                padding: isLoad ? "6px 6px" : "6px 4px",
-                                textAlign: "center", verticalAlign: "middle",
-                                borderRight: isBg ? "1px solid rgba(255,255,255,0.15)" : "1px solid var(--border)",
-                                borderBottom: "1px solid var(--border)",
-                                backgroundColor: cs.bg,
-                                cursor: "pointer",
-                                outline: isActive ? "2px solid #3B82F6" : "none",
-                                outlineOffset: -2,
-                                transition: "filter 0.1s",
-                              }}
-                              onMouseEnter={(e) => { if (!isActive) (e.currentTarget as HTMLElement).style.filter = "brightness(0.93)"; }}
-                              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.filter = "none"; }}
-                            >
-                              <DayCellContent cell={cell} />
-                            </td>
-                          );
-                        })}
-
-                        {/* Total */}
-                        <td style={{ width: 110, minWidth: 110, padding: "0 12px", textAlign: "right", verticalAlign: "middle", borderLeft: "2px solid var(--border)", borderBottom: "1px solid var(--border)", backgroundColor: rowBg, backgroundImage: totalBg, position: "sticky", right: R.total, zIndex: 10 }}>
-                          <div style={{ fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 700, color: "#3B82F6", whiteSpace: "nowrap" }}>{fmt(total)}</div>
-                          <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: driverRpm !== null ? "#10B981" : "var(--muted-foreground)", marginTop: 2, whiteSpace: "nowrap" }}
-                            title={driverRpm !== null ? `${driver.miles.toLocaleString()} mi` : "No recorded mileage"}>
-                            {driverRpm !== null ? `$${driverRpm.toFixed(2)}/mi` : "—"}
-                          </div>
-                        </td>
-
-                        {/* Driver Pay — what the driver earns this window (read-only; from the backend) */}
-                        <td style={{ width: 120, minWidth: 120, padding: "0 12px", textAlign: "right", verticalAlign: "middle", borderLeft: "1px solid var(--border)", borderBottom: "1px solid var(--border)", backgroundColor: rowBg, backgroundImage: payBg, position: "sticky", right: R.driverPay, zIndex: 10 }}>
-                          {driver.driverPay != null
-                            ? <div style={{ fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 700, color: "#F59E0B", whiteSpace: "nowrap" }}>{fmt(driver.driverPay)}</div>
-                            : <div style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--muted-foreground)" }}>—</div>}
-                        </td>
-
-                        {/* Target — inline editable */}
-                        <td style={{ width: 120, minWidth: 120, padding: "6px 12px", verticalAlign: "middle", borderLeft: "1px solid var(--border)", borderBottom: "1px solid var(--border)", backgroundColor: rowBg, backgroundImage: targetBg, position: "sticky", right: R.target, zIndex: 10 }}>
-                          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                              <InlineNumberEdit value={driver.weeklyTarget ?? 0} readOnly />
-                              <span style={{ fontFamily: "var(--font-sans)", fontSize: 10, color: targetPct >= 100 ? "#10B981" : "var(--muted-foreground)", fontWeight: 600 }}>{targetPct}%</span>
-                            </div>
-                            <div style={{ height: 4, borderRadius: 99, backgroundColor: "var(--border)", overflow: "hidden" }}>
-                              <div style={{ height: "100%", borderRadius: 99, width: `${targetPct}%`, backgroundColor: barColor, transition: "width 0.3s ease" }} />
-                            </div>
-                          </div>
-                        </td>
-
-                        {/* Co. Profit — inline editable */}
-                        <td style={{ width: 120, minWidth: 120, padding: "0 12px", textAlign: "right", verticalAlign: "middle", borderLeft: "1px solid var(--border)", borderBottom: "1px solid var(--border)", borderRight: "none", backgroundColor: rowBg, backgroundImage: profitBg, position: "sticky", right: R.profit, zIndex: 10 }}>
-                          <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                            <InlineNumberEdit value={driver.companyProfit} allowNeg readOnly />
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-
-                  {/* Totals row */}
-                  <tr style={{ position: "sticky", bottom: 0, zIndex: 15 }}>
-                    <td colSpan={2} style={{ padding: "8px 12px", textAlign: "left", borderTop: "2px solid #334155", fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 700, color: "#CBD5E1", letterSpacing: "0.06em", textTransform: "uppercase", position: "sticky", left: 0, zIndex: 16, backgroundColor: "#0F172A" }}>
-                      Totals
+                {/* Day cells — click (or Enter) to edit, when allowed */}
+                {dates.map((iso) => {
+                  const cell = driver.dateMap[iso] ?? { type: "empty" as CellType };
+                  const isActive = editState?.driverId === driver.id && editState?.date === iso;
+                  const base = isActive ? "var(--primary-soft)" : iso === todayIso ? "var(--primary-faint)" : "transparent";
+                  return (
+                    <td
+                      key={iso}
+                      tabIndex={canEdit ? 0 : undefined}
+                      aria-label={canEdit ? `Edit ${driver.name}, ${iso}` : undefined}
+                      onClick={canEdit ? (e) => openCellEdit(driver, iso, cell, e.currentTarget) : undefined}
+                      onKeyDown={canEdit ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openCellEdit(driver, iso, cell, e.currentTarget); } } : undefined}
+                      style={{
+                        width: DAY_W, minWidth: DAY_W, height: 54, padding: "0 6px",
+                        textAlign: "center", verticalAlign: "middle", overflow: "hidden",
+                        borderRight: "1px solid color-mix(in srgb, var(--border) 55%, transparent)",
+                        borderBottom: edge,
+                        backgroundColor: base,
+                        cursor: canEdit ? "pointer" : "default",
+                        outline: isActive ? "2px solid var(--primary)" : "none",
+                        outlineOffset: -2,
+                      }}
+                      onMouseEnter={canEdit ? (e) => { if (!isActive) e.currentTarget.style.backgroundColor = "var(--muted)"; } : undefined}
+                      onMouseLeave={canEdit ? (e) => { e.currentTarget.style.backgroundColor = base; } : undefined}
+                      onFocus={canEdit ? (e) => { if (!isActive) e.currentTarget.style.outline = "2px solid var(--primary-glow)"; } : undefined}
+                      onBlur={canEdit ? (e) => { if (!isActive) e.currentTarget.style.outline = "none"; } : undefined}
+                    >
+                      <DayCellContent cell={cell} dark={dark} />
                     </td>
-                    {dates.map((iso) => {
-                      const dayTotal = driversList.reduce((sum, dr) => {
-                        const cell = dr.dateMap[iso];
-                        return sum + (cell?.type === "load" && cell.amount ? cell.amount : 0);
-                      }, 0);
-                      return (
-                        <td key={iso} style={{ padding: "8px 6px", textAlign: "center", verticalAlign: "middle", borderTop: "2px solid #334155", fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 700, color: dayTotal > 0 ? "#60A5FA" : "#475569", backgroundColor: "#0F172A" }}>
-                          {dayTotal > 0 ? fmt(dayTotal) : "—"}
-                        </td>
-                      );
-                    })}
-                    <td style={{ padding: "8px 12px", textAlign: "right", verticalAlign: "middle", borderTop: "2px solid #334155", borderLeft: "2px solid #334155", fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 700, color: "#34D399", position: "sticky", right: R.total, zIndex: 16, backgroundColor: "#0F172A" }}>
-                      <div style={{ whiteSpace: "nowrap" }}>{fmt(groupTotal)}</div>
-                      <div style={{ fontSize: 10, fontWeight: 600, color: "#64748B", marginTop: 2, whiteSpace: "nowrap" }}
-                        title={groupRpm !== null ? `${groupMiles.toLocaleString()} mi` : "No recorded mileage"}>
-                        {groupRpm !== null ? `$${groupRpm.toFixed(2)}/mi` : "—"}
-                      </div>
-                    </td>
-                    <td style={{ padding: "8px 12px", textAlign: "right", verticalAlign: "middle", borderTop: "2px solid #334155", borderLeft: "1px solid #334155", fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 700, color: anyPay ? "#FBBF24" : "#475569", position: "sticky", right: R.driverPay, zIndex: 16, backgroundColor: "#0F172A" }}>
-                      {anyPay ? fmt(groupPay) : "—"}
-                    </td>
-                    <td style={{ padding: "8px 12px", textAlign: "center", verticalAlign: "middle", borderTop: "2px solid #334155", borderLeft: "1px solid #334155", fontFamily: "var(--font-mono)", fontSize: 11, color: "#475569", position: "sticky", right: R.target, zIndex: 16, backgroundColor: "#0F172A" }}>—</td>
-                    <td style={{ padding: "8px 12px", textAlign: "right", verticalAlign: "middle", borderTop: "2px solid #334155", borderLeft: "1px solid #334155", fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 700, color: groupProfit >= 0 ? "#34D399" : "#F87171", position: "sticky", right: R.profit, zIndex: 16, backgroundColor: "#0F172A" }}>
-                      {groupProfit >= 0 ? fmt(groupProfit) : `-$${Math.abs(groupProfit).toLocaleString()}`}
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
+                  );
+                })}
+
+                {/* Total, with the rate per mile under it */}
+                <td style={sumTd(R.total, SUM_W.total, true)}>
+                  <div style={sumAmount}>{fmt(total)}</div>
+                  <div style={sumNote} title={`${driver.miles.toLocaleString()} mi`}>
+                    ${(driverRpm ?? 0).toFixed(2)}/mi
+                  </div>
+                </td>
+
+                {/* Driver pay — what the driver earns this window (from the backend) */}
+                <td style={sumTd(R.pay, SUM_W.pay)}>
+                  {driver.driverPay != null
+                    ? <div style={sumAmount}>{fmt(driver.driverPay)}</div>
+                    : <div style={{ ...sumNote, fontSize: 12 }}>—</div>}
+                </td>
+
+                {/* Target — set on the driver; shown here with progress toward it */}
+                <td style={{ ...sumTd(R.target, SUM_W.target), textAlign: "left" }}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 6 }}>
+                      <span style={{ fontFamily: "var(--font-sans)", fontSize: 12.5, fontWeight: 600, color: "var(--foreground)", fontVariantNumeric: "tabular-nums" }}>{fmt(driver.weeklyTarget ?? 0)}</span>
+                      <span style={{ fontFamily: "var(--font-sans)", fontSize: 11.5, fontWeight: 600, color: targetPct >= 100 ? "var(--primary)" : "var(--muted-foreground)" }}>{targetPct}%</span>
+                    </div>
+                    <div style={{ height: 4, borderRadius: 99, backgroundColor: "var(--border)", overflow: "hidden" }}>
+                      <div style={{ height: "100%", borderRadius: 99, width: `${targetPct}%`, backgroundColor: "var(--primary)", transition: "width 0.3s ease" }} />
+                    </div>
+                  </div>
+                </td>
+
+                {/* Co. profit */}
+                <td style={sumTd(R.profit, SUM_W.profit)}>
+                  <div style={{ ...sumAmount, color: driver.companyProfit < 0 ? "#DC2626" : "var(--foreground)" }}>{money(driver.companyProfit)}</div>
+                </td>
+              </tr>
+            );
+          })}
+
+          {/* Totals row — pinned to the bottom of the table */}
+          <tr>
+            <td style={{ ...totTd, textAlign: "left", padding: "0 14px", fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--muted-foreground)", left: 0, zIndex: 17, borderRight: edge }}>
+              Totals
+            </td>
+            {dates.map((iso) => {
+              const dayTotal = driversList.reduce((sum, dr) => {
+                const cell = dr.dateMap[iso];
+                return sum + (cell?.type === "load" && cell.amount ? cell.amount : 0);
+              }, 0);
+              return (
+                <td key={iso} style={{ ...totTd, color: dayTotal > 0 ? "var(--foreground)" : "var(--border)", backgroundImage: iso === todayIso ? todayTint : undefined }}>
+                  {dayTotal > 0 ? fmt(dayTotal) : "—"}
+                </td>
+              );
+            })}
+            <td style={{ ...totTd, textAlign: "right", padding: "0 12px", backgroundColor: "var(--background)", borderLeft: edge, right: R.total, zIndex: 17 }}>
+              <div>{fmt(g.gross)}</div>
+              <div style={{ ...sumNote, fontWeight: 500 }} title={`${g.miles.toLocaleString()} mi`}>
+                ${(g.rpm ?? 0).toFixed(2)}/mi
+              </div>
+            </td>
+            <td style={{ ...totTd, textAlign: "right", padding: "0 12px", backgroundColor: "var(--background)", right: R.pay, zIndex: 17 }}>
+              {g.anyPay ? fmt(g.pay) : "—"}
+            </td>
+            <td style={{ ...totTd, textAlign: "right", padding: "0 12px", backgroundColor: "var(--background)", color: "var(--border)", right: R.target, zIndex: 17 }}>—</td>
+            <td style={{ ...totTd, textAlign: "right", padding: "0 12px", backgroundColor: "var(--background)", color: g.profit < 0 ? "#DC2626" : "var(--foreground)", right: R.profit, zIndex: 17 }}>
+              {money(g.profit)}
+            </td>
+          </tr>
+        </tbody>
+      </table>
     );
   }
-}
-
-/* ─── Header style helpers ──────────────────────────────────────────────────── */
-
-function thLeft(extra: Record<string, unknown>) {
-  return {
-    padding: "10px 8px", textAlign: "center" as const,
-    fontFamily: "var(--font-sans)", fontSize: 10, fontWeight: 700,
-    color: "#94A3B8", letterSpacing: "0.07em", textTransform: "uppercase" as const,
-    borderRight: "1px solid #1E293B", borderBottom: "2px solid #1E293B",
-    position: "sticky" as const, zIndex: 21, backgroundColor: "#0F172A",
-    ...extra,
-  };
-}
-
-function thDay() {
-  return {
-    padding: "8px 6px", textAlign: "center" as const,
-    fontFamily: "var(--font-sans)", fontSize: 10, fontWeight: 700,
-    color: "#94A3B8", letterSpacing: "0.07em", textTransform: "uppercase" as const,
-    borderRight: "1px solid #1E293B", borderBottom: "2px solid #1E293B",
-  };
-}
-
-function thStickyRight(extra: { width: number; right: number; borderRight?: string }) {
-  return {
-    padding: "10px 12px", textAlign: "right" as const,
-    fontFamily: "var(--font-sans)", fontSize: 10, fontWeight: 700,
-    color: "#94A3B8", letterSpacing: "0.07em", textTransform: "uppercase" as const,
-    borderLeft: extra.right === 360 ? "2px solid #1E293B" : "1px solid #1E293B",
-    borderBottom: "2px solid #1E293B",
-    position: "sticky" as const, right: extra.right, zIndex: 21,
-    backgroundColor: "#0F172A",
-    borderRight: extra.borderRight ?? undefined,
-    width: extra.width, minWidth: extra.width,
-  };
 }

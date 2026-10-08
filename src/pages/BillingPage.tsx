@@ -51,6 +51,7 @@ interface BackendInvoice {
 interface Plan {
   id: string; name: string; price: number; color: string;
   features: string[]; popular: boolean;
+  duration: number | null; // billing-cycle length in days (30 monthly, 365 yearly)
 }
 
 interface Invoice {
@@ -63,9 +64,10 @@ interface Invoice {
 function toPlan(b: BackendPlan): Plan {
   return {
     id: b.id, name: b.name, price: b.price,
-    color: b.color ?? "#3B82F6",
+    color: b.color ?? "#178A4C",
     features: b.features ?? [],
     popular: b.popular ?? false,
+    duration: b.duration ?? null,
   };
 }
 
@@ -83,11 +85,29 @@ function toInvoice(b: BackendInvoice): Invoice {
   };
 }
 
+// ─── Formatting ───────────────────────────────────────────────────────────────
+
+// The cycle is a length in days, so a yearly plan must not read "/month".
+function cycleLabel(days: number | null): string {
+  if (!days) return "";
+  if (days === 30) return "/ month";
+  if (days === 365) return "/ year";
+  return `/ ${days} days`;
+}
+
+// renews_on is a bare YYYY-MM-DD. Build it as a local date — new Date("2026-11-02")
+// is UTC midnight, which prints as the previous day west of Greenwich.
+function formatDay(ymd: string): string {
+  const [y, m, d] = ymd.split("-").map(Number);
+  if (!y || !m || !d) return ymd;
+  return new Date(y, m - 1, d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
 // ─── Status style ─────────────────────────────────────────────────────────────
 
-function invoiceStatusStyle(status: string): { color: string; bg: string } {
+function statusStyle(status: string): { color: string; bg: string } {
   const s = status.toLowerCase();
-  if (s === "active" || s === "paid") return { color: "#10B981", bg: "rgba(16,185,129,0.14)" };
+  if (s === "active" || s === "paid") return { color: "var(--secondary-foreground)", bg: "var(--primary-soft)" };
   if (s === "failed" || s === "expired" || s === "suspended") return { color: "#EF4444", bg: "rgba(239,68,68,0.14)" };
   return { color: "#F59E0B", bg: "rgba(245,158,11,0.14)" };
 }
@@ -96,7 +116,7 @@ function invoiceStatusStyle(status: string): { color: string; bg: string } {
 
 function PlanIcon({ name, size = 16 }: { name: string; size?: number }) {
   const n = name.toLowerCase();
-  if (n.includes("enterprise") || n.includes("enterprise")) return <Building2 size={size} />;
+  if (n.includes("enterprise")) return <Building2 size={size} />;
   if (n.includes("pro") || n.includes("standard")) return <Shield size={size} />;
   return <Zap size={size} />;
 }
@@ -111,29 +131,34 @@ function DriverSeats({ drivers }: { drivers?: { used: number; limit: number | nu
   const unlimited = limit == null;
   const pct = unlimited || limit === 0 ? 0 : Math.min(100, Math.round((used / limit) * 100));
   const nearingCap = !unlimited && limit > 0 && used / limit >= 0.8;
-  const barColor = pct >= 100 ? "#EF4444" : nearingCap ? "#F59E0B" : "#10B981";
+  const barColor = pct >= 100 ? "#EF4444" : nearingCap ? "#F59E0B" : "var(--primary)";
 
   return (
-    <div style={{ flexShrink: 0, minWidth: 150, display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-end" }}>
-      <div style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
-        <strong style={{ color: "var(--foreground)", fontSize: 15 }}>{used}</strong>
-        {unlimited ? " drivers" : <> of <strong style={{ color: "var(--foreground)", fontSize: 15 }}>{limit}</strong> drivers</>}
-      </div>
-      {unlimited ? (
-        <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "var(--muted-foreground)" }}>Unlimited</span>
-      ) : (
-        <>
-          <div style={{ width: "100%", height: 5, borderRadius: 99, backgroundColor: "var(--muted)", overflow: "hidden" }}>
-            <div style={{ height: "100%", borderRadius: 99, width: `${pct}%`, backgroundColor: barColor, transition: "width 0.4s ease" }} />
-          </div>
-          <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: pct >= 100 ? "#EF4444" : "var(--muted-foreground)" }}>
-            {pct >= 100 ? "Limit reached" : `${Math.max(0, limit! - used)} left`}
-          </span>
-        </>
+    <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
+      {!unlimited && (
+        <div style={{ width: 96, height: 6, borderRadius: 99, backgroundColor: "var(--muted)", overflow: "hidden" }}>
+          <div style={{ height: "100%", borderRadius: 99, width: `${pct}%`, backgroundColor: barColor, transition: "width 0.4s ease" }} />
+        </div>
       )}
+      <span style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)", whiteSpace: "nowrap" }}>
+        <strong style={{ color: "var(--foreground)" }}>{used}</strong>
+        {unlimited
+          ? " drivers · Unlimited"
+          : <> of <strong style={{ color: "var(--foreground)" }}>{limit}</strong> drivers{pct >= 100 && <span style={{ color: "#EF4444" }}> · Limit reached</span>}</>}
+      </span>
     </div>
   );
 }
+
+function InlineError({ text }: { text: string }) {
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "var(--font-sans)", fontSize: 12, color: "#EF4444" }}>
+      <AlertCircle size={13} /> {text}
+    </span>
+  );
+}
+
+const errText = (e: unknown, fallback: string) => (e instanceof Error ? e.message : fallback);
 
 export function BillingPage() {
   const [plans, setPlans]       = useState<Plan[]>([]);
@@ -141,6 +166,8 @@ export function BillingPage() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState<string | null>(null);
+  const [plansErr, setPlansErr]       = useState<string | null>(null);
+  const [invoicesErr, setInvoicesErr] = useState<string | null>(null);
   const [downloading, setDownloading] = useState<string | null>(null); // invoice id in flight
   const [downloadErr, setDownloadErr] = useState<string | null>(null);
 
@@ -162,7 +189,7 @@ export function BillingPage() {
       a.click();
       a.remove();
     } catch (e) {
-      setDownloadErr(e instanceof Error ? e.message : "Couldn't download that invoice.");
+      setDownloadErr(errText(e, "Couldn't download that invoice."));
     } finally {
       // Revoke on the next tick — revoking synchronously can cancel the click's download.
       if (url) setTimeout(() => URL.revokeObjectURL(url!), 10_000);
@@ -171,19 +198,26 @@ export function BillingPage() {
   };
 
   useEffect(() => {
-    setLoading(true);
-    Promise.all([
+    // An owner who hasn't picked a company has nothing to bill — don't request ".../companies//billing".
+    if (!companyId) { setError("Choose a company to see its billing."); setLoading(false); return; }
+    let cancelled = false;
+    setLoading(true); setError(null); setPlansErr(null); setInvoicesErr(null);
+    // The three lists load independently: a failed invoice list must not blank out the plan.
+    Promise.allSettled([
       api.get<BackendPlan[]>("/owner/plans"),
       api.get<BackendBilling>(`/owner/companies/${companyId}/billing`),
       api.get<BackendInvoice[]>(`/owner/companies/${companyId}/invoices`),
-    ])
-      .then(([rawPlans, rawBilling, rawInvoices]) => {
-        setPlans((rawPlans ?? []).map(toPlan));
-        setBilling(rawBilling ?? null);
-        setInvoices((rawInvoices ?? []).map(toInvoice));
-      })
-      .catch((e) => setError(e instanceof Error ? e.message : "Failed to load billing"))
-      .finally(() => setLoading(false));
+    ]).then(([p, b, inv]) => {
+      if (cancelled) return;
+      if (b.status === "fulfilled") setBilling(b.value ?? null);
+      else setError(errText(b.reason, "Failed to load billing"));
+      if (p.status === "fulfilled") setPlans((p.value ?? []).map(toPlan));
+      else { setPlans([]); setPlansErr(errText(p.reason, "Couldn't load the plans.")); }
+      if (inv.status === "fulfilled") setInvoices((inv.value ?? []).map(toInvoice));
+      else { setInvoices([]); setInvoicesErr(errText(inv.reason, "Couldn't load the invoices.")); }
+      setLoading(false);
+    });
+    return () => { cancelled = true; };
   }, [companyId]);
 
   const currentPlan = billing?.current_plan ?? null;
@@ -193,10 +227,17 @@ export function BillingPage() {
   // "days remaining" never shows a negative count.
   const planStatus  = (billing?.status ?? "").toLowerCase();
   const isExpired   = ["expired", "suspended", "failed"].includes(planStatus) || (daysLeft != null && daysLeft <= 0);
+  const expiringSoon = !isExpired && daysLeft != null && daysLeft <= 7;
+  // The pill shows the backend status, except that a lapsed period always reads "Expired".
+  const statusLabel = isExpired && !["suspended", "failed"].includes(planStatus) ? "Expired" : (billing?.status || "Active");
+  const pill = statusStyle(isExpired ? "expired" : expiringSoon ? "pending" : "active");
 
   const capStyle: React.CSSProperties = {
     fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600,
     color: "var(--muted-foreground)", textTransform: "uppercase", letterSpacing: "0.07em",
+  };
+  const cardStyle: React.CSSProperties = {
+    backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 12,
   };
 
   if (loading) return <PageLoader label="billing" />;
@@ -212,148 +253,118 @@ export function BillingPage() {
 
   return (
     <div style={{ flex: 1, overflowY: "auto", padding: "28px 32px", backgroundColor: "var(--background)", scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent" }}>
-      <div style={{ maxWidth: 900, display: "flex", flexDirection: "column", gap: 28 }}>
+      <div style={{ maxWidth: 980, display: "flex", flexDirection: "column", gap: 24 }}>
 
         {/* Page title */}
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <CreditCard size={20} style={{ color: "var(--primary)" }} />
-          <span style={{ fontFamily: "var(--font-sans)", fontSize: 20, fontWeight: 700, color: "var(--foreground)" }}>
-            Billing & Subscription
-          </span>
+        <div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <CreditCard size={20} style={{ color: "var(--primary)" }} />
+            <span style={{ fontFamily: "var(--font-sans)", fontSize: 20, fontWeight: 700, color: "var(--foreground)", letterSpacing: "-0.01em" }}>
+              Billing
+            </span>
+          </div>
+          <div style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)", marginTop: 2 }}>
+            Your plan, driver seats and invoices
+          </div>
         </div>
 
-        {/* ── Current plan card ── */}
+        {/* ── Status strip ── */}
         {currentPlan ? (
-          <div style={{ backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 12, padding: "20px 24px", display: "flex", alignItems: "center", gap: 24 }}>
-            <div style={{ width: 48, height: 48, borderRadius: 12, backgroundColor: "var(--secondary)", display: "flex", alignItems: "center", justifyContent: "center", color: currentPlan.color ?? "var(--primary)", flexShrink: 0 }}>
-              <PlanIcon name={currentPlan.name} size={22} />
-            </div>
-
-            <div style={{ flex: 1 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                <span style={{ fontFamily: "var(--font-sans)", fontSize: 16, fontWeight: 700, color: "var(--foreground)" }}>
-                  {currentPlan.name} Plan
+          <div style={{ ...cardStyle, padding: "12px 18px", display: "flex", alignItems: "center", flexWrap: "wrap", gap: "8px 20px" }}>
+            <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 700, color: pill.color, backgroundColor: pill.bg, borderRadius: 20, padding: "2px 10px", textTransform: "capitalize" }}>
+              {statusLabel}
+            </span>
+            <span style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--foreground)" }}>
+              <strong>{currentPlan.name}</strong>
+              {currentPlan.renews_on && (
+                <span style={{ color: "var(--muted-foreground)" }}>
+                  {" · "}{isExpired ? "ended" : "renews"} {formatDay(currentPlan.renews_on)}
                 </span>
-                <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600, color: "#10B981", backgroundColor: "rgba(16,185,129,0.14)", borderRadius: 20, padding: "2px 8px" }}>
-                  {billing?.status ?? "Active"}
-                </span>
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-                <span style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
-                  ${currentPlan.price}/month
-                </span>
-                {currentPlan.renews_on && (<>
-                  <span style={{ width: 3, height: 3, borderRadius: "50%", backgroundColor: "var(--muted-foreground)" }} />
-                  <span style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
-                    Renews on <strong style={{ color: "var(--foreground)" }}>{currentPlan.renews_on}</strong>
-                  </span>
-                </>)}
-                {daysLeft != null && daysLeft > 0 && (<>
-                  <span style={{ width: 3, height: 3, borderRadius: "50%", backgroundColor: "var(--muted-foreground)" }} />
-                  <span style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
-                    {daysLeft} days remaining
-                  </span>
-                </>)}
-              </div>
-            </div>
-
-            {isExpired ? (
-              <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 12px", backgroundColor: "rgba(239,68,68,0.14)", borderRadius: 8, border: "1px solid rgba(239,68,68,0.35)" }}>
-                <AlertCircle size={14} style={{ color: "#EF4444" }} />
-                <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: 500, color: "#EF4444" }}>Expired</span>
-              </div>
-            ) : daysLeft != null && daysLeft <= 7 ? (
-              <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 12px", backgroundColor: "rgba(245,158,11,0.14)", borderRadius: 8, border: "1px solid rgba(245,158,11,0.35)" }}>
-                <AlertCircle size={14} style={{ color: "#F59E0B" }} />
-                <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: 500, color: "#F59E0B" }}>Expiring soon</span>
-              </div>
-            ) : null}
-
+              )}
+            </span>
+            {!isExpired && daysLeft != null && (
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: "var(--font-sans)", fontSize: 13, color: expiringSoon ? "#B45309" : "var(--muted-foreground)" }}>
+                {expiringSoon && <AlertCircle size={13} />}
+                {daysLeft} {daysLeft === 1 ? "day" : "days"} left
+              </span>
+            )}
             <DriverSeats drivers={billing?.drivers} />
           </div>
         ) : (
-          <div style={{ backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 12, padding: "20px 24px", display: "flex", alignItems: "center", gap: 14 }}>
+          <div style={{ ...cardStyle, padding: "14px 18px", display: "flex", alignItems: "center", gap: 12 }}>
             <AlertCircle size={18} style={{ color: "#F59E0B", flexShrink: 0 }} />
             <span style={{ flex: 1, fontFamily: "var(--font-sans)", fontSize: 14, color: "var(--foreground)" }}>
               {billing?.drivers ? `You have ${billing.drivers.used} driver${billing.drivers.used === 1 ? "" : "s"}. ` : ""}
-              No active plan. Choose a plan below to unlock board features.
+              No active plan. Contact support to choose one and unlock the board.
             </span>
           </div>
         )}
 
         {/* ── Plans ── */}
-        {plans.length > 0 && (
+        {(plans.length > 0 || plansErr) && (
           <div>
-            <div style={{ marginBottom: 14 }}>
-              <span style={capStyle}>Available Plans</span>
+            <div style={{ marginBottom: 12, display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={capStyle}>Plans</span>
+              {plansErr && <InlineError text={plansErr} />}
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(plans.length, 3)}, 1fr)`, gap: 16 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))", gap: 16 }}>
               {plans.map((plan) => {
                 const isCurrent = plan.id === currentPlan?.id;
+                const badge = isCurrent ? "Current" : plan.popular ? "Popular" : null;
 
                 return (
                   <div
                     key={plan.id}
                     style={{
-                      backgroundColor: "var(--card)",
-                      border: `2px solid ${isCurrent ? plan.color : "var(--border)"}`,
-                      borderRadius: 12, padding: 20,
-                      position: "relative", display: "flex", flexDirection: "column", gap: 16,
-                      boxShadow: isCurrent ? `0 0 0 3px ${plan.color}22` : "none",
+                      ...cardStyle,
+                      border: isCurrent ? "2px solid var(--primary)" : "1px solid var(--border)",
+                      // Keep the content box the same size whichever border width is drawn.
+                      padding: isCurrent ? 19 : 20,
+                      display: "flex", flexDirection: "column", gap: 14,
+                      boxShadow: isCurrent ? "0 0 0 4px var(--primary-soft)" : "none",
                     }}
                   >
-                    {isCurrent && (
-                      <div style={{ position: "absolute", top: -1, right: 16, backgroundColor: plan.color, color: "#fff", fontFamily: "var(--font-sans)", fontSize: 10, fontWeight: 700, padding: "2px 10px", borderRadius: "0 0 6px 6px", letterSpacing: "0.05em" }}>
-                        CURRENT
-                      </div>
-                    )}
-                    {plan.popular && !isCurrent && (
-                      <div style={{ position: "absolute", top: -1, right: 16, backgroundColor: "var(--primary)", color: "#fff", fontFamily: "var(--font-sans)", fontSize: 10, fontWeight: 700, padding: "2px 10px", borderRadius: "0 0 6px 6px", letterSpacing: "0.05em" }}>
-                        POPULAR
-                      </div>
-                    )}
-
                     {/* Plan header */}
                     <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <div style={{ width: 34, height: 34, borderRadius: 8, backgroundColor: isCurrent ? `${plan.color}22` : "var(--muted)", display: "flex", alignItems: "center", justifyContent: "center", color: isCurrent ? plan.color : "var(--muted-foreground)" }}>
+                      <div style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: `${plan.color}22`, display: "flex", alignItems: "center", justifyContent: "center", color: plan.color, flexShrink: 0 }}>
                         <PlanIcon name={plan.name} />
                       </div>
-                      <div>
-                        <div style={{ fontFamily: "var(--font-sans)", fontSize: 14, fontWeight: 700, color: "var(--foreground)" }}>{plan.name}</div>
-                        <div style={{ fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 600, color: isCurrent ? plan.color : "var(--foreground)" }}>
-                          ${plan.price}<span style={{ fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 400, color: "var(--muted-foreground)" }}>/mo</span>
-                        </div>
-                      </div>
+                      <span style={{ flex: 1, minWidth: 0, fontFamily: "var(--font-sans)", fontSize: 15, fontWeight: 700, color: "var(--foreground)" }}>{plan.name}</span>
+                      {badge && (
+                        <span style={{
+                          fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 700, borderRadius: 20, padding: "2px 10px",
+                          color: isCurrent ? "var(--secondary-foreground)" : "var(--muted-foreground)",
+                          backgroundColor: isCurrent ? "var(--primary-soft)" : "var(--muted)",
+                        }}>
+                          {badge}
+                        </span>
+                      )}
+                    </div>
+
+                    <div style={{ fontFamily: "var(--font-sans)", fontSize: 26, fontWeight: 700, color: "var(--foreground)", letterSpacing: "-0.02em", lineHeight: 1.1 }}>
+                      ${plan.price.toLocaleString()}
+                      <span style={{ fontSize: 12, fontWeight: 500, color: "var(--muted-foreground)", letterSpacing: 0 }}> {cycleLabel(plan.duration)}</span>
                     </div>
 
                     {/* Features */}
-                    <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                    <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 7 }}>
                       {plan.features.map((f) => (
-                        <div key={f} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <span style={{ width: 16, height: 16, borderRadius: "50%", backgroundColor: "rgba(16,185,129,0.14)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                            <Check size={9} style={{ color: "#10B981" }} />
-                          </span>
-                          <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--foreground)" }}>{f}</span>
+                        <div key={f} style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+                          <Check size={14} style={{ color: "var(--primary)", flexShrink: 0, marginTop: 2 }} />
+                          <span style={{ fontFamily: "var(--font-sans)", fontSize: 12.5, color: "var(--foreground)" }}>{f}</span>
                         </div>
                       ))}
                     </div>
 
-                    {/* Action */}
-                    <button
-                      disabled
-                      title={isCurrent ? "Current plan" : "Plan changes coming soon — contact support"}
-                      style={{
-                        marginTop: "auto", width: "100%",
-                        fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600,
-                        padding: "8px 0", borderRadius: 8,
-                        border: isCurrent ? "none" : "1px solid var(--border)",
-                        backgroundColor: isCurrent ? `${plan.color}22` : "transparent",
-                        color: isCurrent ? plan.color : "var(--muted-foreground)",
-                        cursor: "not-allowed",
-                      }}
-                    >
-                      {isCurrent ? "Current Plan" : plan.price > (currentPlan?.price ?? 0) ? "Upgrade" : "Downgrade"}
-                    </button>
+                    {/* Plan changes aren't self-serve, so this is a label, not a button. */}
+                    <div style={{
+                      fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, textAlign: "center",
+                      padding: "8px 0", borderRadius: 8,
+                      backgroundColor: isCurrent ? "var(--primary)" : "var(--muted)",
+                      color: isCurrent ? "var(--primary-foreground)" : "var(--muted-foreground)",
+                    }}>
+                      {isCurrent ? "Your plan" : "Contact support to switch"}
+                    </div>
                   </div>
                 );
               })}
@@ -363,23 +374,19 @@ export function BillingPage() {
 
         {/* ── Invoices ── */}
         <div>
-          <div style={{ marginBottom: 14, display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={capStyle}>Transaction History</span>
-            {downloadErr && (
-              <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "var(--font-sans)", fontSize: 12, color: "#EF4444" }}>
-                <AlertCircle size={13} /> {downloadErr}
-              </span>
-            )}
+          <div style={{ marginBottom: 12, display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={capStyle}>Invoices</span>
+            {(invoicesErr || downloadErr) && <InlineError text={(invoicesErr || downloadErr)!} />}
           </div>
-          <div style={{ backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
+          <div style={{ ...cardStyle, overflowX: "auto" }}>
             {invoices.length === 0 ? (
               <div style={{ padding: "32px 0", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
-                No transactions yet
+                {invoicesErr ? "Invoices are unavailable right now" : "No invoices yet"}
               </div>
             ) : (
-              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <table style={{ width: "100%", minWidth: 560, borderCollapse: "collapse" }}>
                 <thead>
-                  <tr style={{ backgroundColor: "var(--muted)" }}>
+                  <tr>
                     {["Date", "Invoice", "Plan", "Amount", "Status", ""].map((h, i) => (
                       <th key={i} style={{
                         padding: "10px 16px", textAlign: i >= 3 ? "right" : "left",
@@ -395,27 +402,31 @@ export function BillingPage() {
                 </thead>
                 <tbody>
                   {invoices.map((inv, i) => {
-                    const s = invoiceStatusStyle(inv.status);
+                    const s = statusStyle(inv.status);
+                    const cell: React.CSSProperties = {
+                      padding: "12px 16px", whiteSpace: "nowrap",
+                      borderBottom: i === invoices.length - 1 ? "none" : "1px solid var(--border)",
+                    };
                     return (
-                      <tr key={inv.id} style={{ backgroundColor: i % 2 === 0 ? "var(--card)" : "var(--background)" }}>
-                        <td style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--foreground)" }}>
+                      <tr key={inv.id}>
+                        <td style={{ ...cell, fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--foreground)" }}>
                           {inv.date}
                         </td>
-                        <td style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)", fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--muted-foreground)" }}>
+                        <td style={{ ...cell, fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--muted-foreground)" }}>
                           {inv.invoiceNumber}
                         </td>
-                        <td style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--foreground)" }}>
+                        <td style={{ ...cell, fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--foreground)" }}>
                           {inv.plan}
                         </td>
-                        <td style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)", fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 600, color: "var(--foreground)", textAlign: "right" }}>
+                        <td style={{ ...cell, fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 600, color: "var(--foreground)", textAlign: "right" }}>
                           {inv.currency} ${inv.amount.toFixed(2)}
                         </td>
-                        <td style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)", textAlign: "right" }}>
-                          <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600, color: s.color, backgroundColor: s.bg, borderRadius: 20, padding: "2px 10px" }}>
+                        <td style={{ ...cell, textAlign: "right" }}>
+                          <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 700, color: s.color, backgroundColor: s.bg, borderRadius: 20, padding: "2px 10px", textTransform: "capitalize" }}>
                             {inv.status}
                           </span>
                         </td>
-                        <td style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)", textAlign: "right", whiteSpace: "nowrap" }}>
+                        <td style={{ ...cell, textAlign: "right" }}>
                           <button
                             onClick={() => downloadInvoice(inv)}
                             disabled={downloading === inv.id}

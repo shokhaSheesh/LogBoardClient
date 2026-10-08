@@ -8,14 +8,20 @@
   --card-foreground: #111827;
   --popover: #ffffff;
   --popover-foreground: #111827;
-  --primary: #3B82F6;
+  --primary: #178A4C;
   --primary-foreground: #ffffff;
-  --secondary: #EFF6FF;
-  --secondary-foreground: #1D4ED8;
+  /* Brand tints, derived from --primary so a brand change is a one-line edit. */
+  --primary-faint: color-mix(in srgb, var(--primary) 4%, transparent);
+  --primary-tint: color-mix(in srgb, var(--primary) 8%, transparent);
+  --primary-soft: color-mix(in srgb, var(--primary) 14%, transparent);
+  --primary-glow: color-mix(in srgb, var(--primary) 30%, transparent);
+  --primary-gradient: linear-gradient(135deg, #1E9E59 0%, #136F3D 100%);
+  --secondary: #ECF7F0;
+  --secondary-foreground: #136F3D;
   --muted: #F3F4F6;
   --muted-foreground: #6B7280;
-  --accent: #DBEAFE;
-  --accent-foreground: #1E40AF;
+  --accent: #DDF1E5;
+  --accent-foreground: #115E35;
   --destructive: #EF4444;
   --destructive-foreground: #ffffff;
   --border: #E5E7EB;
@@ -24,23 +30,23 @@
   --switch-background: #D1D5DB;
   --font-weight-medium: 500;
   --font-weight-normal: 400;
-  --ring: #3B82F6;
-  --chart-1: #3B82F6;
-  --chart-2: #10B981;
+  --ring: #178A4C;
+  --chart-1: #178A4C;
+  --chart-2: #3B82F6;
   --chart-3: #F59E0B;
   --chart-4: #EF4444;
   --chart-5: #8B5CF6;
   --radius: 0.5rem;
-  --sidebar: #0F172A;
-  --sidebar-foreground: #CBD5E1;
-  --sidebar-primary: #3B82F6;
+  --sidebar: #ffffff;
+  --sidebar-foreground: #4B5563;
+  --sidebar-primary: #178A4C;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #1E293B;
-  --sidebar-accent-foreground: #F1F5F9;
-  --sidebar-border: #1E293B;
-  --sidebar-ring: #3B82F6;
+  --sidebar-accent: #F3F4F6;
+  --sidebar-accent-foreground: #111827;
+  --sidebar-border: #E5E7EB;
+  --sidebar-ring: #178A4C;
   --font-mono: 'JetBrains Mono', monospace;
-  --font-sans: 'Inter', system-ui, sans-serif;
+  --font-sans: 'Plus Jakarta Sans', system-ui, sans-serif;
 }
 
 .dark {
@@ -53,14 +59,15 @@
   --card-foreground: #F1F5F9;
   --popover: #111827;
   --popover-foreground: #F1F5F9;
-  --primary: #3B82F6;
+  /* A step brighter than the light-mode green so it holds up on the navy surfaces. */
+  --primary: #22A05B;
   --primary-foreground: #ffffff;
   --secondary: #1E293B;
-  --secondary-foreground: #93C5FD;
+  --secondary-foreground: #86D9A9;
   --muted: #1E293B;
   --muted-foreground: #94A3B8;
-  --accent: #1E3A5F;
-  --accent-foreground: #BFDBFE;
+  --accent: #153524;
+  --accent-foreground: #BFE8CF;
   --destructive: #EF4444;
   --destructive-foreground: #ffffff;
   --border: #1F2937;
@@ -69,13 +76,21 @@
   --switch-background: #374151;
   --font-weight-medium: 500;
   --font-weight-normal: 400;
-  --ring: #3B82F6;
-  --chart-1: #3B82F6;
-  --chart-2: #10B981;
+  --ring: #22A05B;
+  --chart-1: #22A05B;
+  --chart-2: #3B82F6;
   --chart-3: #F59E0B;
   --chart-4: #EF4444;
   --chart-5: #8B5CF6;
-  /* Sidebar is already a dark navy in light mode by design — leave it as-is. */
+  /* The sidebar is white in light mode; in dark mode it takes the navy surface. */
+  --sidebar: #0F172A;
+  --sidebar-foreground: #CBD5E1;
+  --sidebar-primary: #22A05B;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #1E293B;
+  --sidebar-accent-foreground: #F1F5F9;
+  --sidebar-border: #1E293B;
+  --sidebar-ring: #22A05B;
 }
 
 @theme inline {

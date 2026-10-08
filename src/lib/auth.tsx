@@ -58,7 +58,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     api
       .get<AuthUser>("/auth/me")
       .then(setUser)
-      .catch(() => clearToken())
+      // An expired token is already cleared by the 401 handler in api.ts. Anything
+      // else (offline, a 5xx) must not sign the user out — a reload recovers.
+      .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
 
