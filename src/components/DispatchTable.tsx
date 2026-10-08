@@ -11,8 +11,10 @@ import { driverDisplayName } from "../lib/driverName";
 import { boardWsUrl } from "../lib/ws";
 import { PageLoader } from "./PageLoader";
 import { friendlyError, notify } from "./feedback";
-import { cleanAppt } from "../lib/appt";
+import { cleanAppt, formatAppt } from "../lib/appt";
 import { UncompleteConfirm } from "./UncompleteConfirm";
+import { Dash } from "./Dash";
+import { fmtDate } from "../lib/dates";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -224,7 +226,7 @@ function timeAgo(iso: string): string {
   if (d < 3600000)   return `${Math.floor(d / 60000)}m ago`;
   if (d < 86400000)  return `${Math.floor(d / 3600000)}h ago`;
   if (d < 172800000) return "yesterday";
-  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  return fmtDate(iso);
 }
 
 function fromBoardRow(r: BoardRow): Driver {
@@ -254,8 +256,8 @@ function fromBoardRow(r: BoardRow): Driver {
     destination:     (cityState(last) || r.destination) || "—",
     destinationDone: last?.done ?? false,
     stops:           route.slice(1, -1),
-    pickupAppt:  cleanAppt(r.pickup_appt)  || "—",
-    dropAppt:    cleanAppt(r.drop_appt)    || "—",
+    pickupAppt:  formatAppt(r.pickup_appt)  || "—",
+    dropAppt:    formatAppt(r.drop_appt)    || "—",
     location:    r.location     || "—",
     etaKm:       r.eta_km,
     speedMph:    r.speed_mph,
@@ -492,7 +494,7 @@ function InlineCell({ value, onCommit, mono, fontSize = 12, color = "var(--foreg
 // not the board — the board only shows it and ticks stops off as done.
 function ApptText({ value, color, done }: { value: string; color: string; done?: boolean }) {
   return (
-    <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color, textDecoration: done ? "line-through" : "none" }}>{value || "—"}</span>
+    <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color, textDecoration: done ? "line-through" : "none" }}>{value && value !== "—" ? value : <Dash />}</span>
   );
 }
 
@@ -633,7 +635,7 @@ function StopList({ origin, originDone, destination, destinationDone, stops, ori
           <div key={idx} className="cp-wrap" style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0 }}>
             <span style={labelStyle}>#{idx + 1}</span>
             <TickBtn done={stop.done} isCurrent={isCurrent} canToggle={canToggle} onToggle={canToggle ? stop.onToggle : undefined} />
-            <span style={{ ...textStyle(stop.done, isCurrent), flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{stop.city || "—"}</span>
+            <span style={{ ...textStyle(stop.done, isCurrent), flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{stop.city || <Dash />}</span>
             {stop.city && stop.city !== "—" && <CopyBtn value={stop.copy} />}
           </div>
         );
@@ -661,7 +663,7 @@ function HistoryPanel({ events, loading, onClose, onRevert }: {
     if (d < 3600000)   return `${Math.floor(d / 60000)}m ago`;
     if (d < 86400000)  return `${Math.floor(d / 3600000)}h ago`;
     if (d < 172800000) return "yesterday";
-    return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    return fmtDate(iso);
   };
 
   const actionColor = (a: string) => a === "create" ? "#10B981" : a === "delete" ? "#EF4444" : "#3B82F6";
@@ -907,7 +909,7 @@ export function DispatchTable() {
   const navigate = useNavigate();
   // Click a load on the board → open it in the Loads page edit modal (route edits live
   // there now, not on the board). Needs the load's UUID, not its display ref.
-  const openLoad = (loadUuid?: string) => { if (loadUuid) navigate(`/workspace/loads?edit=${loadUuid}`); };
+  const openLoad = (loadUuid?: string) => { if (loadUuid) navigate(`/workspace/loads/${loadUuid}/edit`); };
   // The board reads on board.read, but its inline edits write to /drivers and /loads —
   // so gate the driver-field controls (status, type, comment) on drivers.update and the
   // route/appt controls on loads.update. Without this a read-only role sees editable
@@ -1582,7 +1584,7 @@ export function DispatchTable() {
 
                 // No active load → route/appointment cells are empty and non-interactive.
                 const hasLoad = !!driver.loadRaw?.id;
-                const emptyDash = <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)" }}>—</span>;
+                const emptyDash = <Dash />;
 
                 return (
                   <tr key={driver.driverId}>
@@ -1653,7 +1655,7 @@ export function DispatchTable() {
                           {isLockedByOther && <Lock size={10} style={{ color: lockColor, flexShrink: 0 }} />}
                           {driver.unit && driver.unit !== "—"
                             ? <Copyable value={driver.unit} size={11} weight={500} color={isLockedByOther ? lockColor : "var(--foreground)"} mono />
-                            : <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--muted-foreground)" }}>—</span>}
+                            : <Dash />}
                         </div>
                         {driver.trailer && driver.trailer !== "—" && (
                           <Copyable value={driver.trailer} size={10} color="var(--muted-foreground)" mono />
@@ -1718,7 +1720,7 @@ export function DispatchTable() {
                               return (
                                 <div key={idx} style={{ display: "flex", alignItems: "center", gap: 5 }}>
                                   <span style={{ ...labelStyle, color: "var(--muted-foreground)" }}>#{idx + 2}</span>
-                                  <ApptText value={cleanAppt(stop.appt) || "—"} color={stop.done || !stop.appt ? "var(--muted-foreground)" : isCurrent ? "var(--foreground)" : "var(--muted-foreground)"} done={stop.done} />
+                                  <ApptText value={formatAppt(stop.appt) || "—"} color={stop.done || !stop.appt ? "var(--muted-foreground)" : isCurrent ? "var(--foreground)" : "var(--muted-foreground)"} done={stop.done} />
                                 </div>
                               );
                             })}
@@ -1750,7 +1752,7 @@ export function DispatchTable() {
                           <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
                             <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
                               <MapPin size={11} style={{ color: fresh, flexShrink: 0 }} />
-                              <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--foreground)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}>{loc || "—"}</span>
+                              <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--foreground)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}>{loc || <Dash />}</span>
                               {hasCoords && (
                                 <button
                                   type="button"
@@ -1777,7 +1779,7 @@ export function DispatchTable() {
                     <td style={td({ borderRight: border, verticalAlign: "top", paddingTop: 10, paddingBottom: 10 })}>
                       <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                         {driver.etaKm === null ? (
-                          <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--muted-foreground)" }}>—</span>
+                          <Dash />
                         ) : driver.etaKm === 0 ? (
                           <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 600, color: "#10B981" }}>At dest.</span>
                         ) : (
@@ -1808,7 +1810,7 @@ export function DispatchTable() {
                         <div style={{ minWidth: 0, flex: 1 }}>
                           {isEdit(driver.driverId, "comments")
                             ? <InlineCell value={driver.comments} onCommit={(v) => { patch(driver.driverId, { comments: v }); stopEdit(driver.driverId); }} />
-                            : <span onClick={noDriverEdit ? undefined : () => startEdit(driver.driverId, "comments")} style={{ cursor: noDriverEdit ? "default" : "text", fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--foreground)", display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{driver.comments || "—"}</span>
+                            : <span onClick={noDriverEdit ? undefined : () => startEdit(driver.driverId, "comments")} style={{ cursor: noDriverEdit ? "default" : "text", fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--foreground)", display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{driver.comments || <Dash />}</span>
                           }
                           <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--muted-foreground)", display: "block", marginTop: 1 }}>{driver.lastUpdate}</span>
                         </div>

@@ -12,12 +12,14 @@ export interface SelectOpt { value: string; label: string; dot?: string }
 // (debounced) as the user types — so it scales whether there are 20 rows or 2,000.
 // valueLabel is the already-resolved label for the current value (the caller carries
 // it), so the closed button shows the right name even before that page is loaded.
-export function AsyncSearchableSelect({ value, valueLabel, fetchPage, onChange, placeholder, icon }: {
+export function AsyncSearchableSelect({ value, valueLabel, fetchPage, onChange, placeholder, icon, plain = false }: {
   value: string;
   valueLabel?: string;
   fetchPage: (query: string, page: number) => Promise<{ items: SelectOpt[]; total: number }>;
   onChange: (id: string, label: string) => void;
   placeholder?: string; icon?: React.ReactNode;
+  // White field with a border (the newer form style) instead of the grey-filled one.
+  plain?: boolean;
 }) {
   const wrapRef  = useRef<HTMLDivElement>(null);
   const listRef  = useRef<HTMLDivElement>(null);
@@ -83,10 +85,10 @@ export function AsyncSearchableSelect({ value, valueLabel, fetchPage, onChange, 
   return (
     <div ref={wrapRef} style={{ position: "relative" }}>
       <button type="button" onClick={() => { setOpen(v => !v); setQuery(""); }} style={{
-        display: "flex", alignItems: "center", gap: 8, width: "100%", height: 34,
+        display: "flex", alignItems: "center", gap: 8, width: "100%", height: plain ? 36 : 34,
         padding: "0 8px 0 10px", fontFamily: "var(--font-sans)", fontSize: 13,
         border: `1px solid ${open ? "var(--primary)" : "var(--border)"}`,
-        borderRadius: 6, backgroundColor: "var(--input-background)",
+        borderRadius: plain ? 8 : 6, backgroundColor: plain ? "var(--card)" : "var(--input-background)",
         color: value ? "var(--foreground)" : "var(--muted-foreground)",
         cursor: "pointer", textAlign: "left", outline: "none",
         boxShadow: open ? "0 0 0 3px var(--primary-soft)" : "none",

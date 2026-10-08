@@ -32,7 +32,7 @@ export function AddressAutocomplete({ value, onChange, onSelect, onCoords, place
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [open, setOpen]               = useState(false);
   const [activeIdx, setActiveIdx]     = useState(-1);
-  const [dropPos, setDropPos]         = useState({ top: 0, left: 0, width: 0 });
+  const [dropPos, setDropPos]         = useState<React.CSSProperties>({});
   const debounceRef                   = useRef<ReturnType<typeof setTimeout> | null>(null);
   const ignoreBlurRef                 = useRef(false);
 
@@ -83,11 +83,31 @@ export function AddressAutocomplete({ value, onChange, onSelect, onCoords, place
     setActiveIdx(-1);
   };
 
+  // Where the list goes, in screen coordinates: under the field when there's room, above it
+  // when there isn't, and never taller than the space on that side — so it scrolls inside
+  // itself instead of running off the window or over the field it belongs to.
   const updateDropPos = () => {
     if (!inputRef.current) return;
     const r = inputRef.current.getBoundingClientRect();
-    setDropPos({ top: r.bottom + window.scrollY + 4, left: r.left + window.scrollX, width: r.width });
+    const GAP = 4, MAX = 232;
+    const below = window.innerHeight - r.bottom - GAP - 8;
+    const above = r.top - GAP - 8;
+    setDropPos(below >= 140 || below >= above
+      ? { top: r.bottom + GAP, left: r.left, width: r.width, maxHeight: Math.min(MAX, Math.max(96, below)) }
+      : { bottom: window.innerHeight - r.top + GAP, left: r.left, width: r.width, maxHeight: Math.min(MAX, Math.max(96, above)) });
   };
+
+  // The field can move while the list is open (the form scrolls, the window resizes).
+  useEffect(() => {
+    if (!open) return;
+    updateDropPos();
+    window.addEventListener("scroll", updateDropPos, true);
+    window.addEventListener("resize", updateDropPos);
+    return () => {
+      window.removeEventListener("scroll", updateDropPos, true);
+      window.removeEventListener("resize", updateDropPos);
+    };
+  }, [open]);
 
   const handleFocus: React.FocusEventHandler<HTMLInputElement> = (e) => {
     updateDropPos();
@@ -108,16 +128,16 @@ export function AddressAutocomplete({ value, onChange, onSelect, onCoords, place
     <ul
       onMouseDown={() => { ignoreBlurRef.current = true; }}
       style={{
-        position: "absolute",
-        top: dropPos.top, left: dropPos.left, width: dropPos.width,
+        position: "fixed",
+        ...dropPos,
         zIndex: 99999,
         margin: 0, padding: 0, listStyle: "none",
         backgroundColor: "var(--card)",
         border: "1px solid var(--border)",
         borderRadius: 8,
         boxShadow: "0 8px 32px rgba(0,0,0,0.16)",
-        overflow: "hidden",
-        maxHeight: 260, overflowY: "auto",
+        overflowY: "auto", overscrollBehavior: "contain",
+        scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent",
       }}
     >
       {suggestions.map((s, i) => (

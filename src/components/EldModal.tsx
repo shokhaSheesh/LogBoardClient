@@ -3,6 +3,7 @@ import { X, RefreshCw, Link2, Unlink, AlertCircle, Check, Truck, Phone } from "l
 import { api, ApiError } from "../lib/api";
 import { AsyncSearchableSelect } from "./AsyncSelect";
 import { driverDisplayName } from "../lib/driverName";
+import { FormError } from "./feedback";
 
 // One entry from GET /eld/drivers: a driver on the provider's roster, and how (if at all)
 // it maps to a board driver.
@@ -110,51 +111,53 @@ export function EldModal({ onClose, onLinked, canManage = true }: { onClose: () 
 
   const linkedCount = roster.filter((e) => e.driver_id).length;
 
+  // Escape closes the dialog, unless a link or a sync is in flight.
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => { if (e.key === "Escape" && !syncing && !busyId) onClose(); };
+    document.addEventListener("keydown", h);
+    return () => document.removeEventListener("keydown", h);
+  }, [onClose, syncing, busyId]);
+
   return (
-    <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div style={{ backgroundColor: "var(--card)", borderRadius: 12, width: 620, maxHeight: "88vh", boxShadow: "0 20px 60px rgba(0,0,0,0.22)", display: "flex", flexDirection: "column" }}>
+    <div role="dialog" aria-modal="true" aria-label="ELD drivers" style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ backgroundColor: "var(--card)", borderRadius: 12, width: 660, maxWidth: "calc(100vw - 32px)", maxHeight: "88vh", boxShadow: "0 20px 60px rgba(0,0,0,0.22)", display: "flex", flexDirection: "column" }}>
         {/* Header */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderBottom: "1px solid var(--border)", backgroundColor: "var(--muted)", borderRadius: "12px 12px 0 0", flexShrink: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-            <div style={{ width: 30, height: 30, borderRadius: 8, backgroundColor: "rgba(34,211,238,0.12)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <Truck size={15} color="#22D3EE" />
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 20px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: "var(--primary-soft)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <Truck size={16} style={{ color: "var(--primary)" }} />
             </div>
             <div>
-              <div style={{ fontFamily: "var(--font-sans)", fontSize: 14, fontWeight: 600, color: "var(--foreground)" }}>ELD drivers</div>
-              {!loading && !error && (
-                <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--muted-foreground)" }}>
-                  {linkedCount} of {roster.length} linked
-                </div>
-              )}
+              <div style={{ fontFamily: "var(--font-sans)", fontSize: 15, fontWeight: 700, color: "var(--foreground)", letterSpacing: "-0.01em" }}>Sync from ELD</div>
+              <div style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)" }}>
+                {loading || error
+                  ? "Match each driver on your ELD to a driver here"
+                  : `${linkedCount} of ${roster.length} ELD ${roster.length === 1 ? "driver" : "drivers"} linked`}
+              </div>
             </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             {canManage && (
               <button onClick={sync} disabled={syncing || loading}
-                style={{ display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "var(--font-sans)", fontSize: 12.5, fontWeight: 600, padding: "6px 12px", borderRadius: 7, border: "1px solid var(--border)", backgroundColor: "var(--card)", color: "var(--foreground)", cursor: syncing || loading ? "default" : "pointer", opacity: syncing || loading ? 0.6 : 1 }}>
+                style={{ display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 12px", borderRadius: 8, border: "1px solid var(--border)", backgroundColor: "var(--card)", color: "var(--foreground)", cursor: syncing || loading ? "default" : "pointer", opacity: syncing || loading ? 0.6 : 1 }}>
                 <RefreshCw size={13} style={{ animation: syncing ? "spin 0.7s linear infinite" : undefined }} /> {syncing ? "Syncing…" : "Sync now"}
               </button>
             )}
-            <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted-foreground)", display: "flex" }}><X size={16} /></button>
+            <button onClick={onClose} aria-label="Close" style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted-foreground)", display: "flex" }}><X size={16} /></button>
           </div>
         </div>
 
         {/* Last sync line */}
         {lastSync && (
-          <div style={{ padding: "8px 20px", borderBottom: "1px solid var(--border)", fontFamily: "var(--font-sans)", fontSize: 11.5, color: "var(--muted-foreground)", flexShrink: 0 }}>
+          <div style={{ padding: "8px 20px", borderBottom: "1px solid var(--border)", fontFamily: "var(--font-sans)", fontSize: 12.5, color: "var(--muted-foreground)", flexShrink: 0 }}>
             Synced — {lastSync.drivers} driver{lastSync.drivers !== 1 ? "s" : ""} updated
             {lastSync.unlinked > 0 && <>, <span style={{ color: "#F59E0B" }}>{lastSync.unlinked} truck{lastSync.unlinked !== 1 ? "s" : ""} reporting for nobody</span></>}.
           </div>
         )}
 
         {/* Body */}
-        <div style={{ flex: 1, overflowY: "auto", padding: 16 }}>
-          {error && (
-            <div style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "11px 14px", backgroundColor: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.35)", borderRadius: 8, marginBottom: 12 }}>
-              <AlertCircle size={15} color="#EF4444" style={{ flexShrink: 0, marginTop: 1 }} />
-              <div style={{ fontFamily: "var(--font-sans)", fontSize: 12.5, color: "#EF4444", lineHeight: 1.5 }}>{error}</div>
-            </div>
-          )}
+        <div style={{ flex: 1, overflowY: "auto", padding: "0 20px" }}>
+          <FormError message={error} style={{ margin: "14px 0" }} />
 
           {loading ? (
             <div style={{ padding: "48px 20px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>Loading roster…</div>
@@ -163,17 +166,17 @@ export function EldModal({ onClose, onLinked, canManage = true }: { onClose: () 
               No drivers on the ELD roster yet.
             </div>
           ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {roster.map((e) => {
+            <div style={{ display: "flex", flexDirection: "column" }}>
+              {roster.map((e, idx) => {
                 const linked = !!e.driver_id;
                 const busy = busyId === e.remote.id;
                 const picked = pick[e.remote.id];
                 return (
-                  <div key={e.remote.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 12px", border: "1px solid var(--border)", borderRadius: 10, backgroundColor: "var(--background)" }}>
+                  <div key={e.remote.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 0", borderTop: idx === 0 ? "none" : "1px solid var(--border)" }}>
                     {/* Remote driver */}
                     <div style={{ minWidth: 0, flex: 1 }}>
                       <div style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, color: "var(--foreground)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.remote.name}</div>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 2, fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--muted-foreground)" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 2, fontFamily: "var(--font-mono)", fontSize: 11.5, color: "var(--muted-foreground)" }}>
                         {e.remote.phone && <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}><Phone size={10} /> {e.remote.phone}</span>}
                         {e.remote.license_no && <span>{e.remote.license_state ? `${e.remote.license_state} ` : ""}{e.remote.license_no}</span>}
                       </div>
@@ -182,7 +185,7 @@ export function EldModal({ onClose, onLinked, canManage = true }: { onClose: () 
                     {/* Link state / action */}
                     {linked ? (
                       <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-                        <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: 600, color: "#10B981", backgroundColor: "rgba(16,185,129,0.12)", borderRadius: 6, padding: "3px 9px" }}>
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: "var(--font-sans)", fontSize: 12.5, fontWeight: 600, color: "var(--secondary-foreground)", backgroundColor: "var(--primary-soft)", borderRadius: 6, padding: "3px 9px" }}>
                           <Check size={12} /> {e.driver_name || "Linked"}
                         </span>
                         {canManage && (
@@ -201,6 +204,7 @@ export function EldModal({ onClose, onLinked, canManage = true }: { onClose: () 
                             value={picked?.id ?? ""}
                             valueLabel={picked?.label ?? ""}
                             placeholder="Link to driver…"
+                            plain
                             fetchPage={async (q, p) => {
                               const { items, total } = await api.getList<any>("/drivers", { q: q || undefined, page: p, page_size: 20 });
                               return { items: (items ?? []).map((d: any) => ({ value: d.id, label: driverDisplayName(d) })), total };
@@ -208,7 +212,7 @@ export function EldModal({ onClose, onLinked, canManage = true }: { onClose: () 
                             onChange={(id, label) => setPick((prev) => ({ ...prev, [e.remote.id]: { id, label } }))}
                           />
                           {e.suggested_driver_id && e.suggested_by && (
-                            <div style={{ fontFamily: "var(--font-sans)", fontSize: 10, color: "var(--muted-foreground)", marginTop: 3 }}>
+                            <div style={{ fontFamily: "var(--font-sans)", fontSize: 11.5, color: "var(--muted-foreground)", marginTop: 3 }}>
                               Suggested by {e.suggested_by}
                             </div>
                           )}

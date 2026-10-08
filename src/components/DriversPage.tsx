@@ -17,6 +17,8 @@ import {
   ArrowLeft, Phone, Truck, DollarSign, Route, Package, TrendingUp,
   AlertCircle, GripVertical, ExternalLink,
 } from "lucide-react";
+import { Dash } from "./Dash";
+import { fmtDate, fmtDateRange } from "../lib/dates";
 
 type DriverStatus = Status;
 type DriverType   = "O/O" | "C/D";
@@ -261,7 +263,7 @@ function CustomSelect({
           display: "flex", alignItems: "center", gap: 8, width: "100%",
           height: h, paddingLeft: 10, paddingRight: 8,
           fontFamily: "var(--font-sans)", fontSize: compact ? 12 : 13,
-          backgroundColor: disabled ? "var(--muted)" : error ? "rgba(239,68,68,0.04)" : "var(--input-background)",
+          backgroundColor: disabled ? "var(--muted)" : error ? "rgba(239,68,68,0.04)" : "var(--card)",
           border: `1px solid ${error ? "#EF4444" : open ? "var(--primary)" : "var(--border)"}`,
           borderRadius: 7, color: disabled ? "var(--muted-foreground)" : "var(--foreground)",
           cursor: disabled ? "not-allowed" : "pointer",
@@ -313,7 +315,7 @@ function CustomSelect({
                     width: "100%", height: 30, paddingLeft: 26, paddingRight: 8,
                     fontFamily: "var(--font-sans)", fontSize: 12,
                     border: "1px solid var(--border)", borderRadius: 6,
-                    backgroundColor: "var(--input-background)", color: "var(--foreground)",
+                    backgroundColor: "var(--card)", color: "var(--foreground)",
                     outline: "none", boxSizing: "border-box",
                   }}
                 />
@@ -450,7 +452,7 @@ function UnitSelect({ value, label, endpoint, onChange, error = false, disabled 
           display: "flex", alignItems: "center", gap: 8, width: "100%",
           height: 34, paddingLeft: 10, paddingRight: 8,
           fontFamily: "var(--font-sans)", fontSize: 13,
-          backgroundColor: disabled ? "var(--muted)" : error ? "rgba(239,68,68,0.04)" : "var(--input-background)",
+          backgroundColor: disabled ? "var(--muted)" : error ? "rgba(239,68,68,0.04)" : "var(--card)",
           border: `1px solid ${error ? "#EF4444" : open ? "var(--primary)" : "var(--border)"}`,
           borderRadius: 7, color: disabled ? "var(--muted-foreground)" : "var(--foreground)",
           cursor: disabled ? "not-allowed" : "pointer",
@@ -493,7 +495,7 @@ function UnitSelect({ value, label, endpoint, onChange, error = false, disabled 
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search…"
-                style={{ width: "100%", height: 30, paddingLeft: 26, paddingRight: 8, fontFamily: "var(--font-sans)", fontSize: 12, border: "1px solid var(--border)", borderRadius: 6, backgroundColor: "var(--input-background)", color: "var(--foreground)", outline: "none", boxSizing: "border-box" }}
+                style={{ width: "100%", height: 30, paddingLeft: 26, paddingRight: 8, fontFamily: "var(--font-sans)", fontSize: 12, border: "1px solid var(--border)", borderRadius: 6, backgroundColor: "var(--card)", color: "var(--foreground)", outline: "none", boxSizing: "border-box" }}
               />
             </div>
           </div>
@@ -557,7 +559,7 @@ function EquipmentField({ canRead, value, label, endpoint, onChange, error }: {
         fontFamily: "var(--font-sans)", fontSize: 13,
         color: label ? "var(--foreground)" : "var(--muted-foreground)",
       }}>
-        {label || "—"}
+        {label || <Dash />}
       </div>
       <span style={{ fontFamily: "var(--font-sans)", fontSize: 10, color: "var(--muted-foreground)" }}>
         Requires fleet access to change
@@ -666,16 +668,18 @@ function Pagination({
 
 // ─── Shared table primitives ─────────────────────────────────────────────────
 
-const TH = ({ children, width, align = "left" }: { children: React.ReactNode; width?: number | string; align?: string }) => (
+// `pinned` keeps a column (the row actions) in view when the table scrolls sideways.
+const TH = ({ children, width, align = "left", pinned = false }: { children: React.ReactNode; width?: number | string; align?: string; pinned?: boolean }) => (
   <th style={{
     padding: "8px 12px", textAlign: align as "left" | "center",
-    fontFamily: "var(--font-sans)", fontSize: 10, fontWeight: 600,
+    fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600,
     color: "var(--muted-foreground)", letterSpacing: "0.07em",
-    textTransform: "uppercase", backgroundColor: "var(--muted)",
+    textTransform: "uppercase", backgroundColor: "var(--card)",
     borderBottom: "1px solid var(--border)",
     whiteSpace: "nowrap", userSelect: "none",
     width: width ?? "auto", minWidth: width ?? "auto",
     position: "sticky", top: 0, zIndex: 5,
+    ...(pinned ? { right: 0, zIndex: 6, boxShadow: "inset 1px 0 0 var(--border)" } : {}),
   }}>
     {children}
   </th>
@@ -683,9 +687,9 @@ const TH = ({ children, width, align = "left" }: { children: React.ReactNode; wi
 
 const TD = ({ children, mono = false, center = false }: { children: React.ReactNode; mono?: boolean; center?: boolean }) => (
   <td style={{
-    padding: "10px 12px",
+    padding: "7px 12px",
     fontFamily: mono ? "var(--font-mono)" : "var(--font-sans)",
-    fontSize: mono ? 11 : 12,
+    fontSize: mono ? 12 : 13,
     color: "var(--foreground)",
     borderBottom: "1px solid var(--border)",
     verticalAlign: "middle",
@@ -807,22 +811,31 @@ function TypeBadge({ type }: { type: DriverType }) {
   );
 }
 
-function ActionBtn({ icon, color, bg, onClick }: { icon: React.ReactNode; color: string; bg: string; onClick: () => void }) {
+// Row actions stay quiet (grey) until hovered or focused, then take their meaning's colour.
+// An icon-only button says nothing to a screen reader (or on hover) without a label.
+function ActionBtn({ icon, tone, onClick, label }: { icon: React.ReactNode; tone: "edit" | "delete"; onClick: () => void; label: string }) {
+  const hot = tone === "delete"
+    ? { color: "#EF4444", bg: "rgba(239,68,68,0.12)" }
+    : { color: "var(--primary)", bg: "var(--primary-soft)" };
+  const on  = (e: React.SyntheticEvent<HTMLButtonElement>) => { e.currentTarget.style.color = hot.color; e.currentTarget.style.backgroundColor = hot.bg; };
+  const off = (e: React.SyntheticEvent<HTMLButtonElement>) => { e.currentTarget.style.color = "var(--muted-foreground)"; e.currentTarget.style.backgroundColor = "transparent"; };
   return (
-    <button
-      onClick={onClick}
-      style={{
-        width: 28, height: 28, borderRadius: 6, border: "none",
-        backgroundColor: bg, color, cursor: "pointer",
-        display: "inline-flex", alignItems: "center", justifyContent: "center",
-        transition: "opacity 0.15s",
-      }}
-      onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.opacity = "0.7"; }}
-      onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.opacity = "1"; }}
+    <button onClick={onClick} aria-label={label} title={label}
+      style={{ width: 30, height: 30, borderRadius: 7, border: "none", backgroundColor: "transparent", color: "var(--muted-foreground)", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", transition: "color 0.12s, background-color 0.12s" }}
+      onMouseEnter={on} onMouseLeave={off} onFocus={on} onBlur={off}
     >
       {icon}
     </button>
   );
+}
+
+// Closes a dialog on Escape, unless it is busy saving.
+function useEscape(onClose: () => void, busy = false) {
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => { if (e.key === "Escape" && !busy) onClose(); };
+    document.addEventListener("keydown", h);
+    return () => document.removeEventListener("keydown", h);
+  }, [onClose, busy]);
 }
 
 // ─── Shared select option sets ────────────────────────────────────────────────
@@ -850,8 +863,8 @@ const PendingBadge = () => (
 const FieldLabel = ({ children, required, pending, error }: { children: React.ReactNode; required?: boolean; pending?: boolean; error?: boolean }) => (
   <span style={{
     display: "flex", alignItems: "center",
-    fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600,
-    color: error ? "#EF4444" : "var(--muted-foreground)", textTransform: "uppercase", letterSpacing: "0.06em",
+    fontFamily: "var(--font-sans)", fontSize: 12.5, fontWeight: 600,
+    color: error ? "#EF4444" : "var(--foreground)",
   }}>
     {children}
     {required && <span style={{ color: "#EF4444", marginLeft: 2 }}>*</span>}
@@ -869,9 +882,9 @@ const FieldInput = ({ value, onChange, onBlur, placeholder, error, disabled }: {
     disabled={disabled}
     style={{
       fontFamily: "var(--font-sans)", fontSize: 13,
-      padding: "7px 10px", borderRadius: 6, height: 34,
+      padding: "7px 10px", borderRadius: 8, height: 36,
       border: `1px solid ${error ? "#EF4444" : "var(--border)"}`,
-      backgroundColor: disabled ? "var(--muted)" : error ? "rgba(239,68,68,0.04)" : "var(--input-background)",
+      backgroundColor: disabled ? "var(--muted)" : error ? "rgba(239,68,68,0.04)" : "var(--card)",
       color: disabled ? "var(--muted-foreground)" : "var(--foreground)",
       boxShadow: error ? "0 0 0 3px rgba(239,68,68,0.10)" : "none",
       outline: "none", width: "100%", boxSizing: "border-box" as const,
@@ -981,7 +994,7 @@ function LoadQueue({ items, hasDeck, readOnly, onChange }: {
               display: "flex", alignItems: "center", gap: 8,
               padding: "8px 10px", borderRadius: 6,
               border: `1px solid ${isOver ? "var(--primary)" : isCurrent ? "var(--primary)" : "var(--border)"}`,
-              backgroundColor: isDragging ? "var(--muted)" : isOver ? "var(--secondary)" : isCurrent ? "var(--secondary)" : "var(--input-background)",
+              backgroundColor: isDragging ? "var(--muted)" : isOver ? "var(--secondary)" : isCurrent ? "var(--secondary)" : "var(--card)",
               opacity: isDragging ? 0.5 : 1,
               cursor: draggable ? "grab" : "default",
               transition: "border-color 0.12s, background-color 0.12s, opacity 0.12s",
@@ -1031,15 +1044,15 @@ function PayFields({ payType, payRate, onChange }: {
 }) {
   const isPercent = payType === "percent";
   const numStyle: React.CSSProperties = {
-    fontFamily: "var(--font-sans)", fontSize: 13, height: 34, borderRadius: 6,
-    border: "1px solid var(--border)", backgroundColor: "var(--input-background)",
+    fontFamily: "var(--font-sans)", fontSize: 13, height: 36, borderRadius: 8,
+    border: "1px solid var(--border)", backgroundColor: "var(--card)",
     color: "var(--foreground)", outline: "none", width: "100%", boxSizing: "border-box",
     padding: isPercent ? "7px 26px 7px 10px" : "7px 10px 7px 22px",
   };
   return (
     <>
       <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-        <FieldLabel>Payout Type</FieldLabel>
+        <FieldLabel>Pay type</FieldLabel>
         <CustomSelect
           value={payType}
           options={PAY_TYPE_OPTS}
@@ -1050,7 +1063,7 @@ function PayFields({ payType, payRate, onChange }: {
 
       {payType !== "" && (
         <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-          <FieldLabel>{isPercent ? "Percent of Gross" : "Rate per Mile"}</FieldLabel>
+          <FieldLabel>{isPercent ? "Percent of gross" : "Rate per mile"}</FieldLabel>
           <div style={{ position: "relative" }}>
             <span style={{ position: "absolute", [isPercent ? "right" : "left"]: 10, top: "50%", transform: "translateY(-50%)", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)", pointerEvents: "none" }}>
               {isPercent ? "%" : "$"}
@@ -1113,43 +1126,32 @@ function SoloModal({ driver, onClose, onSave, canReorderLoads, saving, error, fi
     });
   };
 
+  useEscape(onClose, saving);
   return (
-    <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div style={{ backgroundColor: "var(--card)", borderRadius: 12, width: 560, boxShadow: "0 20px 60px rgba(0,0,0,0.22)", overflow: "visible" }}>
+    <div role="dialog" aria-modal="true" style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ backgroundColor: "var(--card)", borderRadius: 12, width: 780, maxWidth: "calc(100vw - 32px)", boxShadow: "0 20px 60px rgba(0,0,0,0.22)", overflow: "visible" }}>
         {/* Header */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderBottom: "1px solid var(--border)", backgroundColor: "var(--muted)", borderRadius: "12px 12px 0 0" }}>
-          <span style={{ fontFamily: "var(--font-sans)", fontSize: 14, fontWeight: 600, color: "var(--foreground)" }}>
-            {isNew ? "Add Solo Driver" : "Edit Solo Driver"}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "13px 20px", borderBottom: "1px solid var(--border)" }}>
+          <span style={{ fontFamily: "var(--font-sans)", fontSize: 15, fontWeight: 700, color: "var(--foreground)", letterSpacing: "-0.01em" }}>
+            {isNew ? "Add solo driver" : "Edit solo driver"}
           </span>
-          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted-foreground)", display: "flex", alignItems: "center" }}>
+          <button onClick={onClose} aria-label="Close" style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted-foreground)", display: "flex", alignItems: "center" }}>
             <X size={16} />
           </button>
         </div>
 
         {/* Body */}
-        <div style={{ padding: "20px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+        <div style={{ padding: "16px 20px", display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: "12px 14px" }}>
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-            <FieldLabel required error={!!err("name")}>Full Name</FieldLabel>
+            <FieldLabel required error={!!err("name")}>Full name</FieldLabel>
             <FieldInput value={form.name ?? ""} onChange={(v) => set("name", v)} onBlur={() => touch("name")} error={!!err("name")} />
             {err("name") && <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "#EF4444" }}>Name is required</span>}
           </label>
 
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-            <FieldLabel required error={!!err("phone")}>Phone Number</FieldLabel>
+            <FieldLabel required error={!!err("phone")}>Phone number</FieldLabel>
             <FieldInput value={form.phone ?? ""} onChange={(v) => set("phone", v)} onBlur={() => touch("phone")} error={!!err("phone")} />
             {err("phone") && <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "#EF4444" }}>Phone is required</span>}
-          </label>
-
-          <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-            <FieldLabel error={!!fieldErrors?.truck}>Truck Unit</FieldLabel>
-            <EquipmentField canRead={canEditEquipment} value={form.truckId ?? ""} label={form.truck ?? ""} endpoint="/trucks" onChange={(id, lbl) => setForm((f) => ({ ...f, truckId: id, truck: lbl }))} error={!!fieldErrors?.truck} />
-            {fieldErrors?.truck && <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "#EF4444" }}>{fieldErrors.truck}</span>}
-          </label>
-
-          <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-            <FieldLabel error={!!fieldErrors?.trailer}>Trailer Unit</FieldLabel>
-            <EquipmentField canRead={canEditEquipment} value={form.trailerId ?? ""} label={form.trailer ?? ""} endpoint="/trailers" onChange={(id, lbl) => setForm((f) => ({ ...f, trailerId: id, trailer: lbl }))} error={!!fieldErrors?.trailer} />
-            {fieldErrors?.trailer && <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "#EF4444" }}>{fieldErrors.trailer}</span>}
           </label>
 
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
@@ -1163,14 +1165,27 @@ function SoloModal({ driver, onClose, onSave, canReorderLoads, saving, error, fi
           </label>
 
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-            <FieldLabel>Weekly Gross Target ($)</FieldLabel>
+            <FieldLabel error={!!fieldErrors?.truck}>Truck</FieldLabel>
+            <EquipmentField canRead={canEditEquipment} value={form.truckId ?? ""} label={form.truck ?? ""} endpoint="/trucks" onChange={(id, lbl) => setForm((f) => ({ ...f, truckId: id, truck: lbl }))} error={!!fieldErrors?.truck} />
+            {fieldErrors?.truck && <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "#EF4444" }}>{fieldErrors.truck}</span>}
+          </label>
+
+          <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+            <FieldLabel error={!!fieldErrors?.trailer}>Trailer</FieldLabel>
+            <EquipmentField canRead={canEditEquipment} value={form.trailerId ?? ""} label={form.trailer ?? ""} endpoint="/trailers" onChange={(id, lbl) => setForm((f) => ({ ...f, trailerId: id, trailer: lbl }))} error={!!fieldErrors?.trailer} />
+            {fieldErrors?.trailer && <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "#EF4444" }}>{fieldErrors.trailer}</span>}
+          </label>
+
+
+          <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+            <FieldLabel>Weekly gross target</FieldLabel>
             <div style={{ position: "relative" }}>
               <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)", pointerEvents: "none" }}>$</span>
               <input
                 type="number" min={0} value={form.weeklyGrossTarget ?? ""}
                 onChange={(e) => setForm((f) => ({ ...f, weeklyGrossTarget: e.target.value === "" ? undefined : Number(e.target.value) }))}
                 placeholder="e.g. 5000"
-                style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 10px 7px 22px", borderRadius: 6, height: 34, border: "1px solid var(--border)", backgroundColor: "var(--input-background)", color: "var(--foreground)", outline: "none", width: "100%", boxSizing: "border-box" }}
+                style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 10px 7px 22px", borderRadius: 8, height: 36, border: "1px solid var(--border)", backgroundColor: "var(--card)", color: "var(--foreground)", outline: "none", width: "100%", boxSizing: "border-box" }}
                 onFocus={(e) => { e.currentTarget.style.borderColor = "var(--primary)"; e.currentTarget.style.boxShadow = "0 0 0 3px var(--primary-soft)"; }}
                 onBlur={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.boxShadow = "none"; }}
               />
@@ -1184,7 +1199,8 @@ function SoloModal({ driver, onClose, onSave, canReorderLoads, saving, error, fi
           />
 
           {!isNew && loadOrder.length > 0 && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 5, gridColumn: "1 / -1" }}>
+            <div style={{ display: "contents" }}>
+              <div style={{ gridColumn: "1 / -1", display: "flex", flexDirection: "column", gap: 5 }}>
               <FieldLabel>Loads</FieldLabel>
               <LoadQueue
                 items={loadOrder}
@@ -1192,6 +1208,7 @@ function SoloModal({ driver, onClose, onSave, canReorderLoads, saving, error, fi
                 readOnly={!canReorderLoads}
                 onChange={handleQueueChange}
               />
+              </div>
             </div>
           )}
 
@@ -1203,12 +1220,12 @@ function SoloModal({ driver, onClose, onSave, canReorderLoads, saving, error, fi
 
         {/* Footer */}
         <FormError message={error} style={formErrorInModal} />
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, padding: "14px 20px", borderTop: "1px solid var(--border)" }}>
-          <button onClick={onClose} style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 16px", borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "var(--muted)", color: "var(--foreground)", cursor: "pointer" }}>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, padding: "12px 20px", borderTop: "1px solid var(--border)" }}>
+          <button onClick={onClose} disabled={saving} style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 500, padding: "8px 16px", borderRadius: 8, border: "1px solid var(--border)", backgroundColor: "var(--card)", color: "var(--foreground)", cursor: saving ? "default" : "pointer", opacity: saving ? 0.5 : 1 }}>
             Cancel
           </button>
-          <button onClick={handleSave} disabled={saving} style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 16px", borderRadius: 6, border: "none", backgroundColor: saving ? "var(--muted)" : "var(--primary)", color: saving ? "var(--muted-foreground)" : "#fff", cursor: saving ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 6 }}>
-            <Check size={14} /> {saving ? "Saving…" : isNew ? "Create Driver" : "Save Changes"}
+          <button onClick={handleSave} disabled={saving} style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "8px 16px", borderRadius: 8, border: "none", backgroundColor: saving ? "var(--muted)" : "var(--primary)", color: saving ? "var(--muted-foreground)" : "#fff", cursor: saving ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+            <Check size={14} /> {saving ? "Saving…" : isNew ? "Add driver" : "Save changes"}
           </button>
         </div>
       </div>
@@ -1251,53 +1268,42 @@ function TeamModal({ driver, onClose, onSave, canReorderLoads, saving, error, fi
     });
   };
 
+  useEscape(onClose, saving);
   return (
-    <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div style={{ backgroundColor: "var(--card)", borderRadius: 12, width: 600, boxShadow: "0 20px 60px rgba(0,0,0,0.22)", overflow: "visible" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderBottom: "1px solid var(--border)", backgroundColor: "var(--muted)", borderRadius: "12px 12px 0 0" }}>
-          <span style={{ fontFamily: "var(--font-sans)", fontSize: 14, fontWeight: 600, color: "var(--foreground)" }}>
-            {isNew ? "Add Team" : "Edit Team"}
+    <div role="dialog" aria-modal="true" style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ backgroundColor: "var(--card)", borderRadius: 12, width: 960, maxWidth: "calc(100vw - 32px)", boxShadow: "0 20px 60px rgba(0,0,0,0.22)", overflow: "visible" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "13px 20px", borderBottom: "1px solid var(--border)" }}>
+          <span style={{ fontFamily: "var(--font-sans)", fontSize: 15, fontWeight: 700, color: "var(--foreground)", letterSpacing: "-0.01em" }}>
+            {isNew ? "Add team" : "Edit team"}
           </span>
-          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted-foreground)", display: "flex", alignItems: "center" }}>
+          <button onClick={onClose} aria-label="Close" style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted-foreground)", display: "flex", alignItems: "center" }}>
             <X size={16} />
           </button>
         </div>
 
-        <div style={{ padding: "20px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+        <div style={{ padding: "16px 20px", display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: "12px 14px" }}>
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-            <FieldLabel required error={!!err("name1")}>Driver 1 Name</FieldLabel>
+            <FieldLabel required error={!!err("name1")}>Driver 1 name</FieldLabel>
             <FieldInput value={form.name1 ?? ""} onChange={(v) => set("name1", v)} onBlur={() => touch("name1")} error={!!err("name1")} />
             {err("name1") && <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "#EF4444" }}>Driver 1 name is required</span>}
           </label>
 
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-            <FieldLabel required error={!!err("phone1")}>Driver 1 Phone</FieldLabel>
+            <FieldLabel required error={!!err("phone1")}>Driver 1 phone</FieldLabel>
             <FieldInput value={form.phone1 ?? ""} onChange={(v) => set("phone1", v)} onBlur={() => touch("phone1")} error={!!err("phone1")} />
             {err("phone1") && <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "#EF4444" }}>Driver 1 phone is required</span>}
           </label>
 
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-            <FieldLabel required error={!!err("name2")}>Driver 2 Name</FieldLabel>
+            <FieldLabel required error={!!err("name2")}>Driver 2 name</FieldLabel>
             <FieldInput value={form.name2 ?? ""} onChange={(v) => set("name2", v)} onBlur={() => touch("name2")} error={!!err("name2")} />
             {err("name2") && <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "#EF4444" }}>Driver 2 name is required</span>}
           </label>
 
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-            <FieldLabel required error={!!err("phone2")}>Driver 2 Phone</FieldLabel>
+            <FieldLabel required error={!!err("phone2")}>Driver 2 phone</FieldLabel>
             <FieldInput value={form.phone2 ?? ""} onChange={(v) => set("phone2", v)} onBlur={() => touch("phone2")} error={!!err("phone2")} />
             {err("phone2") && <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "#EF4444" }}>Driver 2 phone is required</span>}
-          </label>
-
-          <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-            <FieldLabel error={!!fieldErrors?.truck}>Truck Unit</FieldLabel>
-            <EquipmentField canRead={canEditEquipment} value={form.truckId ?? ""} label={form.truck ?? ""} endpoint="/trucks" onChange={(id, lbl) => setForm((f) => ({ ...f, truckId: id, truck: lbl }))} error={!!fieldErrors?.truck} />
-            {fieldErrors?.truck && <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "#EF4444" }}>{fieldErrors.truck}</span>}
-          </label>
-
-          <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-            <FieldLabel error={!!fieldErrors?.trailer}>Trailer Unit</FieldLabel>
-            <EquipmentField canRead={canEditEquipment} value={form.trailerId ?? ""} label={form.trailer ?? ""} endpoint="/trailers" onChange={(id, lbl) => setForm((f) => ({ ...f, trailerId: id, trailer: lbl }))} error={!!fieldErrors?.trailer} />
-            {fieldErrors?.trailer && <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "#EF4444" }}>{fieldErrors.trailer}</span>}
           </label>
 
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
@@ -1311,14 +1317,27 @@ function TeamModal({ driver, onClose, onSave, canReorderLoads, saving, error, fi
           </label>
 
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-            <FieldLabel>Weekly Gross Target ($)</FieldLabel>
+            <FieldLabel error={!!fieldErrors?.truck}>Truck</FieldLabel>
+            <EquipmentField canRead={canEditEquipment} value={form.truckId ?? ""} label={form.truck ?? ""} endpoint="/trucks" onChange={(id, lbl) => setForm((f) => ({ ...f, truckId: id, truck: lbl }))} error={!!fieldErrors?.truck} />
+            {fieldErrors?.truck && <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "#EF4444" }}>{fieldErrors.truck}</span>}
+          </label>
+
+          <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+            <FieldLabel error={!!fieldErrors?.trailer}>Trailer</FieldLabel>
+            <EquipmentField canRead={canEditEquipment} value={form.trailerId ?? ""} label={form.trailer ?? ""} endpoint="/trailers" onChange={(id, lbl) => setForm((f) => ({ ...f, trailerId: id, trailer: lbl }))} error={!!fieldErrors?.trailer} />
+            {fieldErrors?.trailer && <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "#EF4444" }}>{fieldErrors.trailer}</span>}
+          </label>
+
+
+          <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+            <FieldLabel>Weekly gross target</FieldLabel>
             <div style={{ position: "relative" }}>
               <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)", pointerEvents: "none" }}>$</span>
               <input
                 type="number" min={0} value={form.weeklyGrossTarget ?? ""}
                 onChange={(e) => setForm((f) => ({ ...f, weeklyGrossTarget: e.target.value === "" ? undefined : Number(e.target.value) }))}
                 placeholder="e.g. 7000"
-                style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 10px 7px 22px", borderRadius: 6, height: 34, border: "1px solid var(--border)", backgroundColor: "var(--input-background)", color: "var(--foreground)", outline: "none", width: "100%", boxSizing: "border-box" }}
+                style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 10px 7px 22px", borderRadius: 8, height: 36, border: "1px solid var(--border)", backgroundColor: "var(--card)", color: "var(--foreground)", outline: "none", width: "100%", boxSizing: "border-box" }}
                 onFocus={(e) => { e.currentTarget.style.borderColor = "var(--primary)"; e.currentTarget.style.boxShadow = "0 0 0 3px var(--primary-soft)"; }}
                 onBlur={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.boxShadow = "none"; }}
               />
@@ -1332,7 +1351,8 @@ function TeamModal({ driver, onClose, onSave, canReorderLoads, saving, error, fi
           />
 
           {!isNew && loadOrder.length > 0 && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 5, gridColumn: "1 / -1" }}>
+            <div style={{ display: "contents" }}>
+              <div style={{ gridColumn: "1 / -1", display: "flex", flexDirection: "column", gap: 5 }}>
               <FieldLabel>Loads</FieldLabel>
               <LoadQueue
                 items={loadOrder}
@@ -1340,6 +1360,7 @@ function TeamModal({ driver, onClose, onSave, canReorderLoads, saving, error, fi
                 readOnly={!canReorderLoads}
                 onChange={handleQueueChange}
               />
+              </div>
             </div>
           )}
 
@@ -1350,12 +1371,12 @@ function TeamModal({ driver, onClose, onSave, canReorderLoads, saving, error, fi
         </div>
 
         <FormError message={error} style={formErrorInModal} />
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, padding: "14px 20px", borderTop: "1px solid var(--border)" }}>
-          <button onClick={onClose} style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 16px", borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "var(--muted)", color: "var(--foreground)", cursor: "pointer" }}>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, padding: "12px 20px", borderTop: "1px solid var(--border)" }}>
+          <button onClick={onClose} disabled={saving} style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 500, padding: "8px 16px", borderRadius: 8, border: "1px solid var(--border)", backgroundColor: "var(--card)", color: "var(--foreground)", cursor: saving ? "default" : "pointer", opacity: saving ? 0.5 : 1 }}>
             Cancel
           </button>
-          <button onClick={handleSave} disabled={saving} style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 16px", borderRadius: 6, border: "none", backgroundColor: saving ? "var(--muted)" : "var(--primary)", color: saving ? "var(--muted-foreground)" : "#fff", cursor: saving ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 6 }}>
-            <Check size={14} /> {saving ? "Saving…" : isNew ? "Create Team" : "Save Changes"}
+          <button onClick={handleSave} disabled={saving} style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "8px 16px", borderRadius: 8, border: "none", backgroundColor: saving ? "var(--muted)" : "var(--primary)", color: saving ? "var(--muted-foreground)" : "#fff", cursor: saving ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+            <Check size={14} /> {saving ? "Saving…" : isNew ? "Add team" : "Save changes"}
           </button>
         </div>
       </div>
@@ -1364,8 +1385,9 @@ function TeamModal({ driver, onClose, onSave, canReorderLoads, saving, error, fi
 }
 
 function DeleteConfirm({ label, onClose, onConfirm, busy = false, error }: { label: string; onClose: () => void; onConfirm: () => void; busy?: boolean; error?: string | null }) {
+  useEscape(onClose, busy);
   return (
-    <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }}>
+    <div role="dialog" aria-modal="true" style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div style={{ backgroundColor: "var(--card)", borderRadius: 12, width: 380, padding: 28, boxShadow: "0 20px 60px rgba(0,0,0,0.22)", textAlign: "center" }}>
         <div style={{ width: 44, height: 44, borderRadius: "50%", backgroundColor: "rgba(239,68,68,0.14)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
           <Trash2 size={20} color="#EF4444" />
@@ -1376,7 +1398,7 @@ function DeleteConfirm({ label, onClose, onConfirm, busy = false, error }: { lab
         </div>
         <FormError message={error} style={{ marginBottom: 16 }} />
         <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
-          <button onClick={onClose} disabled={busy} style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 20px", borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "var(--muted)", color: "var(--foreground)", cursor: busy ? "default" : "pointer", opacity: busy ? 0.5 : 1 }}>Cancel</button>
+          <button onClick={onClose} disabled={busy} style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 20px", borderRadius: 8, border: "1px solid var(--border)", backgroundColor: "var(--card)", color: "var(--foreground)", cursor: busy ? "default" : "pointer", opacity: busy ? 0.5 : 1 }}>Cancel</button>
           <button onClick={onConfirm} disabled={busy} style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, minWidth: 96, fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 20px", borderRadius: 6, border: "none", backgroundColor: "#EF4444", color: "#fff", cursor: busy ? "default" : "pointer", opacity: busy ? 0.8 : 1 }}>
             {busy ? <><span style={{ width: 13, height: 13, borderRadius: "50%", border: "2px solid rgba(255,255,255,0.4)", borderTopColor: "#fff", animation: "spin 0.7s linear infinite", display: "inline-block" }} /> Deleting…</> : "Delete"}
           </button>
@@ -1443,15 +1465,15 @@ function ImportModal({ entityLabel, endpoint, templateEndpoint, templateFile, on
   };
 
   return (
-    <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }}>
+    <div role="dialog" aria-modal="true" style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div style={{ backgroundColor: "var(--card)", borderRadius: 12, width: 520, boxShadow: "0 20px 60px rgba(0,0,0,0.22)" }}>
         {/* Header */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderBottom: "1px solid var(--border)", backgroundColor: "var(--muted)", borderRadius: "12px 12px 0 0" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderBottom: "1px solid var(--border)" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-            <div style={{ width: 30, height: 30, borderRadius: 8, backgroundColor: "rgba(16,185,129,0.08)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <FileSpreadsheet size={15} color="#10B981" />
+            <div style={{ width: 30, height: 30, borderRadius: 8, backgroundColor: "var(--primary-soft)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <FileSpreadsheet size={15} style={{ color: "var(--primary)" }} />
             </div>
-            <span style={{ fontFamily: "var(--font-sans)", fontSize: 14, fontWeight: 600, color: "var(--foreground)" }}>
+            <span style={{ fontFamily: "var(--font-sans)", fontSize: 15, fontWeight: 700, color: "var(--foreground)", letterSpacing: "-0.01em" }}>
               Import {entityLabel}s
             </span>
           </div>
@@ -1471,7 +1493,7 @@ function ImportModal({ entityLabel, endpoint, templateEndpoint, templateFile, on
             style={{
               border: `2px dashed ${dragging ? "var(--primary)" : file ? "#10B981" : "var(--border)"}`,
               borderRadius: 10, padding: "36px 20px", textAlign: "center",
-              backgroundColor: dragging ? "var(--accent)" : file ? "rgba(16,185,129,0.10)" : "var(--input-background)",
+              backgroundColor: dragging ? "var(--accent)" : file ? "rgba(16,185,129,0.10)" : "var(--card)",
               cursor: "pointer", transition: "all 0.15s",
             }}
           >
@@ -1545,7 +1567,7 @@ function ImportModal({ entityLabel, endpoint, templateEndpoint, templateFile, on
 
         {/* Footer */}
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, padding: "14px 20px", borderTop: "1px solid var(--border)" }}>
-          <button onClick={onClose} style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 16px", borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "var(--muted)", color: "var(--foreground)", cursor: "pointer" }}>
+          <button onClick={onClose} style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 16px", borderRadius: 8, border: "1px solid var(--border)", backgroundColor: "var(--card)", color: "var(--foreground)", cursor: "pointer" }}>
             {result ? "Done" : "Cancel"}
           </button>
           {!result && (
@@ -1594,23 +1616,20 @@ function AddMenu({ entityLabel, onManual, onImport, onEld, canEld = true }: {
   const items = [
     {
       icon: <ClipboardList size={16} />,
-      iconColor: "var(--primary)", iconBg: "var(--secondary)",
-      label: "Add Manually",
+      label: "Add manually",
       desc: "Fill in driver details using the form",
       comingSoon: false,
       onClick: onManual,
     },
     {
       icon: <FileSpreadsheet size={16} />,
-      iconColor: "#10B981", iconBg: "rgba(16,185,129,0.08)",
-      label: "Import from File",
+      label: "Import from file",
       desc: "Upload a CSV or Excel roster",
       comingSoon: false,
       onClick: onImport,
     },
     ...(canEld ? [{
       icon: <Radio size={16} />,
-      iconColor: "#22D3EE", iconBg: "rgba(34,211,238,0.10)",
       label: "Sync from ELD",
       desc: "Pull driver records from your ELD provider",
       comingSoon: false,
@@ -1625,10 +1644,12 @@ function AddMenu({ entityLabel, onManual, onImport, onEld, canEld = true }: {
         style={{
           display: "inline-flex", alignItems: "center", gap: 6,
           fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600,
-          height: 34, padding: "0 14px", borderRadius: 7, border: "none",
+          height: 34, padding: "0 14px", borderRadius: 8, border: "none",
           backgroundColor: "var(--primary)", color: "#fff", cursor: "pointer",
           outline: "none",
         }}
+        aria-haspopup="menu"
+        aria-expanded={open}
       >
         <Plus size={14} />
         Add {entityLabel}
@@ -1642,11 +1663,11 @@ function AddMenu({ entityLabel, onManual, onImport, onEld, canEld = true }: {
       {open && (
         <div style={{
           position: "absolute", top: "calc(100% + 6px)", right: 0,
-          width: 270, backgroundColor: "var(--card)",
-          border: "1px solid var(--border)", borderRadius: 10,
-          boxShadow: "0 8px 24px rgba(0,0,0,0.12)", zIndex: 200,
+          width: 290, backgroundColor: "var(--card)",
+          border: "1px solid var(--border)", borderRadius: 12,
+          boxShadow: "0 12px 32px rgba(0,0,0,0.14)", zIndex: 200,
           padding: 6, display: "flex", flexDirection: "column", gap: 2,
-        }}>
+        }} role="menu">
           {items.map((item) => (
             <button
               key={item.label}
@@ -1671,7 +1692,7 @@ function AddMenu({ entityLabel, onManual, onImport, onEld, canEld = true }: {
             >
               <div style={{
                 width: 34, height: 34, borderRadius: 8, flexShrink: 0,
-                backgroundColor: item.iconBg, color: item.iconColor,
+                backgroundColor: "var(--primary-soft)", color: "var(--primary)",
                 display: "flex", alignItems: "center", justifyContent: "center",
               }}>
                 {item.icon}
@@ -1692,7 +1713,7 @@ function AddMenu({ entityLabel, onManual, onImport, onEld, canEld = true }: {
                     </span>
                   )}
                 </div>
-                <div style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "var(--muted-foreground)", marginTop: 1 }}>
+                <div style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)", marginTop: 1 }}>
                   {item.desc}
                 </div>
               </div>
@@ -1729,9 +1750,7 @@ function shiftISO(iso: string, days: number): string {
 }
 
 function fmtISORange(from: string, to: string): string {
-  const f = new Date(`${from}T00:00:00Z`), t = new Date(`${to}T00:00:00Z`);
-  const opt: Intl.DateTimeFormatOptions = { month: "short", day: "numeric", timeZone: "UTC" };
-  return `${f.toLocaleDateString("en-US", opt)} – ${t.toLocaleDateString("en-US", opt)}`;
+  return fmtDateRange(from.slice(0, 10), to.slice(0, 10));
 }
 
 // The driver's week, computed by the server: earnings, distance (deadhead included),
@@ -1816,8 +1835,8 @@ function DriverDetail({ driver, onBack }: { driver: SoloDriver; onBack: () => vo
       {/* Sub-header */}
       <div style={{
         display: "flex", alignItems: "center", gap: 10,
-        padding: "11px 16px", borderBottom: "1px solid var(--border)",
-        backgroundColor: "var(--muted)", flexShrink: 0,
+        padding: "12px 16px", borderBottom: "1px solid var(--border)",
+        backgroundColor: "var(--card)", flexShrink: 0,
       }}>
         <button
           onClick={onBack}
@@ -1828,7 +1847,7 @@ function DriverDetail({ driver, onBack }: { driver: SoloDriver; onBack: () => vo
             background: "none", border: "none", cursor: "pointer",
             padding: "3px 7px", borderRadius: 6, outline: "none",
           }}
-          onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--border)"; }}
+          onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--muted)"; }}
           onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = "transparent"; }}
         >
           <ArrowLeft size={14} /> Drivers
@@ -1842,7 +1861,7 @@ function DriverDetail({ driver, onBack }: { driver: SoloDriver; onBack: () => vo
       </div>
 
       {/* Body */}
-      <div style={{ flex: 1, overflow: "auto", padding: 20, display: "flex", gap: 18, alignItems: "flex-start" }}>
+      <div style={{ flex: 1, overflow: "auto", padding: 16, display: "flex", gap: 16, alignItems: "flex-start", backgroundColor: "var(--background)" }}>
 
         {/* ── Left profile sidebar ── */}
         <div style={{ width: 240, flexShrink: 0, display: "flex", flexDirection: "column", gap: 12 }}>
@@ -1853,11 +1872,10 @@ function DriverDetail({ driver, onBack }: { driver: SoloDriver; onBack: () => vo
           }}>
             <div style={{
               width: 60, height: 60, borderRadius: "50%",
-              background: "var(--primary-gradient)",
+              backgroundColor: "var(--primary)",
               color: "#fff",
               display: "flex", alignItems: "center", justifyContent: "center",
               fontFamily: "var(--font-sans)", fontSize: 20, fontWeight: 700, letterSpacing: "0.03em",
-              boxShadow: "0 4px 12px var(--primary-glow)",
             }}>
               {initials}
             </div>
@@ -1881,17 +1899,17 @@ function DriverDetail({ driver, onBack }: { driver: SoloDriver; onBack: () => vo
               }}>
                 <div style={{ color: "var(--muted-foreground)", marginTop: 1, flexShrink: 0 }}>{row.icon}</div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontFamily: "var(--font-sans)", fontSize: 10, fontWeight: 600, color: "var(--muted-foreground)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 2 }}>
+                  <div style={{ fontFamily: "var(--font-sans)", fontSize: 11.5, fontWeight: 500, color: "var(--muted-foreground)", marginBottom: 1 }}>
                     {row.label}
                   </div>
-                  <div style={{ fontFamily: row.mono ? "var(--font-mono)" : "var(--font-sans)", fontSize: 12, wordBreak: "break-word" }}>
+                  <div style={{ fontFamily: row.mono ? "var(--font-mono)" : "var(--font-sans)", fontSize: row.mono ? 12 : 13, wordBreak: "break-word" }}>
                     {row.value ? (
                       row.highlight ? (
                         <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 600, color: "var(--primary)", backgroundColor: "var(--secondary)", borderRadius: 4, padding: "2px 7px" }}>
                           {row.value}
                         </span>
                       ) : <span style={{ color: "var(--foreground)" }}>{row.value}</span>
-                    ) : <span style={{ color: "var(--muted-foreground)" }}>—</span>}
+                    ) : <Dash />}
                   </div>
                 </div>
               </div>
@@ -1906,47 +1924,44 @@ function DriverDetail({ driver, onBack }: { driver: SoloDriver; onBack: () => vo
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <div>
               <div style={{ fontFamily: "var(--font-sans)", fontSize: 14, fontWeight: 700, color: "var(--foreground)" }}>
-                {weekOffset === 0 ? "This Week" : weekOffset === -1 ? "Last Week" : `${Math.abs(weekOffset)} Weeks Ago`}
+                {weekOffset === 0 ? "This week" : weekOffset === -1 ? "Last week" : `${Math.abs(weekOffset)} weeks ago`}
               </div>
               <div style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)", marginTop: 3 }}>
-                {data?.week ? fmtISORange(data.week.from, data.week.to) : "—"}
+                {data?.week ? fmtISORange(data.week.from, data.week.to) : <Dash />}
               </div>
             </div>
             <div style={{ display: "flex", gap: 4 }}>
               <button
+                aria-label="Previous week" title="Previous week"
                 onClick={() => setWeekOffset((o) => o - 1)}
-                style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 28, height: 28, border: "1px solid var(--border)", borderRadius: 6, background: "var(--card)", cursor: "pointer", color: "var(--foreground)" }}
+                style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 32, height: 32, border: "1px solid var(--border)", borderRadius: 8, background: "var(--card)", cursor: "pointer", color: "var(--foreground)" }}
               ><ChevronLeft size={14} /></button>
               <button
+                aria-label="Next week" title="Next week"
                 onClick={() => setWeekOffset((o) => o + 1)}
                 disabled={weekOffset >= 0}
-                style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 28, height: 28, border: "1px solid var(--border)", borderRadius: 6, background: "var(--card)", cursor: weekOffset >= 0 ? "default" : "pointer", color: weekOffset >= 0 ? "var(--muted-foreground)" : "var(--foreground)", opacity: weekOffset >= 0 ? 0.4 : 1 }}
+                style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 32, height: 32, border: "1px solid var(--border)", borderRadius: 8, background: "var(--card)", cursor: weekOffset >= 0 ? "default" : "pointer", color: weekOffset >= 0 ? "var(--muted-foreground)" : "var(--foreground)", opacity: weekOffset >= 0 ? 0.4 : 1 }}
               ><ChevronRight size={14} /></button>
             </div>
           </div>
 
           {/* Metric cards */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12 }}>
             {metrics.map((m) => {
               const isGross = m.label === "Week Gross";
               return (
                 <div key={m.label} style={{
                   backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 10,
-                  padding: "14px 16px", display: "flex", flexDirection: "column", gap: 10,
+                  padding: "12px 14px", display: "flex", flexDirection: "column", gap: 6,
                 }}>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                    <span style={{ fontFamily: "var(--font-sans)", fontSize: 10, fontWeight: 600, color: "var(--muted-foreground)", textTransform: "uppercase", letterSpacing: "0.07em" }}>
-                      {m.label}
-                    </span>
-                    <div style={{ width: 28, height: 28, borderRadius: 7, backgroundColor: m.bg, color: m.color, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                      {m.icon}
-                    </div>
-                  </div>
-                  <div style={{ fontFamily: "var(--font-sans)", fontSize: 24, fontWeight: 700, color: "var(--foreground)", lineHeight: 1 }}>
+                  <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600, color: "var(--muted-foreground)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                    {m.label}
+                  </span>
+                  <div style={{ fontFamily: "var(--font-sans)", fontSize: 21, fontWeight: 700, color: "var(--foreground)", lineHeight: 1.15, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums" }}>
                     {m.value}
                   </div>
                   {m.note && (
-                    <span style={{ alignSelf: "flex-start", fontFamily: "var(--font-sans)", fontSize: 10, color: "var(--muted-foreground)" }}>
+                    <span style={{ alignSelf: "flex-start", fontFamily: "var(--font-sans)", fontSize: 11.5, color: "var(--muted-foreground)" }}>
                       {m.note}
                     </span>
                   )}
@@ -1955,11 +1970,11 @@ function DriverDetail({ driver, onBack }: { driver: SoloDriver; onBack: () => vo
                       <div style={{ height: 5, borderRadius: 99, backgroundColor: "var(--muted)", overflow: "hidden" }}>
                         <div style={{
                           height: "100%", borderRadius: 99, width: `${targetPct}%`,
-                          backgroundColor: targetPct >= 100 ? "#10B981" : targetPct >= 70 ? "#F59E0B" : "#3B82F6",
+                          backgroundColor: "var(--primary)",
                           transition: "width 0.4s ease",
                         }} />
                       </div>
-                      <span style={{ fontFamily: "var(--font-sans)", fontSize: 10, color: "var(--muted-foreground)" }}>
+                      <span style={{ fontFamily: "var(--font-sans)", fontSize: 11.5, color: "var(--muted-foreground)" }}>
                         {targetPct}% of ${target!.toLocaleString()} target
                       </span>
                     </div>
@@ -1973,7 +1988,7 @@ function DriverDetail({ driver, onBack }: { driver: SoloDriver; onBack: () => vo
           <div style={{ backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "13px 16px", borderBottom: "1px solid var(--border)" }}>
               <span style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, color: "var(--foreground)" }}>
-                {weekOffset === 0 ? "Loads This Week" : "Loads"}
+                {weekOffset === 0 ? "Loads this week" : "Loads"}
               </span>
               <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--muted-foreground)", backgroundColor: "var(--muted)", borderRadius: 6, padding: "2px 8px" }}>
                 {loadingLoads ? "…" : `${loads.length} ${loads.length === 1 ? "load" : "loads"}`}
@@ -2012,15 +2027,14 @@ function DriverDetail({ driver, onBack }: { driver: SoloDriver; onBack: () => vo
                       return (
                         <tr
                           key={load.id}
-                          style={{ backgroundColor: i % 2 === 0 ? "var(--card)" : "var(--background)" }}
                         >
                           <TD mono>{load.load_id || load.id}</TD>
                           <TD>{load.origin}</TD>
                           <TD>{load.destination}</TD>
                           <TD mono center>{load.miles.toLocaleString()}</TD>
                           <TD mono center>${load.payout.toLocaleString()}</TD>
-                          <TD center>{load.completed_at ? new Date(load.completed_at).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}</TD>
-                          <td style={{ padding: "10px 12px", borderBottom: "1px solid var(--border)", verticalAlign: "middle", textAlign: "center" }}>
+                          <TD center>{fmtDate(load.completed_at) || <Dash />}</TD>
+                          <td style={{ padding: "7px 12px", borderBottom: "1px solid var(--border)", verticalAlign: "middle", textAlign: "center" }}>
                             {sc ? (
                               <span style={{
                                 display: "inline-block",
@@ -2029,7 +2043,7 @@ function DriverDetail({ driver, onBack }: { driver: SoloDriver; onBack: () => vo
                               }}>
                                 {sc.label}
                               </span>
-                            ) : <span style={{ color: "var(--muted-foreground)" }}>—</span>}
+                            ) : <Dash />}
                           </td>
                         </tr>
                       );
@@ -2075,8 +2089,8 @@ function TeamDetail({ team, onBack }: { team: TeamDriver; onBack: () => void }) 
   ];
 
   const avatarGradients = [
-    "var(--primary-gradient)",
-    "linear-gradient(135deg, #0891B2 0%, #059669 100%)",
+    "var(--primary)",
+    "#136F3D",
   ];
 
   return (
@@ -2084,8 +2098,8 @@ function TeamDetail({ team, onBack }: { team: TeamDriver; onBack: () => void }) 
       {/* Sub-header */}
       <div style={{
         display: "flex", alignItems: "center", gap: 10,
-        padding: "11px 16px", borderBottom: "1px solid var(--border)",
-        backgroundColor: "var(--muted)", flexShrink: 0,
+        padding: "12px 16px", borderBottom: "1px solid var(--border)",
+        backgroundColor: "var(--card)", flexShrink: 0,
       }}>
         <button
           onClick={onBack}
@@ -2096,7 +2110,7 @@ function TeamDetail({ team, onBack }: { team: TeamDriver; onBack: () => void }) 
             background: "none", border: "none", cursor: "pointer",
             padding: "3px 7px", borderRadius: 6, outline: "none",
           }}
-          onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--border)"; }}
+          onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--muted)"; }}
           onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = "transparent"; }}
         >
           <ArrowLeft size={14} /> Teams
@@ -2110,7 +2124,7 @@ function TeamDetail({ team, onBack }: { team: TeamDriver; onBack: () => void }) 
       </div>
 
       {/* Body */}
-      <div style={{ flex: 1, overflow: "auto", padding: 20, display: "flex", gap: 18, alignItems: "flex-start" }}>
+      <div style={{ flex: 1, overflow: "auto", padding: 16, display: "flex", gap: 16, alignItems: "flex-start", backgroundColor: "var(--background)" }}>
 
         {/* ── Left profile sidebar ── */}
         <div style={{ width: 240, flexShrink: 0, display: "flex", flexDirection: "column", gap: 12 }}>
@@ -2130,7 +2144,6 @@ function TeamDetail({ team, onBack }: { team: TeamDriver; onBack: () => void }) 
                   background: driver.grad, color: "#fff",
                   display: "flex", alignItems: "center", justifyContent: "center",
                   fontFamily: "var(--font-sans)", fontSize: 14, fontWeight: 700, letterSpacing: "0.02em",
-                  boxShadow: "0 3px 8px rgba(0,0,0,0.18)",
                 }}>
                   {driver.initials}
                 </div>
@@ -2171,7 +2184,7 @@ function TeamDetail({ team, onBack }: { team: TeamDriver; onBack: () => void }) 
               }}>
                 <div style={{ color: "var(--muted-foreground)", marginTop: 1, flexShrink: 0 }}>{row.icon}</div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontFamily: "var(--font-sans)", fontSize: 10, fontWeight: 600, color: "var(--muted-foreground)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 2 }}>
+                  <div style={{ fontFamily: "var(--font-sans)", fontSize: 11.5, fontWeight: 500, color: "var(--muted-foreground)", marginBottom: 1 }}>
                     {row.label}
                   </div>
                   <div style={{ fontSize: 12, wordBreak: "break-word" }}>
@@ -2181,7 +2194,7 @@ function TeamDetail({ team, onBack }: { team: TeamDriver; onBack: () => void }) 
                           {row.value}
                         </span>
                       ) : <span style={{ fontFamily: row.mono ? "var(--font-mono)" : "var(--font-sans)", color: "var(--foreground)" }}>{row.value}</span>
-                    ) : <span style={{ fontFamily: "var(--font-sans)", color: "var(--muted-foreground)" }}>—</span>}
+                    ) : <Dash />}
                   </div>
                 </div>
               </div>
@@ -2196,47 +2209,44 @@ function TeamDetail({ team, onBack }: { team: TeamDriver; onBack: () => void }) 
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <div>
               <div style={{ fontFamily: "var(--font-sans)", fontSize: 14, fontWeight: 700, color: "var(--foreground)" }}>
-                {weekOffset === 0 ? "This Week" : weekOffset === -1 ? "Last Week" : `${Math.abs(weekOffset)} Weeks Ago`}
+                {weekOffset === 0 ? "This week" : weekOffset === -1 ? "Last week" : `${Math.abs(weekOffset)} weeks ago`}
               </div>
               <div style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)", marginTop: 3 }}>
-                {data?.week ? fmtISORange(data.week.from, data.week.to) : "—"}
+                {data?.week ? fmtISORange(data.week.from, data.week.to) : <Dash />}
               </div>
             </div>
             <div style={{ display: "flex", gap: 4 }}>
               <button
+                aria-label="Previous week" title="Previous week"
                 onClick={() => setWeekOffset((o) => o - 1)}
-                style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 28, height: 28, border: "1px solid var(--border)", borderRadius: 6, background: "var(--card)", cursor: "pointer", color: "var(--foreground)" }}
+                style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 32, height: 32, border: "1px solid var(--border)", borderRadius: 8, background: "var(--card)", cursor: "pointer", color: "var(--foreground)" }}
               ><ChevronLeft size={14} /></button>
               <button
+                aria-label="Next week" title="Next week"
                 onClick={() => setWeekOffset((o) => o + 1)}
                 disabled={weekOffset >= 0}
-                style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 28, height: 28, border: "1px solid var(--border)", borderRadius: 6, background: "var(--card)", cursor: weekOffset >= 0 ? "default" : "pointer", color: weekOffset >= 0 ? "var(--muted-foreground)" : "var(--foreground)", opacity: weekOffset >= 0 ? 0.4 : 1 }}
+                style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 32, height: 32, border: "1px solid var(--border)", borderRadius: 8, background: "var(--card)", cursor: weekOffset >= 0 ? "default" : "pointer", color: weekOffset >= 0 ? "var(--muted-foreground)" : "var(--foreground)", opacity: weekOffset >= 0 ? 0.4 : 1 }}
               ><ChevronRight size={14} /></button>
             </div>
           </div>
 
           {/* Metric cards */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12 }}>
             {metrics.map((m) => {
               const isGross = m.label === "Week Gross";
               return (
                 <div key={m.label} style={{
                   backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 10,
-                  padding: "14px 16px", display: "flex", flexDirection: "column", gap: 10,
+                  padding: "12px 14px", display: "flex", flexDirection: "column", gap: 6,
                 }}>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                    <span style={{ fontFamily: "var(--font-sans)", fontSize: 10, fontWeight: 600, color: "var(--muted-foreground)", textTransform: "uppercase", letterSpacing: "0.07em" }}>
-                      {m.label}
-                    </span>
-                    <div style={{ width: 28, height: 28, borderRadius: 7, backgroundColor: m.bg, color: m.color, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                      {m.icon}
-                    </div>
-                  </div>
-                  <div style={{ fontFamily: "var(--font-sans)", fontSize: 24, fontWeight: 700, color: "var(--foreground)", lineHeight: 1 }}>
+                  <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600, color: "var(--muted-foreground)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                    {m.label}
+                  </span>
+                  <div style={{ fontFamily: "var(--font-sans)", fontSize: 21, fontWeight: 700, color: "var(--foreground)", lineHeight: 1.15, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums" }}>
                     {m.value}
                   </div>
                   {m.note && (
-                    <span style={{ alignSelf: "flex-start", fontFamily: "var(--font-sans)", fontSize: 10, color: "var(--muted-foreground)" }}>
+                    <span style={{ alignSelf: "flex-start", fontFamily: "var(--font-sans)", fontSize: 11.5, color: "var(--muted-foreground)" }}>
                       {m.note}
                     </span>
                   )}
@@ -2245,11 +2255,11 @@ function TeamDetail({ team, onBack }: { team: TeamDriver; onBack: () => void }) 
                       <div style={{ height: 5, borderRadius: 99, backgroundColor: "var(--muted)", overflow: "hidden" }}>
                         <div style={{
                           height: "100%", borderRadius: 99, width: `${targetPct}%`,
-                          backgroundColor: targetPct >= 100 ? "#10B981" : targetPct >= 70 ? "#F59E0B" : "#3B82F6",
+                          backgroundColor: "var(--primary)",
                           transition: "width 0.4s ease",
                         }} />
                       </div>
-                      <span style={{ fontFamily: "var(--font-sans)", fontSize: 10, color: "var(--muted-foreground)" }}>
+                      <span style={{ fontFamily: "var(--font-sans)", fontSize: 11.5, color: "var(--muted-foreground)" }}>
                         {targetPct}% of ${target!.toLocaleString()} target
                       </span>
                     </div>
@@ -2263,7 +2273,7 @@ function TeamDetail({ team, onBack }: { team: TeamDriver; onBack: () => void }) 
           <div style={{ backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "13px 16px", borderBottom: "1px solid var(--border)" }}>
               <span style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, color: "var(--foreground)" }}>
-                {weekOffset === 0 ? "Loads This Week" : "Loads"}
+                {weekOffset === 0 ? "Loads this week" : "Loads"}
               </span>
               <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--muted-foreground)", backgroundColor: "var(--muted)", borderRadius: 6, padding: "2px 8px" }}>
                 {loadingLoads ? "…" : `${loads.length} ${loads.length === 1 ? "load" : "loads"}`}
@@ -2300,14 +2310,14 @@ function TeamDetail({ team, onBack }: { team: TeamDriver; onBack: () => void }) 
                     {loads.map((load, i) => {
                       const sc = STATUS_CONFIG[load.status as Status];
                       return (
-                        <tr key={load.id} style={{ backgroundColor: i % 2 === 0 ? "var(--card)" : "var(--background)" }}>
+                        <tr key={load.id}>
                           <TD mono>{load.load_id || load.id}</TD>
                           <TD>{load.origin}</TD>
                           <TD>{load.destination}</TD>
                           <TD mono center>{load.miles.toLocaleString()}</TD>
                           <TD mono center>${load.payout.toLocaleString()}</TD>
-                          <TD center>{load.completed_at ? new Date(load.completed_at).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}</TD>
-                          <td style={{ padding: "10px 12px", borderBottom: "1px solid var(--border)", verticalAlign: "middle", textAlign: "center" }}>
+                          <TD center>{fmtDate(load.completed_at) || <Dash />}</TD>
+                          <td style={{ padding: "7px 12px", borderBottom: "1px solid var(--border)", verticalAlign: "middle", textAlign: "center" }}>
                             {sc ? (
                               <span style={{
                                 display: "inline-block",
@@ -2316,7 +2326,7 @@ function TeamDetail({ team, onBack }: { team: TeamDriver; onBack: () => void }) 
                               }}>
                                 {sc.label}
                               </span>
-                            ) : <span style={{ color: "var(--muted-foreground)" }}>—</span>}
+                            ) : <Dash />}
                           </td>
                         </tr>
                       );
@@ -2346,7 +2356,7 @@ function Toolbar({
   return (
     <div style={{
       display: "flex", alignItems: "center", gap: 10,
-      padding: "12px 16px", borderBottom: "1px solid var(--border)",
+      padding: "10px 16px", borderBottom: "1px solid var(--border)",
       backgroundColor: "var(--card)", flexShrink: 0,
     }}>
       <div style={{ position: "relative", width: 250 }}>
@@ -2355,10 +2365,11 @@ function Toolbar({
           value={search}
           onChange={(e) => onSearch(e.target.value)}
           placeholder={placeholder}
+          aria-label={placeholder}
           style={{
             width: "100%", height: 34, paddingLeft: 30, paddingRight: 10,
             fontFamily: "var(--font-sans)", fontSize: 13,
-            backgroundColor: "var(--input-background)", border: "1px solid var(--border)",
+            backgroundColor: "var(--card)", border: "1px solid var(--border)",
             borderRadius: 7, color: "var(--foreground)", outline: "none", boxSizing: "border-box" as const,
             transition: "border-color 0.15s, box-shadow 0.15s",
           }}
@@ -2569,7 +2580,7 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
       />
 
       <div style={{ flex: 1, overflow: "auto", scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent" }}>
-        <table style={{ width: "max-content", minWidth: "100%", borderCollapse: "collapse", opacity: loading ? 0.45 : 1, pointerEvents: loading ? "none" : "auto", transition: "opacity 0.15s" }}>
+        <table style={{ width: "max-content", minWidth: "100%", borderCollapse: "separate", borderSpacing: 0, opacity: loading ? 0.45 : 1, pointerEvents: loading ? "none" : "auto", transition: "opacity 0.15s" }}>
           <thead>
             <tr>
               <TH width={36}>#</TH>
@@ -2583,16 +2594,15 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
               <TH width={110}>Trailer</TH>
               <TH width={230}>Location</TH>
               <TH width={240}>Comment</TH>
-              <TH width={90} align="center">Actions</TH>
+              <TH width={90} align="center" pinned>Actions</TH>
             </tr>
           </thead>
           <tbody>
             {rows.map((d, i) => (
               <tr
                 key={d.id}
-                style={{ backgroundColor: i % 2 === 0 ? "var(--card)" : "var(--background)" }}
                 onMouseEnter={(e) => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = "var(--primary-faint)"; }}
-                onMouseLeave={(e) => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = i % 2 === 0 ? "var(--card)" : "var(--background)"; }}
+                onMouseLeave={(e) => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = ""; }}
               >
                 <TD mono center>{i + 1 + (page - 1) * pageSize}</TD>
                 <TD>
@@ -2609,7 +2619,7 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
                     {d.name}
                   </button>
                 </TD>
-                <TD mono>{d.phone || "—"}</TD>
+                <TD mono>{d.phone || <Dash />}</TD>
                 <TD><TypeBadge type={d.type} /></TD>
                 <TD><StatusDropdown value={d.status} onChange={(s) => requestStatus(d, s)} /></TD>
                 <TD mono>
@@ -2618,7 +2628,7 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
                       {d.currentLoad}
                     </span>
                   ) : (
-                    <span style={{ color: "var(--muted-foreground)" }}>—</span>
+                    <Dash />
                   )}
                 </TD>
                 <TD mono>
@@ -2632,25 +2642,25 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
                       ))}
                     </div>
                   ) : (
-                    <span style={{ color: "var(--muted-foreground)" }}>—</span>
+                    <Dash />
                   )}
                 </TD>
-                <TD mono>{d.truck || "—"}</TD>
-                <TD mono>{d.trailer || "—"}</TD>
+                <TD mono>{d.truck || <Dash />}</TD>
+                <TD mono>{d.trailer || <Dash />}</TD>
                 <TD>
                   <LocationCell location={d.location} eldLocation={d.eldLocation} lat={d.eldLat} lng={d.eldLng} />
                 </TD>
                 <TD>
                   <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
                     <MessageSquare size={11} style={{ color: "var(--muted-foreground)", flexShrink: 0 }} />
-                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 200, display: "inline-block" }}>{d.comment || "—"}</span>
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 200, display: "inline-block" }}>{d.comment || <Dash />}</span>
                   </span>
                 </TD>
-                <td style={{ padding: "8px 10px", borderBottom: "1px solid var(--border)", verticalAlign: "middle", textAlign: "center" }}>
-                  <div style={{ display: "inline-flex", gap: 5 }}>
-                    {canUpdate && <ActionBtn icon={<Pencil size={13} />} color="#3B82F6" bg="rgba(59,130,246,0.14)" onClick={() => openEdit(d)} />}
-                    {canDelete && <ActionBtn icon={<Trash2 size={13} />} color="#EF4444" bg="rgba(239,68,68,0.14)" onClick={() => setDeleting(d)} />}
-                    {!canUpdate && !canDelete && <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)" }}>—</span>}
+                <td style={{ padding: "4px 10px", borderBottom: "1px solid var(--border)", verticalAlign: "middle", textAlign: "center", position: "sticky", right: 0, backgroundColor: "var(--card)", boxShadow: "inset 1px 0 0 var(--border)" }}>
+                  <div style={{ display: "inline-flex", gap: 2 }}>
+                    {canUpdate && <ActionBtn label={`Edit ${d.name}`} tone="edit" icon={<Pencil size={14} />} onClick={() => openEdit(d)} />}
+                    {canDelete && <ActionBtn label={`Remove ${d.name}`} tone="delete" icon={<Trash2 size={14} />} onClick={() => setDeleting(d)} />}
+                    {!canUpdate && !canDelete && <Dash />}
                   </div>
                 </td>
               </tr>
@@ -2868,7 +2878,7 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
       />
 
       <div style={{ flex: 1, overflow: "auto", scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent" }}>
-        <table style={{ width: "max-content", minWidth: "100%", borderCollapse: "collapse", opacity: loading ? 0.45 : 1, pointerEvents: loading ? "none" : "auto", transition: "opacity 0.15s" }}>
+        <table style={{ width: "max-content", minWidth: "100%", borderCollapse: "separate", borderSpacing: 0, opacity: loading ? 0.45 : 1, pointerEvents: loading ? "none" : "auto", transition: "opacity 0.15s" }}>
           <thead>
             <tr>
               <TH width={36}>#</TH>
@@ -2884,16 +2894,15 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
               <TH width={110}>Trailer</TH>
               <TH width={230}>Location</TH>
               <TH width={240}>Comment</TH>
-              <TH width={90} align="center">Actions</TH>
+              <TH width={90} align="center" pinned>Actions</TH>
             </tr>
           </thead>
           <tbody>
             {rows.map((d, i) => (
               <tr
                 key={d.id}
-                style={{ backgroundColor: i % 2 === 0 ? "var(--card)" : "var(--background)" }}
                 onMouseEnter={(e) => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = "var(--primary-faint)"; }}
-                onMouseLeave={(e) => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = i % 2 === 0 ? "var(--card)" : "var(--background)"; }}
+                onMouseLeave={(e) => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = ""; }}
               >
                 <TD mono center>{i + 1 + (page - 1) * pageSize}</TD>
                 <TD>
@@ -2904,7 +2913,7 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
                     onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.textDecoration = "none"; }}
                   >{d.name1}</button>
                 </TD>
-                <TD mono>{d.phone1 || "—"}</TD>
+                <TD mono>{d.phone1 || <Dash />}</TD>
                 <TD>
                   <button
                     onClick={() => onSelectTeam(d)}
@@ -2913,7 +2922,7 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
                     onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.textDecoration = "none"; }}
                   >{d.name2}</button>
                 </TD>
-                <TD mono>{d.phone2 || "—"}</TD>
+                <TD mono>{d.phone2 || <Dash />}</TD>
                 <TD><TypeBadge type={d.type} /></TD>
                 <TD><StatusDropdown value={d.status} onChange={(s) => requestStatus(d, s)} /></TD>
                 <TD mono>
@@ -2922,7 +2931,7 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
                       {d.currentLoad}
                     </span>
                   ) : (
-                    <span style={{ color: "var(--muted-foreground)" }}>—</span>
+                    <Dash />
                   )}
                 </TD>
                 <TD mono>
@@ -2936,25 +2945,25 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
                       ))}
                     </div>
                   ) : (
-                    <span style={{ color: "var(--muted-foreground)" }}>—</span>
+                    <Dash />
                   )}
                 </TD>
-                <TD mono>{d.truck || "—"}</TD>
-                <TD mono>{d.trailer || "—"}</TD>
+                <TD mono>{d.truck || <Dash />}</TD>
+                <TD mono>{d.trailer || <Dash />}</TD>
                 <TD>
                   <LocationCell location={d.location} eldLocation={d.eldLocation} lat={d.eldLat} lng={d.eldLng} />
                 </TD>
                 <TD>
                   <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
                     <MessageSquare size={11} style={{ color: "var(--muted-foreground)", flexShrink: 0 }} />
-                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 200, display: "inline-block" }}>{d.comment || "—"}</span>
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 200, display: "inline-block" }}>{d.comment || <Dash />}</span>
                   </span>
                 </TD>
-                <td style={{ padding: "8px 10px", borderBottom: "1px solid var(--border)", verticalAlign: "middle", textAlign: "center" }}>
-                  <div style={{ display: "inline-flex", gap: 5 }}>
-                    {canUpdate && <ActionBtn icon={<Pencil size={13} />} color="#3B82F6" bg="rgba(59,130,246,0.14)" onClick={() => openEdit(d)} />}
-                    {canDelete && <ActionBtn icon={<Trash2 size={13} />} color="#EF4444" bg="rgba(239,68,68,0.14)" onClick={() => setDeleting(d)} />}
-                    {!canUpdate && !canDelete && <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)" }}>—</span>}
+                <td style={{ padding: "4px 10px", borderBottom: "1px solid var(--border)", verticalAlign: "middle", textAlign: "center", position: "sticky", right: 0, backgroundColor: "var(--card)", boxShadow: "inset 1px 0 0 var(--border)" }}>
+                  <div style={{ display: "inline-flex", gap: 2 }}>
+                    {canUpdate && <ActionBtn label={`Edit ${d.name1} & ${d.name2}`} tone="edit" icon={<Pencil size={14} />} onClick={() => openEdit(d)} />}
+                    {canDelete && <ActionBtn label={`Remove ${d.name1} & ${d.name2}`} tone="delete" icon={<Trash2 size={14} />} onClick={() => setDeleting(d)} />}
+                    {!canUpdate && !canDelete && <Dash />}
                   </div>
                 </td>
               </tr>
@@ -3011,40 +3020,42 @@ export function DriversPage() {
   const [teamCount, setTeamCount]   = useState<number | null>(null);
   const inDetail = detailDriver !== null || detailTeam !== null;
 
-  const tabs: { id: TabId; label: string; count: number | null; icon: React.ReactNode; color: string; bg: string }[] = [
-    { id: "solo", label: "Solo Drivers", count: soloCount, icon: <User size={15} />,  color: "#3B82F6", bg: "rgba(59,130,246,0.14)" },
-    { id: "team", label: "Team Drivers", count: teamCount, icon: <Users size={15} />, color: "#8B5CF6", bg: "rgba(139,92,246,0.14)" },
+  const tabs: { id: TabId; label: string; count: number | null; icon: React.ReactNode }[] = [
+    { id: "solo", label: "Solo Drivers", count: soloCount, icon: <User size={15} /> },
+    { id: "team", label: "Team Drivers", count: teamCount, icon: <Users size={15} /> },
   ];
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", backgroundColor: "var(--background)", overflow: "hidden" }}>
 
-      {/* Tab bar — hidden while in detail view */}
-      {!inDetail && (
-        <div style={{ backgroundColor: "var(--card)", borderBottom: "1px solid var(--border)", padding: "0 24px", flexShrink: 0, display: "flex", alignItems: "flex-end", gap: 2 }}>
+      {/* Tabs */}
+      {!inDetail && (<>
+        <div role="tablist" aria-label="Driver type" style={{ backgroundColor: "var(--card)", borderBottom: "1px solid var(--border)", padding: "0 12px", flexShrink: 0, display: "flex", alignItems: "flex-end", gap: 2, overflowX: "auto" }}>
           {tabs.map((t) => {
             const active = tab === t.id;
             return (
               <button
                 key={t.id}
+                role="tab"
+                aria-selected={active}
                 onClick={() => setTab(t.id)}
                 style={{
                   display: "inline-flex", alignItems: "center", gap: 8,
-                  padding: "12px 18px",
-                  fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: active ? 600 : 400,
-                  color: active ? t.color : "var(--muted-foreground)",
+                  padding: "10px 14px",
+                  fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: active ? 600 : 500,
+                  color: active ? "var(--primary)" : "var(--muted-foreground)",
                   backgroundColor: "transparent",
-                  border: "none", borderBottom: active ? `2px solid ${t.color}` : "2px solid transparent",
-                  cursor: "pointer", transition: "all 0.15s", marginBottom: -1, outline: "none",
+                  border: "none", borderBottom: active ? "2px solid var(--primary)" : "2px solid transparent",
+                  cursor: "pointer", transition: "color 0.15s, border-color 0.15s", marginBottom: -1,
                 }}
               >
-                <span style={{ color: active ? t.color : "var(--muted-foreground)", opacity: active ? 1 : 0.6 }}>{t.icon}</span>
+                <span style={{ display: "flex", opacity: active ? 1 : 0.7 }}>{t.icon}</span>
                 {t.label}
                 {t.count !== null && (
                   <span style={{
-                    fontFamily: "var(--font-mono)", fontSize: 10, fontWeight: 700,
-                    color: active ? t.color : "var(--muted-foreground)",
-                    backgroundColor: active ? t.bg : "var(--muted)",
+                    fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 700,
+                    color: active ? "var(--secondary-foreground)" : "var(--muted-foreground)",
+                    backgroundColor: active ? "var(--primary-soft)" : "var(--muted)",
                     borderRadius: 10, padding: "1px 7px",
                   }}>
                     {t.count}
@@ -3054,10 +3065,10 @@ export function DriversPage() {
             );
           })}
         </div>
-      )}
+      </>)}
 
       {/* Content */}
-      <div style={{ flex: 1, overflow: "hidden", padding: "20px 24px", display: "flex", flexDirection: "column" }}>
+      <div style={{ flex: 1, overflow: "hidden", padding: "14px 24px", display: "flex", flexDirection: "column" }}>
         <div style={{
           flex: 1, display: "flex", flexDirection: "column", overflow: "hidden",
           backgroundColor: "var(--card)",

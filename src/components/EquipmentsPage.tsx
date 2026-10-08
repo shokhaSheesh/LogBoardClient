@@ -6,6 +6,7 @@ import { hasPerm } from "../lib/permissions";
 import { driverDisplayName } from "../lib/driverName";
 import { PageLoader } from "./PageLoader";
 import { FormError, formErrorInModal, friendlyError, notify } from "./feedback";
+import { Dash } from "./Dash";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -76,7 +77,7 @@ function CustomSelect({
           display: "flex", alignItems: "center", gap: 8, width: "100%",
           height: h, paddingLeft: 10, paddingRight: 8,
           fontFamily: "var(--font-sans)", fontSize: compact ? 12 : 13,
-          backgroundColor: "var(--input-background)",
+          backgroundColor: "var(--card)",
           border: `1px solid ${open ? "var(--primary)" : "var(--border)"}`,
           borderRadius: 7, color: "var(--foreground)", cursor: "pointer",
           boxShadow: open ? "0 0 0 3px var(--primary-soft)" : "none",
@@ -114,7 +115,7 @@ function CustomSelect({
                     width: "100%", height: 30, paddingLeft: 26, paddingRight: 8,
                     fontFamily: "var(--font-sans)", fontSize: 12,
                     border: "1px solid var(--border)", borderRadius: 6,
-                    backgroundColor: "var(--input-background)", color: "var(--foreground)",
+                    backgroundColor: "var(--card)", color: "var(--foreground)",
                     outline: "none", boxSizing: "border-box" as const,
                   }}
                 />
@@ -229,10 +230,10 @@ function AsyncSearchableSelect({ value, valueLabel, fetchPage, onChange, placeho
   return (
     <div ref={wrapRef} style={{ position: "relative" }}>
       <button type="button" onClick={() => { setOpen(v => !v); setQuery(""); }} style={{
-        display: "flex", alignItems: "center", gap: 8, width: "100%", height: 34,
+        display: "flex", alignItems: "center", gap: 8, width: "100%", height: 36,
         padding: "0 8px 0 10px", fontFamily: "var(--font-sans)", fontSize: 13,
         border: `1px solid ${open ? "var(--primary)" : "var(--border)"}`,
-        borderRadius: 6, backgroundColor: "var(--input-background)",
+        borderRadius: 8, backgroundColor: "var(--card)",
         color: value ? "var(--foreground)" : "var(--muted-foreground)",
         cursor: "pointer", textAlign: "left", outline: "none",
         boxShadow: open ? "0 0 0 3px var(--primary-soft)" : "none",
@@ -411,9 +412,10 @@ function Pagination({
 
 // ─── Shared primitives ────────────────────────────────────────────────────────
 
-const TH = ({ children, width, align = "left" }: { children: React.ReactNode; width?: number; align?: string }) => (
+// `pinned` keeps a column (the row actions) in view when the table scrolls sideways.
+const TH = ({ children, width, align = "left", pinned = false }: { children: React.ReactNode; width?: number; align?: string; pinned?: boolean }) => (
   <th style={{
-    padding: "10px 14px", textAlign: align as "left" | "center",
+    padding: "8px 14px", textAlign: align as "left" | "center",
     fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600,
     color: "var(--muted-foreground)", letterSpacing: "0.07em",
     textTransform: "uppercase", backgroundColor: "var(--card)",
@@ -421,6 +423,7 @@ const TH = ({ children, width, align = "left" }: { children: React.ReactNode; wi
     whiteSpace: "nowrap", userSelect: "none",
     width: width ?? "auto", minWidth: width ?? "auto",
     position: "sticky", top: 0, zIndex: 5,
+    ...(pinned ? { right: 0, zIndex: 6, boxShadow: "inset 1px 0 0 var(--border)" } : {}),
   }}>
     {children}
   </th>
@@ -428,7 +431,7 @@ const TH = ({ children, width, align = "left" }: { children: React.ReactNode; wi
 
 const TD = ({ children, mono = false, center = false }: { children: React.ReactNode; mono?: boolean; center?: boolean }) => (
   <td style={{
-    padding: "12px 14px",
+    padding: "8px 14px",
     fontFamily: mono ? "var(--font-mono)" : "var(--font-sans)",
     fontSize: mono ? 12 : 13, color: "var(--foreground)",
     borderBottom: "1px solid var(--border)",
@@ -493,38 +496,38 @@ function EquipModal({ title, row, onClose, onSave, saving = false, error, equipK
 
   return (
     <div role="dialog" aria-modal="true" aria-label={title} style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div style={{ backgroundColor: "var(--card)", borderRadius: 12, width: 500, boxShadow: "0 20px 60px rgba(0,0,0,0.25)", overflow: "visible" }}>
+      <div style={{ backgroundColor: "var(--card)", borderRadius: 12, width: 720, maxWidth: "calc(100vw - 32px)", boxShadow: "0 20px 60px rgba(0,0,0,0.25)", overflow: "visible" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderBottom: "1px solid var(--border)" }}>
           <span style={{ fontFamily: "var(--font-sans)", fontSize: 15, fontWeight: 700, color: "var(--foreground)", letterSpacing: "-0.01em" }}>{title}</span>
           <button onClick={onClose} aria-label="Close" style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted-foreground)" }}><X size={16} /></button>
         </div>
-        <div style={{ padding: "20px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+        <div style={{ padding: "16px 20px", display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: "12px 14px" }}>
           {/* Unit # and Driver side by side */}
           {(() => {
             const unitEmpty = touched.unit && !form.unit?.toString().trim();
             return (
               <>
                 <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                  <span style={{ display: "flex", alignItems: "center", gap: 4, fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600, color: unitEmpty ? "#EF4444" : "var(--muted-foreground)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                    Unit # <span style={{ color: "#EF4444" }}>*</span>
+                  <span style={{ display: "flex", alignItems: "center", gap: 4, fontFamily: "var(--font-sans)", fontSize: 12.5, fontWeight: 600, color: unitEmpty ? "#EF4444" : "var(--foreground)" }}>
+                    Unit number <span style={{ color: "#EF4444" }}>*</span>
                   </span>
                   <input
                     value={(form.unit as string) ?? ""}
                     onChange={(e) => set("unit", e.target.value)}
                     onBlur={() => touch("unit")}
                     style={{
-                      fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 10px", borderRadius: 6, height: 34,
+                      fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 10px", borderRadius: 8, height: 36,
                       border: `1px solid ${unitEmpty ? "#EF4444" : "var(--border)"}`,
-                      backgroundColor: unitEmpty ? "rgba(239,68,68,0.04)" : "var(--input-background)",
+                      backgroundColor: unitEmpty ? "rgba(239,68,68,0.04)" : "var(--card)",
                       color: "var(--foreground)", outline: "none", width: "100%", boxSizing: "border-box" as const,
                       boxShadow: unitEmpty ? "0 0 0 3px rgba(239,68,68,0.10)" : "none",
                     }}
                   />
-                  {unitEmpty && <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "#EF4444" }}>Unit # is required</span>}
+                  {unitEmpty && <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "#EF4444" }}>Unit number is required</span>}
                 </label>
 
                 <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                  <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600, color: "var(--muted-foreground)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                  <span style={{ fontFamily: "var(--font-sans)", fontSize: 12.5, fontWeight: 600, color: "var(--foreground)" }}>
                     Driver
                   </span>
                   <AsyncSearchableSelect
@@ -551,31 +554,31 @@ function EquipModal({ title, row, onClose, onSave, saving = false, error, equipK
           {/* Make / Model */}
           {(["make", "model"] as const).map((k) => (
             <label key={k} style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-              <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600, color: "var(--muted-foreground)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+              <span style={{ fontFamily: "var(--font-sans)", fontSize: 12.5, fontWeight: 600, color: "var(--foreground)" }}>
                 {k === "make" ? "Make" : "Model"}
               </span>
               <input
                 value={(form[k] as string) ?? ""}
                 onChange={(e) => set(k, e.target.value)}
-                style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 10px", borderRadius: 6, height: 34, border: "1px solid var(--border)", backgroundColor: "var(--input-background)", color: "var(--foreground)", outline: "none", width: "100%", boxSizing: "border-box" as const }}
+                style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 10px", borderRadius: 8, height: 36, border: "1px solid var(--border)", backgroundColor: "var(--card)", color: "var(--foreground)", outline: "none", width: "100%", boxSizing: "border-box" as const }}
               />
             </label>
           ))}
 
-          {/* VIN full-width */}
-          <label style={{ display: "flex", flexDirection: "column", gap: 5, gridColumn: "1 / -1" }}>
-            <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600, color: "var(--muted-foreground)", textTransform: "uppercase", letterSpacing: "0.06em" }}>VIN</span>
+          {/* VIN takes the rest of the second row */}
+          <label style={{ display: "flex", flexDirection: "column", gap: 5, gridColumn: "span 2" }}>
+            <span style={{ fontFamily: "var(--font-sans)", fontSize: 12.5, fontWeight: 600, color: "var(--foreground)" }}>VIN</span>
             <input
               value={(form.vin as string) ?? ""}
               onChange={(e) => set("vin", e.target.value)}
-              style={{ fontFamily: "var(--font-mono)", fontSize: 13, padding: "7px 10px", borderRadius: 6, height: 34, border: "1px solid var(--border)", backgroundColor: "var(--input-background)", color: "var(--foreground)", outline: "none", width: "100%", boxSizing: "border-box" as const, letterSpacing: "0.04em" }}
+              style={{ fontFamily: "var(--font-mono)", fontSize: 13, padding: "7px 10px", borderRadius: 8, height: 36, border: "1px solid var(--border)", backgroundColor: "var(--card)", color: "var(--foreground)", outline: "none", width: "100%", boxSizing: "border-box" as const, letterSpacing: "0.04em" }}
             />
           </label>
         </div>
         <FormError message={error} style={formErrorInModal} />
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, padding: "14px 20px", borderTop: "1px solid var(--border)" }}>
-          <button onClick={onClose} style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 16px", borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "var(--muted)", color: "var(--foreground)", cursor: "pointer" }}>Cancel</button>
-          <button onClick={handleSave} disabled={saving} style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 16px", borderRadius: 6, border: "none", backgroundColor: "var(--primary)", color: "#fff", cursor: saving ? "not-allowed" : "pointer", opacity: saving ? 0.7 : 1, display: "flex", alignItems: "center", gap: 6 }}>
+          <button onClick={onClose} style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 16px", borderRadius: 8, border: "1px solid var(--border)", backgroundColor: "var(--card)", color: "var(--foreground)", cursor: "pointer" }}>Cancel</button>
+          <button onClick={handleSave} disabled={saving} style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 16px", borderRadius: 8, border: "none", backgroundColor: "var(--primary)", color: "#fff", cursor: saving ? "not-allowed" : "pointer", opacity: saving ? 0.7 : 1, display: "flex", alignItems: "center", gap: 6 }}>
             <Check size={14} /> {saving ? "Saving…" : isNew ? "Create" : "Save Changes"}
           </button>
         </div>
@@ -598,8 +601,8 @@ function DeleteConfirm({ label, onClose, onConfirm, busy = false, error }: { lab
         </div>
         <FormError message={error} style={{ marginBottom: 16 }} />
         <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
-          <button onClick={onClose} disabled={busy} style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 20px", borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "var(--muted)", color: "var(--foreground)", cursor: busy ? "default" : "pointer", opacity: busy ? 0.5 : 1 }}>Cancel</button>
-          <button onClick={onConfirm} disabled={busy} style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, minWidth: 100, fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 20px", borderRadius: 6, border: "none", backgroundColor: "#EF4444", color: "#fff", cursor: busy ? "default" : "pointer", opacity: busy ? 0.8 : 1 }}>
+          <button onClick={onClose} disabled={busy} style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 20px", borderRadius: 8, border: "1px solid var(--border)", backgroundColor: "var(--card)", color: "var(--foreground)", cursor: busy ? "default" : "pointer", opacity: busy ? 0.5 : 1 }}>Cancel</button>
+          <button onClick={onConfirm} disabled={busy} style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, minWidth: 100, fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 20px", borderRadius: 8, border: "none", backgroundColor: "#EF4444", color: "#fff", cursor: busy ? "default" : "pointer", opacity: busy ? 0.8 : 1 }}>
             {busy ? <><span style={{ width: 13, height: 13, borderRadius: "50%", border: "2px solid rgba(255,255,255,0.4)", borderTopColor: "#fff", animation: "spin 0.7s linear infinite", display: "inline-block" }} /> Removing…</> : "Remove"}
           </button>
         </div>
@@ -691,7 +694,7 @@ function ImportModal({ entityLabel, endpoint, onClose, onImported }: {
             style={{
               border: `2px dashed ${dragging ? "var(--primary)" : file ? "#10B981" : "var(--border)"}`,
               borderRadius: 10, padding: "36px 20px", textAlign: "center",
-              backgroundColor: dragging ? "var(--accent)" : file ? "rgba(16,185,129,0.10)" : "var(--input-background)",
+              backgroundColor: dragging ? "var(--accent)" : file ? "rgba(16,185,129,0.10)" : "var(--card)",
               cursor: "pointer", transition: "all 0.15s",
             }}
           >
@@ -757,7 +760,7 @@ function ImportModal({ entityLabel, endpoint, onClose, onImported }: {
         </div>
 
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, padding: "14px 20px", borderTop: "1px solid var(--border)" }}>
-          <button onClick={onClose} style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 16px", borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "var(--muted)", color: "var(--foreground)", cursor: "pointer" }}>
+          <button onClick={onClose} style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 16px", borderRadius: 8, border: "1px solid var(--border)", backgroundColor: "var(--card)", color: "var(--foreground)", cursor: "pointer" }}>
             {result ? "Done" : "Cancel"}
           </button>
           {!result && (
@@ -865,7 +868,7 @@ function AddMenu({ entityLabel, onManual, onImport }: {
             >
               <div style={{
                 width: 34, height: 34, borderRadius: 8, flexShrink: 0,
-                backgroundColor: item.iconBg, color: item.iconColor,
+                backgroundColor: "var(--primary-soft)", color: "var(--primary)",
                 display: "flex", alignItems: "center", justifyContent: "center",
               }}>
                 {item.icon}
@@ -984,7 +987,7 @@ function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
   return (
     <>
       {/* Toolbar */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "space-between", padding: "14px 16px", borderBottom: "1px solid var(--border)", backgroundColor: "var(--card)", flexShrink: 0 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "space-between", padding: "10px 16px", borderBottom: "1px solid var(--border)", backgroundColor: "var(--card)", flexShrink: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
           <div style={{ position: "relative" }}>
             <Search size={14} style={{ position: "absolute", left: 9, top: "50%", transform: "translateY(-50%)", color: "var(--muted-foreground)", pointerEvents: "none" }} />
@@ -1008,7 +1011,7 @@ function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
         {loading && rows.length === 0 ? (
           <PageLoader label="trucks" />
         ) : (
-        <table style={{ width: "max-content", minWidth: "100%", borderCollapse: "collapse", tableLayout: "fixed", opacity: loading ? 0.45 : 1, pointerEvents: loading ? "none" : "auto", transition: "opacity 0.15s" }}>
+        <table style={{ width: "max-content", minWidth: "100%", borderCollapse: "separate", borderSpacing: 0, tableLayout: "fixed", opacity: loading ? 0.45 : 1, pointerEvents: loading ? "none" : "auto", transition: "opacity 0.15s" }}>
           <thead>
             <tr>
               <TH width={40}>#</TH>
@@ -1018,7 +1021,7 @@ function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
               <TH width={160}>Model</TH>
               <TH width={220}>VIN</TH>
               <TH width={120} align="right">Odometer</TH>
-              <TH width={90} align="center">Actions</TH>
+              <TH width={90} align="center" pinned>Actions</TH>
             </tr>
           </thead>
           <tbody>
@@ -1028,23 +1031,23 @@ function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
                 onMouseLeave={(e) => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = ""; }}
               >
                 <TD mono center>{(page - 1) * pageSize + i + 1}</TD>
-                <td style={{ padding: "12px 14px", borderBottom: "1px solid var(--border)", verticalAlign: "middle" }}>
+                <td style={{ padding: "8px 14px", borderBottom: "1px solid var(--border)", verticalAlign: "middle" }}>
                   <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 600, color: "var(--primary)", backgroundColor: "var(--secondary)", borderRadius: 4, padding: "2px 8px" }}>
                     {r.unit}
                   </span>
                 </td>
                 <TD>{r.driver ? driverDisplayName({ name: r.driver, name2: r.driver_name2, team: r.driver_team }) : <span style={{ color: "var(--muted-foreground)", fontStyle: "italic" }}>Unassigned</span>}</TD>
-                <TD>{r.make || "—"}</TD>
-                <TD>{r.model || "—"}</TD>
-                <TD mono>{r.vin || "—"}</TD>
-                <td style={{ padding: "12px 14px", borderBottom: "1px solid var(--border)", verticalAlign: "middle", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12, color: r.odometer != null ? "var(--foreground)" : "var(--muted-foreground)" }}>
-                  {r.odometer != null ? `${r.odometer.toLocaleString()} mi` : "—"}
+                <TD>{r.make || <Dash />}</TD>
+                <TD>{r.model || <Dash />}</TD>
+                <TD mono>{r.vin || <Dash />}</TD>
+                <td style={{ padding: "8px 14px", borderBottom: "1px solid var(--border)", verticalAlign: "middle", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12, color: r.odometer != null ? "var(--foreground)" : "var(--muted-foreground)" }}>
+                  {r.odometer != null ? `${r.odometer.toLocaleString()} mi` : <Dash />}
                 </td>
-                <td style={{ padding: "8px 10px", borderBottom: "1px solid var(--border)", verticalAlign: "middle", textAlign: "center" }}>
+                <td style={{ padding: "4px 10px", borderBottom: "1px solid var(--border)", verticalAlign: "middle", textAlign: "center", position: "sticky", right: 0, backgroundColor: "var(--card)", boxShadow: "inset 1px 0 0 var(--border)" }}>
                   <div style={{ display: "inline-flex", gap: 2 }}>
                     {canUpdate && <ActionBtn label={`Edit ${r.unit}`} tone="edit" icon={<Pencil size={14} />} onClick={() => openEdit(r)} />}
                     {canDelete && <ActionBtn label={`Remove ${r.unit}`} tone="delete" icon={<Trash2 size={14} />} onClick={() => setDeleting(r)} />}
-                    {!canUpdate && !canDelete && <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)" }}>—</span>}
+                    {!canUpdate && !canDelete && <Dash />}
                   </div>
                 </td>
               </tr>
@@ -1170,7 +1173,7 @@ function TrailersTab({ onCountChange }: { onCountChange: (n: number) => void }) 
   return (
     <>
       {/* Toolbar */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "space-between", padding: "14px 16px", borderBottom: "1px solid var(--border)", backgroundColor: "var(--card)", flexShrink: 0 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "space-between", padding: "10px 16px", borderBottom: "1px solid var(--border)", backgroundColor: "var(--card)", flexShrink: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
           <div style={{ position: "relative" }}>
             <Search size={14} style={{ position: "absolute", left: 9, top: "50%", transform: "translateY(-50%)", color: "var(--muted-foreground)", pointerEvents: "none" }} />
@@ -1194,7 +1197,7 @@ function TrailersTab({ onCountChange }: { onCountChange: (n: number) => void }) 
         {loading && rows.length === 0 ? (
           <PageLoader label="trailers" />
         ) : (
-        <table style={{ width: "max-content", minWidth: "100%", borderCollapse: "collapse", tableLayout: "fixed", opacity: loading ? 0.45 : 1, pointerEvents: loading ? "none" : "auto", transition: "opacity 0.15s" }}>
+        <table style={{ width: "max-content", minWidth: "100%", borderCollapse: "separate", borderSpacing: 0, tableLayout: "fixed", opacity: loading ? 0.45 : 1, pointerEvents: loading ? "none" : "auto", transition: "opacity 0.15s" }}>
           <thead>
             <tr>
               <TH width={40}>#</TH>
@@ -1203,7 +1206,7 @@ function TrailersTab({ onCountChange }: { onCountChange: (n: number) => void }) 
               <TH width={150}>Make</TH>
               <TH width={200}>Model</TH>
               <TH width={220}>VIN</TH>
-              <TH width={90} align="center">Actions</TH>
+              <TH width={90} align="center" pinned>Actions</TH>
             </tr>
           </thead>
           <tbody>
@@ -1213,20 +1216,20 @@ function TrailersTab({ onCountChange }: { onCountChange: (n: number) => void }) 
                 onMouseLeave={(e) => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = ""; }}
               >
                 <TD mono center>{(page - 1) * pageSize + i + 1}</TD>
-                <td style={{ padding: "12px 14px", borderBottom: "1px solid var(--border)", verticalAlign: "middle" }}>
+                <td style={{ padding: "8px 14px", borderBottom: "1px solid var(--border)", verticalAlign: "middle" }}>
                   <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 600, color: "var(--primary)", backgroundColor: "var(--secondary)", borderRadius: 4, padding: "2px 8px" }}>
                     {r.unit}
                   </span>
                 </td>
                 <TD>{r.driver ? driverDisplayName({ name: r.driver, name2: r.driver_name2, team: r.driver_team }) : <span style={{ color: "var(--muted-foreground)", fontStyle: "italic" }}>Unassigned</span>}</TD>
-                <TD>{r.make || "—"}</TD>
-                <TD>{r.model || "—"}</TD>
-                <TD mono>{r.vin || "—"}</TD>
-                <td style={{ padding: "8px 10px", borderBottom: "1px solid var(--border)", verticalAlign: "middle", textAlign: "center" }}>
+                <TD>{r.make || <Dash />}</TD>
+                <TD>{r.model || <Dash />}</TD>
+                <TD mono>{r.vin || <Dash />}</TD>
+                <td style={{ padding: "4px 10px", borderBottom: "1px solid var(--border)", verticalAlign: "middle", textAlign: "center", position: "sticky", right: 0, backgroundColor: "var(--card)", boxShadow: "inset 1px 0 0 var(--border)" }}>
                   <div style={{ display: "inline-flex", gap: 2 }}>
                     {canUpdate && <ActionBtn label={`Edit ${r.unit}`} tone="edit" icon={<Pencil size={14} />} onClick={() => openEdit(r)} />}
                     {canDelete && <ActionBtn label={`Remove ${r.unit}`} tone="delete" icon={<Trash2 size={14} />} onClick={() => setDeleting(r)} />}
-                    {!canUpdate && !canDelete && <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)" }}>—</span>}
+                    {!canUpdate && !canDelete && <Dash />}
                   </div>
                 </td>
               </tr>
@@ -1270,19 +1273,7 @@ export function EquipmentsPage() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", backgroundColor: "var(--background)" }}>
-      {/* Page title */}
-      <div style={{ backgroundColor: "var(--card)", padding: "18px 24px 8px", flexShrink: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <Truck size={20} style={{ color: "var(--primary)" }} />
-          <span style={{ fontFamily: "var(--font-sans)", fontSize: 20, fontWeight: 700, color: "var(--foreground)", letterSpacing: "-0.01em" }}>Equipment</span>
-        </div>
-        <div style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)", marginTop: 2 }}>
-          Your trucks and trailers, and who is driving them
-        </div>
-      </div>
-
-      {/* Tab bar */}
-      <div role="tablist" aria-label="Equipment type" style={{ backgroundColor: "var(--card)", borderBottom: "1px solid var(--border)", padding: "0 12px", flexShrink: 0, display: "flex", alignItems: "flex-end", gap: 2 }}>
+      <div role="tablist" aria-label="Equipment type" style={{ backgroundColor: "var(--card)", borderBottom: "1px solid var(--border)", padding: "0 12px", flexShrink: 0, display: "flex", alignItems: "flex-end", gap: 2, overflowX: "auto" }}>
         {tabs.map((t) => {
           const active = tab === t.id;
           return (
@@ -1293,7 +1284,7 @@ export function EquipmentsPage() {
               onClick={() => setTab(t.id)}
               style={{
                 display: "inline-flex", alignItems: "center", gap: 8,
-                padding: "12px 14px",
+                padding: "10px 14px",
                 fontFamily: "var(--font-sans)", fontSize: 13,
                 fontWeight: active ? 600 : 500,
                 color: active ? "var(--primary)" : "var(--muted-foreground)",
@@ -1322,7 +1313,7 @@ export function EquipmentsPage() {
       </div>
 
       {/* Content with padding + card */}
-      <div style={{ flex: 1, overflow: "hidden", padding: "20px 24px", display: "flex", flexDirection: "column" }}>
+      <div style={{ flex: 1, overflow: "hidden", padding: "14px 24px", display: "flex", flexDirection: "column" }}>
         <div style={{ flex: 1, display: "flex", flexDirection: "column", backgroundColor: "var(--card)", borderRadius: 12, overflow: "hidden", border: "1px solid var(--border)" }}>
           <div style={{ display: tab === "trucks" ? "contents" : "none" }}>
             <TrucksTab onCountChange={setTruckCount} />

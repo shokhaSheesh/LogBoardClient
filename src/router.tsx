@@ -5,6 +5,7 @@ import { DashboardPage } from "./pages/DashboardPage";
 import { BoardPage } from "./pages/BoardPage";
 import { GrossPage } from "./pages/GrossPage";
 import { LoadsPage } from "./pages/LoadsPage";
+import { LoadFormPage } from "./components/LoadsPage";
 import { DriversPage } from "./pages/DriversPage";
 import { EquipmentsPage } from "./pages/EquipmentsPage";
 import { PayoutsPage } from "./pages/PayoutsPage";
@@ -83,6 +84,9 @@ export const router = createBrowserRouter([
           { path: "board", element: <PermGuard path="board"><BoardPage /></PermGuard> },
           { path: "gross", element: <PermGuard path="gross"><GrossPage /></PermGuard> },
           { path: "loads", element: <PermGuard path="loads"><LoadsPage /></PermGuard> },
+          // Creating and editing a load are pages of their own (they replaced a dialog).
+          { path: "loads/new", element: <PermGuard path="loads"><LoadFormPage /></PermGuard> },
+          { path: "loads/:id/edit", element: <PermGuard path="loads"><LoadFormPage /></PermGuard> },
           { path: "drivers", element: <PermGuard path="drivers"><DriversPage /></PermGuard> },
           { path: "equipments", element: <PermGuard path="equipments"><EquipmentsPage /></PermGuard> },
           { path: "payouts", element: <PermGuard path="payouts"><PayoutsPage /></PermGuard> },

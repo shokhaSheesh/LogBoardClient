@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { CreditCard, Check, Zap, Shield, Building2, AlertCircle, Download } from "lucide-react";
 import { api, getCompanyId } from "../lib/api";
 import { PageLoader } from "../components/PageLoader";
+import { fmtDate } from "../lib/dates";
 
 // ─── Backend types ────────────────────────────────────────────────────────────
 
@@ -73,7 +74,7 @@ function toPlan(b: BackendPlan): Plan {
 
 function toInvoice(b: BackendInvoice): Invoice {
   const raw = b.date ?? b.created_at ?? "";
-  const date = raw ? new Date(raw).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "—";
+  const date = fmtDate(raw) || "—";
   return {
     id: b.id,
     invoiceNumber: b.invoice ?? b.id,
@@ -98,9 +99,7 @@ function cycleLabel(days: number | null): string {
 // renews_on is a bare YYYY-MM-DD. Build it as a local date — new Date("2026-11-02")
 // is UTC midnight, which prints as the previous day west of Greenwich.
 function formatDay(ymd: string): string {
-  const [y, m, d] = ymd.split("-").map(Number);
-  if (!y || !m || !d) return ymd;
-  return new Date(y, m - 1, d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  return fmtDate(ymd) || ymd;
 }
 
 // ─── Status style ─────────────────────────────────────────────────────────────
@@ -254,19 +253,6 @@ export function BillingPage() {
   return (
     <div style={{ flex: 1, overflowY: "auto", padding: "28px 32px", backgroundColor: "var(--background)", scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent" }}>
       <div style={{ maxWidth: 980, display: "flex", flexDirection: "column", gap: 24 }}>
-
-        {/* Page title */}
-        <div>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <CreditCard size={20} style={{ color: "var(--primary)" }} />
-            <span style={{ fontFamily: "var(--font-sans)", fontSize: 20, fontWeight: 700, color: "var(--foreground)", letterSpacing: "-0.01em" }}>
-              Billing
-            </span>
-          </div>
-          <div style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)", marginTop: 2 }}>
-            Your plan, driver seats and invoices
-          </div>
-        </div>
 
         {/* ── Status strip ── */}
         {currentPlan ? (

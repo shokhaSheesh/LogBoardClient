@@ -9,6 +9,8 @@ import { driverDisplayName } from "../lib/driverName";
 import { useAuth } from "../lib/auth";
 import { hasPerm } from "../lib/permissions";
 import { useTheme } from "../lib/theme";
+import { Dash } from "./Dash";
+import { fmtDate, fmtDateRange } from "../lib/dates";
 
 type CellType = Status | "load" | "empty";
 
@@ -144,7 +146,7 @@ function DayCellContent({ cell, dark }: { cell: DayCell; dark: boolean }) {
         <div title={cell.loadId} style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--muted-foreground)", lineHeight: 1.25, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "100%" }}>{cell.loadId}</div>
       </>
     ) : (
-      <div title={cell.loadId} style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--muted-foreground)" }}>{cell.loadId ?? "—"}</div>
+      <div title={cell.loadId} style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--muted-foreground)" }}>{cell.loadId ?? <Dash />}</div>
     );
   }
   if (cell.type === "empty") return <span style={{ color: "var(--border)" }}>·</span>;
@@ -436,7 +438,7 @@ function CellEditPanel({
   // Leaving Load mode closes its list, so coming back starts from the closed field.
   useEffect(() => { if (edit.mode !== "load") setLoadsOpen(false); }, [edit.mode]);
 
-  const dayLabel = new Date(edit.date + "T00:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+  const dayLabel = `${DAY_NAMES[new Date(edit.date + "T00:00:00").getDay()]} · ${fmtDate(edit.date)}`;
 
   return createPortal(
     <>
@@ -571,13 +573,8 @@ function daysInMonth(y: number, m: number) { return new Date(y, m + 1, 0).getDat
 function firstDow(y: number, m: number)    { return new Date(y, m, 1).getDay(); }
 
 function fmtRange(from: string, to: string) {
-  const f = (iso: string) => {
-    const [y, mo, d] = iso.split("-").map(Number);
-    return `${MONTH_NAMES_SHORT[mo - 1]} ${d}, ${y}`;
-  };
   if (!from && !to) return "Select range";
-  if (!to || from === to) return f(from);
-  return `${f(from)} – ${f(to)}`;
+  return fmtDateRange(from, to || from);
 }
 
 interface DateRangePickerProps {
@@ -839,10 +836,10 @@ const tintOver = (c: string) => `linear-gradient(${c}, ${c})`;
 
 function Kpi({ label, value, note }: { label: string; value: string; note?: string }) {
   return (
-    <div style={{ backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 10, padding: "12px 14px", minWidth: 0 }}>
+    <div style={{ backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 10, padding: "9px 14px", minWidth: 0 }}>
       <div style={{ fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--muted-foreground)" }}>{label}</div>
       <div style={{ display: "flex", alignItems: "baseline", gap: 6, flexWrap: "wrap" }}>
-        <span style={{ fontFamily: "var(--font-sans)", fontSize: 21, fontWeight: 700, letterSpacing: "-0.02em", color: "var(--foreground)", fontVariantNumeric: "tabular-nums" }}>{value}</span>
+        <span style={{ fontFamily: "var(--font-sans)", fontSize: 19, fontWeight: 700, letterSpacing: "-0.02em", color: "var(--foreground)", fontVariantNumeric: "tabular-nums" }}>{value}</span>
         {note && <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)" }}>{note}</span>}
       </div>
     </div>
@@ -1095,20 +1092,10 @@ export function GrossMatrix() {
         />
       )}
 
-      <div style={{ flex: 1, overflow: "hidden", padding: "20px 24px", display: "flex", flexDirection: "column", gap: 16 }}>
+      <div style={{ flex: 1, overflow: "hidden", padding: "14px 24px", display: "flex", flexDirection: "column", gap: 12 }}>
 
-        {/* Title + controls */}
+        {/* Controls */}
         <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: "12px 18px", flexWrap: "wrap", flexShrink: 0 }}>
-          <div>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <BarChart3 size={20} style={{ color: "var(--primary)" }} />
-              <span style={{ fontFamily: "var(--font-sans)", fontSize: 20, fontWeight: 700, color: "var(--foreground)", letterSpacing: "-0.01em" }}>Gross</span>
-            </div>
-            <div style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)", marginTop: 2 }}>
-              What each driver grossed, day by day
-            </div>
-          </div>
-
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             {/* View toggle: one table vs a section per team */}
             {teams.length > 0 && (
@@ -1223,7 +1210,7 @@ export function GrossMatrix() {
     const todayTint = tintOver("var(--primary-faint)");
 
     const th: React.CSSProperties = {
-      height: 44, padding: "0 10px", textAlign: "center", whiteSpace: "nowrap",
+      height: 40, padding: "0 10px", textAlign: "center", whiteSpace: "nowrap",
       fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase",
       color: "var(--muted-foreground)", backgroundColor: "var(--card)", borderBottom: edge,
       position: "sticky", top: 0, zIndex: 20,
@@ -1238,7 +1225,7 @@ export function GrossMatrix() {
       backgroundColor: "var(--background)", position: "sticky", right, zIndex: 9,
     });
     const totTd: React.CSSProperties = {
-      height: 48, padding: "0 10px", textAlign: "center", verticalAlign: "middle", whiteSpace: "nowrap",
+      height: 44, padding: "0 10px", textAlign: "center", verticalAlign: "middle", whiteSpace: "nowrap",
       fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 700, color: "var(--foreground)", fontVariantNumeric: "tabular-nums",
       backgroundColor: "var(--card)", boxShadow: "inset 0 1px 0 var(--border)",
       position: "sticky", bottom: 0, zIndex: 15,
@@ -1286,7 +1273,7 @@ export function GrossMatrix() {
             return (
               <tr key={driver.id}>
                 {/* Driver — name, with unit and type on the second line */}
-                <td style={{ width: DRV_W, minWidth: DRV_W, height: 54, padding: "0 14px", verticalAlign: "middle", borderRight: edge, borderBottom: edge, backgroundColor: "var(--card)", position: "sticky", left: 0, zIndex: 10 }}>
+                <td style={{ width: DRV_W, minWidth: DRV_W, height: 46, padding: "0 14px", verticalAlign: "middle", borderRight: edge, borderBottom: edge, backgroundColor: "var(--card)", position: "sticky", left: 0, zIndex: 10 }}>
                   <div title={driver.name} style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, color: "var(--foreground)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{driver.name}</div>
                   <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--muted-foreground)", whiteSpace: "nowrap" }}>
                     {[driver.unit, driver.driverType].filter(Boolean).join(" · ")}
@@ -1306,7 +1293,7 @@ export function GrossMatrix() {
                       onClick={canEdit ? (e) => openCellEdit(driver, iso, cell, e.currentTarget) : undefined}
                       onKeyDown={canEdit ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openCellEdit(driver, iso, cell, e.currentTarget); } } : undefined}
                       style={{
-                        width: DAY_W, minWidth: DAY_W, height: 54, padding: "0 6px",
+                        width: DAY_W, minWidth: DAY_W, height: 46, padding: "0 6px",
                         textAlign: "center", verticalAlign: "middle", overflow: "hidden",
                         borderRight: "1px solid color-mix(in srgb, var(--border) 55%, transparent)",
                         borderBottom: edge,
@@ -1337,7 +1324,7 @@ export function GrossMatrix() {
                 <td style={sumTd(R.pay, SUM_W.pay)}>
                   {driver.driverPay != null
                     ? <div style={sumAmount}>{fmt(driver.driverPay)}</div>
-                    : <div style={{ ...sumNote, fontSize: 12 }}>—</div>}
+                    : <Dash />}
                 </td>
 
                 {/* Target — set on the driver; shown here with progress toward it */}
@@ -1373,7 +1360,7 @@ export function GrossMatrix() {
               }, 0);
               return (
                 <td key={iso} style={{ ...totTd, color: dayTotal > 0 ? "var(--foreground)" : "var(--border)", backgroundImage: iso === todayIso ? todayTint : undefined }}>
-                  {dayTotal > 0 ? fmt(dayTotal) : "—"}
+                  {dayTotal > 0 ? fmt(dayTotal) : <Dash />}
                 </td>
               );
             })}
@@ -1384,9 +1371,9 @@ export function GrossMatrix() {
               </div>
             </td>
             <td style={{ ...totTd, textAlign: "right", padding: "0 12px", backgroundColor: "var(--background)", right: R.pay, zIndex: 17 }}>
-              {g.anyPay ? fmt(g.pay) : "—"}
+              {g.anyPay ? fmt(g.pay) : <Dash />}
             </td>
-            <td style={{ ...totTd, textAlign: "right", padding: "0 12px", backgroundColor: "var(--background)", color: "var(--border)", right: R.target, zIndex: 17 }}>—</td>
+            <td style={{ ...totTd, textAlign: "right", padding: "0 12px", backgroundColor: "var(--background)", right: R.target, zIndex: 17 }}><Dash /></td>
             <td style={{ ...totTd, textAlign: "right", padding: "0 12px", backgroundColor: "var(--background)", color: g.profit < 0 ? "#DC2626" : "var(--foreground)", right: R.profit, zIndex: 17 }}>
               {money(g.profit)}
             </td>

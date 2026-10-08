@@ -51,3 +51,16 @@ export async function routeMiles(coords: LatLng[], signal?: AbortSignal): Promis
   const meters = data?.routes?.[0]?.distance;
   return meters ? Math.round(meters / 1609.344) : null;
 }
+
+// The road path through the given coordinates, as points to draw on a map. Null when the
+// router can't be reached or finds no route — callers fall back to straight lines.
+export async function routePath(coords: LatLng[], signal?: AbortSignal): Promise<LatLng[] | null> {
+  if (coords.length < 2) return null;
+  const path = coords.map((c) => `${c.lng},${c.lat}`).join(";");
+  const data = await fetchJson(
+    `https://router.project-osrm.org/route/v1/driving/${path}?overview=simplified&geometries=geojson`,
+    signal
+  );
+  const line: [number, number][] | undefined = data?.routes?.[0]?.geometry?.coordinates;
+  return line?.length ? line.map(([lng, lat]) => ({ lat, lng })) : null;
+}

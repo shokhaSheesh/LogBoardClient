@@ -17,6 +17,8 @@ const WEEK_DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
 
 import { api, getCompanyId, isForbidden, ApiError } from "../lib/api";
 import { driverDisplayName } from "../lib/driverName";
+import { Dash } from "./Dash";
+import { fmtDateTime } from "../lib/dates";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -232,7 +234,7 @@ function fromRole(r: Partial<Role>): Record<string, unknown> {
 
 const TH = ({ children, width, align = "left", style: extraStyle }: { children: React.ReactNode; width?: number; align?: string; style?: React.CSSProperties }) => (
   <th style={{
-    padding: "10px 14px", textAlign: align as "left" | "center",
+    padding: "8px 14px", textAlign: align as "left" | "center",
     fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600,
     color: "var(--muted-foreground)", letterSpacing: "0.07em",
     textTransform: "uppercase", backgroundColor: "var(--card)",
@@ -246,7 +248,7 @@ const TH = ({ children, width, align = "left", style: extraStyle }: { children: 
 
 const TD = ({ children, mono = false, center = false, style: extra }: { children: React.ReactNode; mono?: boolean; center?: boolean; style?: React.CSSProperties }) => (
   <td style={{
-    padding: "12px 14px",
+    padding: "8px 14px",
     fontFamily: mono ? "var(--font-mono)" : "var(--font-sans)",
     fontSize: mono ? 12 : 13, color: "var(--foreground)",
     borderBottom: "1px solid var(--border)",
@@ -320,7 +322,7 @@ function CustomSelect({
   };
 
   const selected = options.find((o) => o.value === value);
-  const h = compact ? 30 : 34;
+  const h = compact ? 30 : 36;
 
   const dropdownStyle: React.CSSProperties = portal && fixedPos ? {
     position: "fixed",
@@ -383,9 +385,9 @@ function CustomSelect({
           display: "flex", alignItems: "center", gap: 8, width: "100%",
           height: h, paddingLeft: 10, paddingRight: 8,
           fontFamily: "var(--font-sans)", fontSize: compact ? 12 : 13,
-          backgroundColor: "var(--input-background)",
+          backgroundColor: "var(--card)",
           border: `1px solid ${open ? "var(--primary)" : "var(--border)"}`,
-          borderRadius: 7, color: "var(--foreground)", cursor: "pointer",
+          borderRadius: 8, color: "var(--foreground)", cursor: "pointer",
           boxShadow: open ? "0 0 0 3px var(--primary-soft)" : "none",
           transition: "border-color 0.15s, box-shadow 0.15s", outline: "none",
         }}
@@ -506,13 +508,13 @@ function ActionBtn({ icon, tone, onClick, label }: { icon: React.ReactNode; tone
 }
 
 const inputStyle: React.CSSProperties = {
-  fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 10px", borderRadius: 6,
-  border: "1px solid var(--border)", backgroundColor: "var(--input-background)",
+  fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 10px", borderRadius: 8, height: 36,
+  border: "1px solid var(--border)", backgroundColor: "var(--card)",
   color: "var(--foreground)", outline: "none", width: "100%", boxSizing: "border-box",
 };
+// Field label: plain sentence-case text above its control.
 const capStyle: React.CSSProperties = {
-  fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600,
-  color: "var(--muted-foreground)", textTransform: "uppercase", letterSpacing: "0.06em",
+  fontFamily: "var(--font-sans)", fontSize: 12.5, fontWeight: 600, color: "var(--foreground)",
 };
 const fieldStyle: React.CSSProperties = { display: "flex", flexDirection: "column", gap: 5 };
 
@@ -571,8 +573,8 @@ function DeleteConfirm({ label, onClose, onConfirm, busy = false, error }: { lab
         </div>
         <FormError message={error} style={{ marginBottom: 16 }} />
         <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
-          <button onClick={onClose} disabled={busy} style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 20px", borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "var(--muted)", color: "var(--foreground)", cursor: busy ? "default" : "pointer", opacity: busy ? 0.5 : 1 }}>Cancel</button>
-          <button onClick={onConfirm} disabled={busy} style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, minWidth: 96, fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 20px", borderRadius: 6, border: "none", backgroundColor: "#EF4444", color: "#fff", cursor: busy ? "default" : "pointer", opacity: busy ? 0.8 : 1 }}>
+          <button onClick={onClose} disabled={busy} style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 20px", borderRadius: 8, border: "1px solid var(--border)", backgroundColor: "var(--card)", color: "var(--foreground)", cursor: busy ? "default" : "pointer", opacity: busy ? 0.5 : 1 }}>Cancel</button>
+          <button onClick={onConfirm} disabled={busy} style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, minWidth: 96, fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 20px", borderRadius: 8, border: "none", backgroundColor: "#EF4444", color: "#fff", cursor: busy ? "default" : "pointer", opacity: busy ? 0.8 : 1 }}>
             {busy ? <><span style={{ width: 13, height: 13, borderRadius: "50%", border: "2px solid rgba(255,255,255,0.4)", borderTopColor: "#fff", animation: "spin 0.7s linear infinite", display: "inline-block" }} /> Deleting…</> : "Delete"}
           </button>
         </div>
@@ -675,30 +677,30 @@ function UserModal({ user, roles, teams, saving, error, onClose, onSave }: {
 
   return (
     <ModalShell label={isNew ? "Add user" : "Edit user"} onClose={onClose} busy={!!saving}>
-      <div style={{ backgroundColor: "var(--card)", borderRadius: 12, width: 580, boxShadow: "0 20px 60px rgba(0,0,0,0.25)", maxHeight: "90vh", display: "flex", flexDirection: "column" }}>
+      <div style={{ backgroundColor: "var(--card)", borderRadius: 12, width: 800, maxWidth: "calc(100vw - 32px)", boxShadow: "0 20px 60px rgba(0,0,0,0.25)", maxHeight: "90vh", display: "flex", flexDirection: "column" }}>
         {/* Header */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
-          <span style={{ fontFamily: "var(--font-sans)", fontSize: 15, fontWeight: 700, color: "var(--foreground)", letterSpacing: "-0.01em" }}>{isNew ? "Add User" : "Edit User"}</span>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "13px 20px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
+          <span style={{ fontFamily: "var(--font-sans)", fontSize: 15, fontWeight: 700, color: "var(--foreground)", letterSpacing: "-0.01em" }}>{isNew ? "Add user" : "Edit user"}</span>
           <button onClick={onClose} aria-label="Close" style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted-foreground)" }}><X size={16} /></button>
         </div>
 
         {/* Body */}
-        <div style={{ padding: 20, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, overflowY: "auto" }}>
+        <div style={{ padding: "16px 20px", display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: "12px 14px", overflowY: "auto" }}>
           {/* Name */}
           <label style={fieldStyle}>
-            {req("Full Name")}
+            {req("Full name")}
             <input value={form.name ?? ""} onChange={(e) => set("name", e.target.value)} style={{ ...inputStyle, border: errBorder(form.name) ?? inputStyle.border }} />
             <FieldHint text={submitted && !form.name?.trim() ? "Full name is required." : null} />
           </label>
           {/* Phone */}
           <label style={fieldStyle}>
-            <span style={capStyle}>Phone Number</span>
+            <span style={capStyle}>Phone number</span>
             <input value={form.phone ?? ""} onChange={(e) => set("phone", e.target.value)} style={inputStyle} />
           </label>
 
           {/* Working Days — two day pickers */}
           <div style={fieldStyle}>
-            <span style={capStyle}>Working Days</span>
+            <span style={capStyle}>Working days</span>
             <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", alignItems: "center", gap: 6 }}>
               <CustomSelect value={dayFrom} options={dayOpts} onChange={setDayFrom} portal />
               <span style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)", textAlign: "center" }}>–</span>
@@ -708,7 +710,7 @@ function UserModal({ user, roles, teams, saving, error, onClose, onSave }: {
 
           {/* Working Hours */}
           <div style={fieldStyle}>
-            <span style={capStyle}>Working Hours</span>
+            <span style={capStyle}>Working hours</span>
             <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", alignItems: "center", gap: 6 }}>
               <CustomSelect value={form.workFrom ?? "08:00"} options={hourOpts} onChange={(v) => set("workFrom", v)} portal />
               <span style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)", textAlign: "center" }}>–</span>
@@ -784,9 +786,9 @@ function UserModal({ user, roles, teams, saving, error, onClose, onSave }: {
         <FormError message={error} style={formErrorInModal} />
 
         {/* Footer */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 10, padding: "14px 20px", borderTop: "1px solid var(--border)", borderRadius: "0 0 12px 12px", flexShrink: 0 }}>
-          <button onClick={onClose} disabled={saving} style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 16px", borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "var(--muted)", color: "var(--foreground)", cursor: saving ? "default" : "pointer", opacity: saving ? 0.5 : 1 }}>Cancel</button>
-          <button onClick={handleSave} disabled={saving} style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 16px", borderRadius: 6, border: "none", backgroundColor: "var(--primary)", color: "#fff", cursor: saving ? "not-allowed" : "pointer", opacity: saving ? 0.75 : 1, display: "flex", alignItems: "center", gap: 6 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 10, padding: "12px 20px", borderTop: "1px solid var(--border)", borderRadius: "0 0 12px 12px", flexShrink: 0 }}>
+          <button onClick={onClose} disabled={saving} style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 16px", borderRadius: 8, border: "1px solid var(--border)", backgroundColor: "var(--card)", color: "var(--foreground)", cursor: saving ? "default" : "pointer", opacity: saving ? 0.5 : 1 }}>Cancel</button>
+          <button onClick={handleSave} disabled={saving} style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 16px", borderRadius: 8, border: "none", backgroundColor: "var(--primary)", color: "#fff", cursor: saving ? "not-allowed" : "pointer", opacity: saving ? 0.75 : 1, display: "flex", alignItems: "center", gap: 6 }}>
             {saving ? <span style={{ width: 14, height: 14, borderRadius: "50%", border: "2px solid rgba(255,255,255,0.35)", borderTopColor: "#fff", animation: "spin 0.7s linear infinite", display: "inline-block" }} /> : <Check size={14} />}
             {saving ? (isNew ? "Creating…" : "Saving…") : (isNew ? "Create User" : "Save Changes")}
           </button>
@@ -923,7 +925,7 @@ function UsersTab({ roles, teams, reloadTeams, reloadRoles, canCreate, canUpdate
   return (
     <>
       {/* Toolbar */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", borderBottom: "1px solid var(--border)", backgroundColor: "var(--card)", flexShrink: 0 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 16px", borderBottom: "1px solid var(--border)", backgroundColor: "var(--card)", flexShrink: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <div style={{ position: "relative" }}>
             <Search size={14} style={{ position: "absolute", left: 9, top: "50%", transform: "translateY(-50%)", color: "var(--muted-foreground)", pointerEvents: "none" }} />
@@ -955,7 +957,7 @@ function UsersTab({ roles, teams, reloadTeams, reloadRoles, canCreate, canUpdate
 
       {/* Table */}
       <div style={{ flex: 1, overflow: "auto", scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent" }}>
-        <table style={{ width: "max-content", minWidth: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
+        <table style={{ width: "max-content", minWidth: "100%", borderCollapse: "separate", borderSpacing: 0, tableLayout: "fixed" }}>
           <thead>
             <tr>
               <TH width={180}>Name</TH>
@@ -966,7 +968,7 @@ function UsersTab({ roles, teams, reloadTeams, reloadRoles, canCreate, canUpdate
               <TH width={130}>Team</TH>
               <TH width={140}>Login</TH>
               <TH width={90}>Status</TH>
-              <TH width={90} align="center">Actions</TH>
+              <TH width={90} align="center" style={{ right: 0, zIndex: 6, boxShadow: "inset 1px 0 0 var(--border)" }}>Actions</TH>
             </tr>
           </thead>
           <tbody>
@@ -987,18 +989,18 @@ function UsersTab({ roles, teams, reloadTeams, reloadRoles, canCreate, canUpdate
                   <TD mono>{u.phone}</TD>
                   <TD>{u.workDays}</TD>
                   <TD mono>{u.workFrom} – {u.workTo}</TD>
-                  <td style={{ padding: "12px 14px", borderBottom: "1px solid var(--border)", verticalAlign: "middle" }}>
+                  <td style={{ padding: "8px 14px", borderBottom: "1px solid var(--border)", verticalAlign: "middle" }}>
                     <span style={{
                       fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: 600,
                       color: "var(--foreground)", backgroundColor: "var(--muted)",
                       borderRadius: 5, padding: "2px 9px",
                     }}>
-                      {role?.name ?? (u.roleName || "—")}
+                      {role?.name ?? (u.roleName || <Dash />)}
                     </span>
                   </td>
-                  <TD><span style={{ color: "var(--muted-foreground)" }}>{team?.name ?? "—"}</span></TD>
+                  <TD><span style={{ color: "var(--muted-foreground)" }}>{team?.name ?? <Dash />}</span></TD>
                   <TD mono>{u.login}</TD>
-                  <td style={{ padding: "12px 14px", borderBottom: "1px solid var(--border)", verticalAlign: "middle" }}>
+                  <td style={{ padding: "8px 14px", borderBottom: "1px solid var(--border)", verticalAlign: "middle" }}>
                     <span style={{
                       display: "inline-flex", alignItems: "center", gap: 5,
                       fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600,
@@ -1010,7 +1012,7 @@ function UsersTab({ roles, teams, reloadTeams, reloadRoles, canCreate, canUpdate
                       {u.status}
                     </span>
                   </td>
-                  <td style={{ padding: "8px 10px", borderBottom: "1px solid var(--border)", verticalAlign: "middle", textAlign: "center" }}>
+                  <td style={{ padding: "4px 10px", borderBottom: "1px solid var(--border)", verticalAlign: "middle", textAlign: "center", position: "sticky", right: 0, backgroundColor: "var(--card)", boxShadow: "inset 1px 0 0 var(--border)" }}>
                     <div style={{ display: "inline-flex", gap: 2 }}>
                       {canUpdate && <ActionBtn label={`Edit ${u.name || "user"}`} icon={<Pencil size={14} />} tone="edit" onClick={() => { setEditing({ ...u, teamId: team?.id ?? null }); setSaveErr(null); setModal("edit"); }} />}
                       {canDelete && <ActionBtn label={`Delete ${u.name || "user"}`} icon={<Trash2 size={14} />} tone="delete" onClick={() => setDeleting(u)} />}
@@ -1141,7 +1143,7 @@ function AsyncMultiSelect({
           onClick={() => { setOpen((v) => !v); setQuery(""); }}
           style={{
             display: "flex", alignItems: "center", gap: 8, width: "100%", height: 34, paddingLeft: 10, paddingRight: 8,
-            fontFamily: "var(--font-sans)", fontSize: 13, backgroundColor: "var(--input-background)",
+            fontFamily: "var(--font-sans)", fontSize: 13, backgroundColor: "var(--card)",
             border: `1px solid ${open ? "var(--primary)" : "var(--border)"}`, borderRadius: 7,
             color: selectedKeys.length === 0 ? "var(--muted-foreground)" : "var(--foreground)", cursor: "pointer",
             boxShadow: open ? "0 0 0 3px var(--primary-soft)" : "none", outline: "none",
@@ -1185,7 +1187,7 @@ function AsyncMultiSelect({
                 <Search size={12} style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", color: "var(--muted-foreground)", pointerEvents: "none" }} />
                 <input ref={inputRef} value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search…" aria-label={`Search ${label.toLowerCase()}`}
                   onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); setOpen(false); } }}
-                  style={{ width: "100%", height: 30, paddingLeft: 26, paddingRight: 8, fontFamily: "var(--font-sans)", fontSize: 12, border: "1px solid var(--border)", borderRadius: 6, backgroundColor: "var(--input-background)", color: "var(--foreground)", outline: "none", boxSizing: "border-box" }} />
+                  style={{ width: "100%", height: 30, paddingLeft: 26, paddingRight: 8, fontFamily: "var(--font-sans)", fontSize: 12, border: "1px solid var(--border)", borderRadius: 6, backgroundColor: "var(--card)", color: "var(--foreground)", outline: "none", boxSizing: "border-box" }} />
               </div>
             </div>
             <div ref={listRef} onScroll={onScroll} style={{ maxHeight: 180, overflowY: "auto", scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent" }}>
@@ -1248,13 +1250,13 @@ function TeamModal({ team, users, driverLabels, saving, error, onClose, onSave }
   return (
     <ModalShell label={isNew ? "Create team" : "Edit team"} onClose={onClose} busy={!!saving}>
       <div style={{ backgroundColor: "var(--card)", borderRadius: 12, width: 540, boxShadow: "0 20px 60px rgba(0,0,0,0.25)", maxHeight: "90vh", display: "flex", flexDirection: "column" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
-          <span style={{ fontFamily: "var(--font-sans)", fontSize: 15, fontWeight: 700, color: "var(--foreground)", letterSpacing: "-0.01em" }}>{isNew ? "Create Team" : "Edit Team"}</span>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "13px 20px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
+          <span style={{ fontFamily: "var(--font-sans)", fontSize: 15, fontWeight: 700, color: "var(--foreground)", letterSpacing: "-0.01em" }}>{isNew ? "Create team" : "Edit team"}</span>
           <button onClick={onClose} aria-label="Close" style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted-foreground)" }}><X size={16} /></button>
         </div>
         <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 16, overflowY: "auto" }}>
           <label style={fieldStyle}>
-            <span style={capStyle}>Team Name <span style={{ color: "#EF4444" }}>*</span></span>
+            <span style={capStyle}>Team name <span style={{ color: "#EF4444" }}>*</span></span>
             <input value={form.name ?? ""} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} style={{ ...inputStyle, border: submitted && nameMissing ? "1px solid #EF4444" : inputStyle.border }} />
             <FieldHint text={submitted && nameMissing ? "Team name is required." : null} />
           </label>
@@ -1296,9 +1298,9 @@ function TeamModal({ team, users, driverLabels, saving, error, onClose, onSave }
           />
         </div>
         <FormError message={error} style={formErrorInModal} />
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, padding: "14px 20px", borderTop: "1px solid var(--border)", borderRadius: "0 0 12px 12px", flexShrink: 0 }}>
-          <button onClick={onClose} disabled={saving} style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 16px", borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "var(--muted)", color: "var(--foreground)", cursor: saving ? "default" : "pointer", opacity: saving ? 0.5 : 1 }}>Cancel</button>
-          <button onClick={handleSave} disabled={saving} style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 16px", borderRadius: 6, border: "none", backgroundColor: saving ? "var(--muted)" : "var(--primary)", color: saving ? "var(--muted-foreground)" : "#fff", cursor: saving ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, padding: "12px 20px", borderTop: "1px solid var(--border)", borderRadius: "0 0 12px 12px", flexShrink: 0 }}>
+          <button onClick={onClose} disabled={saving} style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 16px", borderRadius: 8, border: "1px solid var(--border)", backgroundColor: "var(--card)", color: "var(--foreground)", cursor: saving ? "default" : "pointer", opacity: saving ? 0.5 : 1 }}>Cancel</button>
+          <button onClick={handleSave} disabled={saving} style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 16px", borderRadius: 8, border: "none", backgroundColor: saving ? "var(--muted)" : "var(--primary)", color: saving ? "var(--muted-foreground)" : "#fff", cursor: saving ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 6 }}>
             <Check size={14} /> {saving ? "Saving…" : isNew ? "Create Team" : "Save Changes"}
           </button>
         </div>
@@ -1409,7 +1411,7 @@ function TeamsTab({ canCreate, canUpdate, canDelete }: {
   return (
     <>
       {/* Toolbar */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", borderBottom: "1px solid var(--border)", backgroundColor: "var(--card)", flexShrink: 0 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 16px", borderBottom: "1px solid var(--border)", backgroundColor: "var(--card)", flexShrink: 0 }}>
         <div style={{ position: "relative" }}>
           <Search size={14} style={{ position: "absolute", left: 9, top: "50%", transform: "translateY(-50%)", color: "var(--muted-foreground)", pointerEvents: "none" }} />
           <input
@@ -1433,14 +1435,14 @@ function TeamsTab({ canCreate, canUpdate, canDelete }: {
 
       {/* Table */}
       <div style={{ flex: 1, overflow: "auto", scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent" }}>
-        <table style={{ width: "max-content", minWidth: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
+        <table style={{ width: "max-content", minWidth: "100%", borderCollapse: "separate", borderSpacing: 0, tableLayout: "fixed" }}>
           <thead>
             <tr>
 
               <TH width={180}>Team Name</TH>
               <TH width={340}>Users</TH>
               <TH width={380}>Drivers</TH>
-              <TH width={90} align="center">Actions</TH>
+              <TH width={90} align="center" style={{ right: 0, zIndex: 6, boxShadow: "inset 1px 0 0 var(--border)" }}>Actions</TH>
             </tr>
           </thead>
           <tbody>
@@ -1453,7 +1455,7 @@ function TeamsTab({ canCreate, canUpdate, canDelete }: {
                 >
 
                   <TD><span style={{ fontWeight: 600 }}>{t.name}</span></TD>
-                  <td style={{ padding: "12px 14px", borderBottom: "1px solid var(--border)", verticalAlign: "middle" }}>
+                  <td style={{ padding: "8px 14px", borderBottom: "1px solid var(--border)", verticalAlign: "middle" }}>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
                       {teamUsers.length === 0
                         ? <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)", fontStyle: "italic" }}>No users</span>
@@ -1462,7 +1464,7 @@ function TeamsTab({ canCreate, canUpdate, canDelete }: {
                         ))}
                     </div>
                   </td>
-                  <td style={{ padding: "12px 14px", borderBottom: "1px solid var(--border)", verticalAlign: "middle" }}>
+                  <td style={{ padding: "8px 14px", borderBottom: "1px solid var(--border)", verticalAlign: "middle" }}>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
                       {t.driverNames.length === 0
                         ? <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)", fontStyle: "italic" }}>No drivers</span>
@@ -1471,7 +1473,7 @@ function TeamsTab({ canCreate, canUpdate, canDelete }: {
                         ))}
                     </div>
                   </td>
-                  <td style={{ padding: "8px 10px", borderBottom: "1px solid var(--border)", verticalAlign: "middle", textAlign: "center" }}>
+                  <td style={{ padding: "4px 10px", borderBottom: "1px solid var(--border)", verticalAlign: "middle", textAlign: "center", position: "sticky", right: 0, backgroundColor: "var(--card)", boxShadow: "inset 1px 0 0 var(--border)" }}>
                     <div style={{ display: "inline-flex", gap: 2 }}>
                       {canUpdate && <ActionBtn label={`Edit ${t.name}`} icon={<Pencil size={14} />} tone="edit" onClick={() => { setEditing(t); setSaveErr(null); setModal("edit"); }} />}
                       {canDelete && <ActionBtn label={`Delete ${t.name}`} icon={<Trash2 size={14} />} tone="delete" onClick={() => setDeleting(t)} />}
@@ -1569,13 +1571,13 @@ function RoleModal({ role, entries: catalogEntries, saving, error, onClose, onSa
   return (
     <ModalShell label={isNew ? "Create role" : "Edit role"} onClose={onClose} busy={!!saving}>
       <div style={{ backgroundColor: "var(--card)", borderRadius: 12, width: 700, boxShadow: "0 20px 60px rgba(0,0,0,0.25)", overflow: "hidden", maxHeight: "92vh", display: "flex", flexDirection: "column" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
-          <span style={{ fontFamily: "var(--font-sans)", fontSize: 15, fontWeight: 700, color: "var(--foreground)", letterSpacing: "-0.01em" }}>{isNew ? "Create Role" : `Edit Role: ${role.name}`}</span>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "13px 20px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
+          <span style={{ fontFamily: "var(--font-sans)", fontSize: 15, fontWeight: 700, color: "var(--foreground)", letterSpacing: "-0.01em" }}>{isNew ? "Create role" : `Edit role: ${role.name}`}</span>
           <button onClick={onClose} aria-label="Close" style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted-foreground)" }}><X size={16} /></button>
         </div>
         <div style={{ padding: 20, overflowY: "auto", display: "flex", flexDirection: "column", gap: 18 }}>
           <label style={fieldStyle}>
-            <span style={capStyle}>Role Name {!role.builtin && <span style={{ color: "#EF4444" }}>*</span>}</span>
+            <span style={capStyle}>Role name {!role.builtin && <span style={{ color: "#EF4444" }}>*</span>}</span>
             <input value={form.name ?? ""} disabled={role.builtin} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
               style={{ ...inputStyle, maxWidth: 280, border: submitted && nameMissing ? "1px solid #EF4444" : inputStyle.border, ...(role.builtin ? { opacity: 0.6, cursor: "not-allowed" } : {}) }} />
             {role.builtin && (
@@ -1588,7 +1590,7 @@ function RoleModal({ role, entries: catalogEntries, saving, error, onClose, onSa
 
           {/* RBAC matrix */}
           <div>
-            <div style={{ ...capStyle, marginBottom: 10, display: "block" }}>Page Permissions</div>
+            <div style={{ ...capStyle, marginBottom: 10, display: "block" }}>Page permissions</div>
             {catalogEntries.length === 0 ? (
               <div style={{ padding: "24px 16px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>Loading permissions…</div>
             ) : (
@@ -1636,9 +1638,9 @@ function RoleModal({ role, entries: catalogEntries, saving, error, onClose, onSa
           </div>
         </div>
         <FormError message={error} style={formErrorInModal} />
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 10, padding: "14px 20px", borderTop: "1px solid var(--border)", flexShrink: 0 }}>
-          <button onClick={onClose} disabled={saving} style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 16px", borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "var(--muted)", color: "var(--foreground)", cursor: saving ? "default" : "pointer", opacity: saving ? 0.5 : 1 }}>Cancel</button>
-          <button onClick={handleSave} disabled={saving} style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 16px", borderRadius: 6, border: "none", backgroundColor: "var(--primary)", color: "#fff", cursor: saving ? "not-allowed" : "pointer", opacity: saving ? 0.75 : 1, display: "flex", alignItems: "center", gap: 6 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 10, padding: "12px 20px", borderTop: "1px solid var(--border)", flexShrink: 0 }}>
+          <button onClick={onClose} disabled={saving} style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 16px", borderRadius: 8, border: "1px solid var(--border)", backgroundColor: "var(--card)", color: "var(--foreground)", cursor: saving ? "default" : "pointer", opacity: saving ? 0.5 : 1 }}>Cancel</button>
+          <button onClick={handleSave} disabled={saving} style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 16px", borderRadius: 8, border: "none", backgroundColor: "var(--primary)", color: "#fff", cursor: saving ? "not-allowed" : "pointer", opacity: saving ? 0.75 : 1, display: "flex", alignItems: "center", gap: 6 }}>
             {saving ? <span style={{ width: 14, height: 14, borderRadius: "50%", border: "2px solid rgba(255,255,255,0.35)", borderTopColor: "#fff", animation: "spin 0.7s linear infinite", display: "inline-block" }} /> : <Check size={14} />}
             {saving ? (isNew ? "Creating…" : "Saving…") : (isNew ? "Create Role" : "Save Changes")}
           </button>
@@ -1735,7 +1737,7 @@ function RolesTab({ onRolesChange, canCreate, canUpdate, canDelete }: {
 
   return (
     <>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 20px", borderBottom: "1px solid var(--border)", backgroundColor: "var(--card)", flexShrink: 0 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 16px", borderBottom: "1px solid var(--border)", backgroundColor: "var(--card)", flexShrink: 0 }}>
         <span style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
           <span style={{ fontWeight: 600, color: "var(--foreground)" }}>{roles.length}</span> roles defined
         </span>
@@ -1768,7 +1770,7 @@ function RolesTab({ onRolesChange, canCreate, canUpdate, canDelete }: {
                   onMouseEnter={(e) => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = "var(--primary-faint)"; }}
                   onMouseLeave={(e) => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = ""; }}
                 >
-                  <td style={{ padding: "12px 14px", borderBottom: "1px solid var(--border)", verticalAlign: "middle" }}>
+                  <td style={{ padding: "8px 14px", borderBottom: "1px solid var(--border)", verticalAlign: "middle" }}>
                     <span style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, color: "var(--foreground)" }}>{r.name}</span>
                     {(r.system || r.builtin) && (
                       <span title={r.system ? "The Owner role always has full access and can't be changed" : "Built-in role: it can't be renamed or deleted"}
@@ -1780,17 +1782,17 @@ function RolesTab({ onRolesChange, canCreate, canUpdate, canDelete }: {
                   {effectiveEntries.map(({ page, actions }) => {
                     const perms = r.permissions[page] ?? {};
                     return (
-                      <td key={page} style={{ padding: "12px 14px", borderBottom: "1px solid var(--border)", verticalAlign: "middle", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 12.5, lineHeight: 1.45, color: "var(--foreground)" }}>
+                      <td key={page} style={{ padding: "8px 14px", borderBottom: "1px solid var(--border)", verticalAlign: "middle", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 12.5, lineHeight: 1.45, color: "var(--foreground)" }}>
                         {(() => {
                           const granted = actions.filter((a) => perms[a]);
-                          if (granted.length === 0) return <span style={{ color: "var(--border)" }}>—</span>;
+                          if (granted.length === 0) return <Dash />;
                           if (granted.length === actions.length && actions.length > 1) return <span style={{ fontWeight: 600, color: "var(--secondary-foreground)" }}>Full access</span>;
                           return granted.map(actionLabel).join(", ");
                         })()}
                       </td>
                     );
                   })}
-                  <td style={{ padding: "8px 10px", borderBottom: "1px solid var(--border)", verticalAlign: "middle", textAlign: "center", position: "sticky", right: 0, backgroundColor: "var(--card)", boxShadow: "inset 1px 0 0 var(--border)" }}>
+                  <td style={{ padding: "4px 10px", borderBottom: "1px solid var(--border)", verticalAlign: "middle", textAlign: "center", position: "sticky", right: 0, backgroundColor: "var(--card)", boxShadow: "inset 1px 0 0 var(--border)" }}>
                     <div style={{ display: "inline-flex", gap: 2 }}>
                       {/* Owner (system) can't be edited or deleted; Dispatcher/Updater (built-in) can't be deleted. */}
                       {canUpdate && !r.system && <ActionBtn label={`Edit ${r.name}`} icon={<Pencil size={14} />} tone="edit" onClick={() => { if (!catalogReady) return; setEditing(r); setSaveErr(null); setModal("edit"); }} />}
@@ -1974,7 +1976,7 @@ const ELD_PROVIDERS = [{ value: "noor", label: "Noor ELD" }];
 
 function fmtWhen(iso?: string | null): string {
   if (!iso) return "—";
-  return new Date(iso).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  return fmtDateTime(iso) || "—";
 }
 
 // Connect the company's own ELD provider. The connection lives at /eld (separate from the
@@ -2102,8 +2104,8 @@ function EldTab({ canManage }: { canManage: boolean }) {
             </div>
             <FormError message={errMsg} style={{ marginBottom: 16 }} />
             <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
-              <button onClick={() => { setConfirming(false); setErrMsg(null); }} disabled={saving} style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 20px", borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "var(--muted)", color: "var(--foreground)", cursor: saving ? "default" : "pointer", opacity: saving ? 0.5 : 1 }}>Cancel</button>
-              <button onClick={() => { void disconnect(); }} disabled={saving} style={{ minWidth: 110, fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 20px", borderRadius: 6, border: "none", backgroundColor: "#EF4444", color: "#fff", cursor: saving ? "default" : "pointer", opacity: saving ? 0.8 : 1 }}>
+              <button onClick={() => { setConfirming(false); setErrMsg(null); }} disabled={saving} style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 20px", borderRadius: 8, border: "1px solid var(--border)", backgroundColor: "var(--card)", color: "var(--foreground)", cursor: saving ? "default" : "pointer", opacity: saving ? 0.5 : 1 }}>Cancel</button>
+              <button onClick={() => { void disconnect(); }} disabled={saving} style={{ minWidth: 110, fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 20px", borderRadius: 8, border: "none", backgroundColor: "#EF4444", color: "#fff", cursor: saving ? "default" : "pointer", opacity: saving ? 0.8 : 1 }}>
                 {saving ? "Disconnecting…" : "Disconnect"}
               </button>
             </div>
@@ -2164,25 +2166,13 @@ export function SettingsPage() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", backgroundColor: "var(--background)" }}>
-      {/* Page title */}
-      <div style={{ backgroundColor: "var(--card)", padding: "18px 24px 8px", flexShrink: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <SettingsIcon size={20} style={{ color: "var(--primary)" }} />
-          <span style={{ fontFamily: "var(--font-sans)", fontSize: 20, fontWeight: 700, color: "var(--foreground)", letterSpacing: "-0.01em" }}>Settings</span>
-        </div>
-        <div style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)", marginTop: 2 }}>
-          Users, teams, roles and company preferences
-        </div>
-      </div>
-
-      {/* Tab bar */}
       <div role="tablist" aria-label="Settings sections" style={{ backgroundColor: "var(--card)", borderBottom: "1px solid var(--border)", padding: "0 12px", flexShrink: 0, display: "flex", alignItems: "flex-end", gap: 2, overflowX: "auto" }}>
         {tabs.map((t) => {
           const active = tab === t.id;
           return (
             <button key={t.id} role="tab" aria-selected={active} onClick={() => setTab(t.id)} style={{
               display: "inline-flex", alignItems: "center", gap: 8,
-              padding: "12px 14px", whiteSpace: "nowrap",
+              padding: "10px 14px", whiteSpace: "nowrap",
               fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: active ? 600 : 500,
               color: active ? "var(--primary)" : "var(--muted-foreground)",
               backgroundColor: "transparent", border: "none",
@@ -2195,7 +2185,7 @@ export function SettingsPage() {
           );
         })}
       </div>
-      <div style={{ flex: 1, overflow: "hidden", padding: "20px 24px", display: "flex", flexDirection: "column" }}>
+      <div style={{ flex: 1, overflow: "hidden", padding: "14px 24px", display: "flex", flexDirection: "column" }}>
         <div style={{ flex: 1, display: "flex", flexDirection: "column", backgroundColor: "var(--card)", borderRadius: 12, overflow: "hidden", border: "1px solid var(--border)" }}>
           {tab === "users" && <UsersTab roles={roles} teams={teams} reloadTeams={reloadTeams} reloadRoles={reloadRoles} canCreate={can("users", "create")} canUpdate={can("users", "update")} canDelete={can("users", "delete")} />}
           {tab === "teams" && <TeamsTab canCreate={can("teams", "create")} canUpdate={can("teams", "update")} canDelete={can("teams", "delete")} />}

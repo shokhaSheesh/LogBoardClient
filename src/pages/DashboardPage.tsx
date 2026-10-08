@@ -7,6 +7,7 @@ import {
 import { ChevronLeft, ChevronRight, TrendingUp, TrendingDown, Package, DollarSign, Gauge, Trophy, Zap, AlertCircle } from "lucide-react";
 import { api } from "../lib/api";
 import { PageLoader } from "../components/PageLoader";
+import { fmtDateRange } from "../lib/dates";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -56,16 +57,17 @@ function addDaysISO(iso: string, n: number): string {
 }
 
 function fmtWeekLabel(from: string): string {
-  const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-  const d   = new Date(from + "T12:00:00");
+  const d   = new Date(from.slice(0, 10) + "T12:00:00");
+  if (isNaN(d.getTime())) return from;
   const end = new Date(d);
   end.setDate(end.getDate() + 6);
-  return `${MONTHS[d.getMonth()]} ${d.getDate()} – ${MONTHS[end.getMonth()]} ${end.getDate()}`;
+  return fmtDateRange(d, end);
 }
 
 function toWeekData(b: BackendDashboard, key: string): WeekData {
   return {
-    label:            b.week?.label ?? fmtWeekLabel(b.week?.start ?? key),
+    // Always our own date format — the backend's ready-made label is worded differently.
+    label:            fmtWeekLabel(b.week?.start ?? key),
     weekKey:          key,
     completedLoads:   b.kpis?.completed_loads?.value ?? 0,
     totalGross:       b.kpis?.total_gross?.value     ?? 0,
