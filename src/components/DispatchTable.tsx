@@ -994,7 +994,16 @@ export function DispatchTable() {
   // rather than resubscribing the socket every time it opens.
   const historyOpenRef = useRef(false);
   const reconnectRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const wsBackoff     = useRef(2000);
+  const wsBackoff     = useRef(1000);
+  // Whether the board is receiving live pushes. "connecting" covers the first handshake;
+  // "offline" means the socket is down and we are retrying (and polling meanwhile).
+  const [live, setLive] = useState<"connecting" | "live" | "offline">("connecting");
+  // Edits the user has made that the server has not confirmed back yet, per driver. While
+  // an entry is here its fields win over anything the server pushes — a snapshot computed
+  // a moment before the save landed must not paint the old value back over the new one.
+  // `inflight` counts unfinished saves; once it reaches zero the entry lives on only until
+  // a snapshot agrees with it, or `until` passes.
+  const pending = useRef<Record<string, { fields: Partial<Driver>; inflight: number; until: number }>>({});
   const filterRef     = useRef<HTMLDivElement>(null);
   const teamRef       = useRef<HTMLDivElement>(null);
   // Both filter menus render in a portal (see below), so they need their own panel
@@ -1013,10 +1022,41 @@ export function DispatchTable() {
 
   // ── Fetch board ────────────────────────────────────────────────────────────
 
+  // Server rows, with the user's unconfirmed edits laid back over them (see `pending`).
+  const withPending = (fresh: Driver[]): Driver[] => {
+    const now = Date.now();
+    return fresh.map((row) => {
+      const p = pending.current[row.driverId];
+      if (!p) return row;
+      if (p.inflight === 0) {
+        const agrees = (Object.keys(p.fields) as (keyof Driver)[]).every((k) => JSON.stringify(row[k]) === JSON.stringify(p.fields[k]));
+        if (agrees || now > p.until) { delete pending.current[row.driverId]; return row; }
+      }
+      return { ...row, ...p.fields };
+    });
+  };
+  const applyServerRows = (data: BoardRow[] | null | undefined) =>
+    setRows(withPending((data ?? []).map(fromBoardRow)).sort(byBoardOrder));
+
+  // Marks `fields` as the user's own edit of a driver until the server confirms it. The
+  // returned `settle` is called once the save finishes: ok → hold the edit a moment longer
+  // (until a snapshot agrees), failed → drop it so the server's value shows again.
+  const holdEdit = (driverId: string, fields: Partial<Driver>) => {
+    const p = pending.current[driverId] ?? { fields: {}, inflight: 0, until: 0 };
+    pending.current[driverId] = { fields: { ...p.fields, ...fields }, inflight: p.inflight + 1, until: 0 };
+    return (ok: boolean, keep = true) => {
+      const cur = pending.current[driverId];
+      if (!cur) return;
+      cur.inflight = Math.max(0, cur.inflight - 1);
+      if (cur.inflight > 0) return;
+      if (ok && keep) cur.until = Date.now() + 4000;
+      else delete pending.current[driverId];
+    };
+  };
+
   const fetchBoard = async () => {
     try {
-      const data = await api.get<BoardRow[]>("/board");
-      setRows((data ?? []).map(fromBoardRow).sort(byBoardOrder));
+      applyServerRows(await api.get<BoardRow[]>("/board"));
       setError(null);
     } catch (e) {
       setError(friendlyError(e, "Failed to load board"));
@@ -1103,7 +1143,11 @@ export function DispatchTable() {
     wsRef.current = ws;
 
     ws.onopen = () => {
-      wsBackoff.current = 2000; // reset backoff on successful connect
+      wsBackoff.current = 1000; // reset backoff on successful connect
+      setLive("live");
+      // The server sends the whole board the moment we join, so a reconnect catches up
+      // on its own; locks have no opening frame, so re-read those.
+      fetchLocks();
     };
 
     ws.onmessage = (e) => {
@@ -1111,7 +1155,7 @@ export function DispatchTable() {
         const msg = JSON.parse(e.data as string);
         switch (msg.type) {
           case "board.snapshot":
-            setRows((msg.rows ?? []).map(fromBoardRow).sort(byBoardOrder));
+            applyServerRows(msg.rows);
             break;
           case "board.history":
             setHistoryBadge((n) => n + 1);
@@ -1144,6 +1188,7 @@ export function DispatchTable() {
       // multiple competing reconnect loops.
       if (wsRef.current !== ws) return;
       wsRef.current = null;
+      setLive("offline");
 
       const delay = wsBackoff.current;
       wsBackoff.current = Math.min(wsBackoff.current * 2, 30_000);
@@ -1156,10 +1201,37 @@ export function DispatchTable() {
   // ── Mount / company switch ─────────────────────────────────────────────────
 
   useEffect(() => {
-    fetchBoard().then(() => { connectWs(); fetchLocks(); });
+    setLive("connecting");
+    pending.current = {};
+    // Open the socket straight away rather than after the first read: its opening frame
+    // is the board itself, so whichever arrives first paints it.
+    connectWs();
+    fetchBoard();
+    fetchLocks();
     fetchTeams();
+
+    // Come back from sleep, a lost network or a background tab → reconnect now instead of
+    // waiting out the backoff.
+    const wake = () => {
+      if (document.visibilityState === "hidden") return;
+      const ws = wsRef.current;
+      if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
+      if (reconnectRef.current) clearTimeout(reconnectRef.current);
+      wsBackoff.current = 1000;
+      connectWs();
+    };
+    window.addEventListener("online", wake);
+    document.addEventListener("visibilitychange", wake);
+    // While the socket is down the board must not go stale: read it every few seconds.
+    const poll = setInterval(() => {
+      if (wsRef.current?.readyState !== WebSocket.OPEN && document.visibilityState !== "hidden") fetchBoard();
+    }, 8000);
+
     return () => {
-      if (wsRef.current) { wsRef.current.close(); wsRef.current = null; }
+      window.removeEventListener("online", wake);
+      document.removeEventListener("visibilitychange", wake);
+      clearInterval(poll);
+      if (wsRef.current) { const ws = wsRef.current; wsRef.current = null; ws.close(); }
       if (reconnectRef.current) clearTimeout(reconnectRef.current);
       // Actually hand back any locks we still hold — stopping the heartbeat alone
       // would leave the row looking "locked" to everyone else until it expires.
@@ -1235,8 +1307,9 @@ export function DispatchTable() {
     const driver = rows.find((d) => d.driverId === driverId);
     if (!driver) return;
 
-    // Optimistic update
+    // Optimistic update — and held against server pushes until the save is confirmed.
     setRows((prev) => prev.map((d) => d.driverId === driverId ? { ...d, ...fields } : d));
+    const settle = holdEdit(driverId, fields);
 
     // Build PUT body. PUT /drivers/:id is a FULL REPLACE, so every editable field must be
     // sent or the backend resets it — critically team/name2/phone2 (a false/omitted team
@@ -1262,11 +1335,15 @@ export function DispatchTable() {
 
     try {
       await api.put(`/drivers/${driverId}`, body);
+      settle(true);
       resort(); // now that it's confirmed, move the row into its new status group
       // WS snapshot will also push the authoritative state back
     } catch (e) {
-      // Roll back optimistic update on failure and tell the user (the revert is otherwise silent)
-      setRows((prev) => prev.map((d) => d.driverId === driverId ? driver : d));
+      // Put back only what this edit changed — the rest of the row may have moved on —
+      // and tell the user (the revert is otherwise silent).
+      settle(false);
+      const undo = Object.fromEntries((Object.keys(fields) as (keyof Driver)[]).map((k) => [k, driver[k]])) as Partial<Driver>;
+      setRows((prev) => prev.map((d) => d.driverId === driverId ? { ...d, ...undo } : d));
       notify.error(friendlyError(e, "Couldn't save the change — reverted."));
     }
   };
@@ -1283,7 +1360,13 @@ export function DispatchTable() {
       : d
     ));
 
-    const rollback = () => setRows((prev) => prev.map((d) => d.driverId === driverId ? driver : d));
+    const settle = holdEdit(driverId, { stops: updatedStops, originDone: updatedOriginDone, destinationDone: updatedDestinationDone });
+    const rollback = () => {
+      settle(false);
+      setRows((prev) => prev.map((d) => d.driverId === driverId
+        ? { ...d, stops: driver.stops, originDone: driver.originDone, destinationDone: driver.destinationDone }
+        : d));
+    };
 
     // The board row already carries the full load — no fetch needed.
     const load = driver.loadRaw;
@@ -1300,9 +1383,11 @@ export function DispatchTable() {
 
     try {
       await api.put(`/loads/${load.id}`, { ...load, stops: fullStops });
+      settle(true);
       // WS snapshot pushes the authoritative row (with load.stops) back
-    } catch {
+    } catch (e) {
       rollback();
+      notify.error(friendlyError(e, "Couldn't save the change — reverted."));
     }
   };
 
@@ -1324,10 +1409,19 @@ export function DispatchTable() {
     setRows((prev) => prev.map((d) => d.driverId === driverId
       ? { ...d, status: "completed" as Status, stops: allDone.slice(1, -1), originDone: true, destinationDone: true }
       : d));
-    const rollback = () => setRows((prev) => prev.map((d) => d.driverId === driverId ? driver : d));
+    const settle = holdEdit(driverId, { status: "completed" as Status });
+    const rollback = () => {
+      settle(false);
+      setRows((prev) => prev.map((d) => d.driverId === driverId
+        ? { ...d, status: driver.status, stops: driver.stops, originDone: driver.originDone, destinationDone: driver.destinationDone }
+        : d));
+    };
 
     try {
       await api.put(`/loads/${load.id}`, { ...load, status: "completed", stops: allDone });
+      // Completing moves the driver on to covered/ready, so the server's row is the answer
+      // from here — let go of "completed" straight away rather than waiting for it to agree.
+      settle(true, false);
       resort(); // confirmed — move the row into its new group
       // WS snapshot pushes the authoritative rows (driver → covered/ready, queue rotated).
     } catch (e) {
@@ -1484,6 +1578,15 @@ export function DispatchTable() {
         )}
 
         <div style={{ flex: 1 }} />
+
+        {/* Is the board receiving live updates right now? */}
+        <span
+          role="status"
+          title={live === "live" ? "Changes appear here as they happen" : live === "offline" ? "Connection lost — reconnecting. The board refreshes every few seconds meanwhile." : "Connecting to live updates"}
+          style={{ display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: 500, color: live === "offline" ? "#B45309" : "var(--muted-foreground)", whiteSpace: "nowrap" }}>
+          <span style={{ width: 7, height: 7, borderRadius: "50%", flexShrink: 0, backgroundColor: live === "live" ? "var(--primary)" : live === "offline" ? "#F59E0B" : "var(--border)", boxShadow: live === "live" ? "0 0 0 3px var(--primary-soft)" : "none" }} />
+          {live === "live" ? "Live" : live === "offline" ? "Reconnecting" : "Connecting"}
+        </span>
 
         <button
           onClick={() => { setHistoryOpen(true); fetchHistory(); }}
