@@ -357,8 +357,21 @@ function useDropdown() {
       if (!anchorRef.current?.contains(e.target as Node) && !dropRef.current?.contains(e.target as Node))
         setOpen(false);
     };
+    // The menu is pinned to where its cell was when it opened. If the table then scrolls,
+    // the cell moves and the menu would be left floating over some other row — so any
+    // scroll outside the menu closes it. Escape closes it too.
+    const onScroll = (e: Event) => { if (!dropRef.current?.contains(e.target as Node)) setOpen(false); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
     document.addEventListener("mousedown", h);
-    return () => document.removeEventListener("mousedown", h);
+    document.addEventListener("keydown", onKey);
+    window.addEventListener("scroll", onScroll, true);
+    window.addEventListener("resize", onScroll);
+    return () => {
+      document.removeEventListener("mousedown", h);
+      document.removeEventListener("keydown", onKey);
+      window.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("resize", onScroll);
+    };
   }, [open]);
 
   return { open, setOpen, rect, anchorRef, dropRef, toggle };
@@ -1579,7 +1592,7 @@ export function DispatchTable() {
                   </td>
                 </tr>
               )}
-              {driversList.map((driver, i) => {
+              {driversList.map((driver) => {
                 const lock    = locks[driver.driverId];
                 // Only SOMEONE ELSE's lock disables the row; your own lock never blocks you,
                 // but still gets its own (blue) tint so you can see the lock is active.
@@ -1589,7 +1602,6 @@ export function DispatchTable() {
                 const noDriverEdit = isLockedByOther || !canEditDriver;
                 const noLoadEdit   = isLockedByOther || !canEditLoad;
                 const lockColor = isLockedByOther ? "#8B5CF6" : isLockedByMe ? "#3B82F6" : undefined;
-                const isEven   = i % 2 === 0;
                 // The lock highlight rides as a background *image* layer over an opaque
                 // background *color*. It must not be a translucent backgroundColor: td()
                 // paints the sticky Load ID / Driver Name columns too, and a see-through
@@ -1623,7 +1635,7 @@ export function DispatchTable() {
                       {driver.loadId && driver.loadId !== "—" ? (
                         <span className="cp-wrap" style={{ ...line, gap: 4 }}>
                           <span style={{ flex: 1, minWidth: 0 }}>
-                            <BrokerLoadId broker={driver.loadRaw?.broker} loadId={driver.loadId} color="var(--primary)" size={12.5} weight={600} onOpen={driver.loadUuid ? () => openLoad(driver.loadUuid) : undefined} />
+                            <BrokerLoadId broker={driver.loadRaw?.broker} loadId={driver.loadId} color="var(--primary)" size={12.5} weight={600} onOpen={driver.loadUuid && canEditLoad ? () => openLoad(driver.loadUuid) : undefined} />
                           </span>
                           {/* Copy the FULL broker (no "…" truncation) + id, even though the
                               cell shows a shortened broker. */}
@@ -1644,7 +1656,7 @@ export function DispatchTable() {
                               <span key={q.id} style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0 }}>
                                 <span style={{ fontFamily: "var(--font-sans)", fontSize: 10.5, fontWeight: 600, color: "#B45309", backgroundColor: "rgba(245,158,11,0.16)", borderRadius: 4, padding: "0 5px", flexShrink: 0 }}>Next</span>
                                 <span style={{ flex: 1, minWidth: 0 }}>
-                                  <BrokerLoadId broker={q.broker} loadId={q.loadId} color="var(--foreground)" size={11.5} weight={500} onOpen={() => openLoad(q.id)} />
+                                  <BrokerLoadId broker={q.broker} loadId={q.loadId} color="var(--foreground)" size={11.5} weight={500} onOpen={canEditLoad ? () => openLoad(q.id) : undefined} />
                                 </span>
                               </span>
                             ))}

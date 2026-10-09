@@ -19,6 +19,8 @@ import {
 } from "lucide-react";
 import { Dash } from "./Dash";
 import { fmtDate, fmtDateRange } from "../lib/dates";
+import { NumberField } from "./NumberField";
+import { DatePicker } from "./DatePicker";
 
 type DriverStatus = Status;
 type DriverType   = "O/O" | "C/D";
@@ -48,6 +50,7 @@ interface SoloDriver {
   weeklyGrossTarget?: number;
   payType?: PayType;
   payRate?: number;    // $/mile when rpm, a percentage (0–100) when percent
+  payActiveFrom?: string; // form-only: the day a pay change starts from (YYYY-MM-DD)
   currentLoad?: string;
   currentLoadId?: string;
   nextLoad?: string;
@@ -65,6 +68,7 @@ interface TeamDriver {
   weeklyGrossTarget?: number;
   payType?: PayType;
   payRate?: number;
+  payActiveFrom?: string; // form-only: the day a pay change starts from (YYYY-MM-DD)
   currentLoad?: string;
   currentLoadId?: string;
   nextLoad?: string;
@@ -154,6 +158,8 @@ function fromSolo(d: Partial<SoloDriver>) {
     // A rate without a type is meaningless — the backend treats "" as unconfigured and
     // reports pay as 0, so never ship a stale rate alongside it.
     pay_rate: d.payType ? (d.payRate ?? 0) : 0,
+    // Only meaningful when the pay is changing; the backend ignores it otherwise.
+    pay_active_from: d.payActiveFrom || undefined,
     next_load_id: d.nextLoadId || null,
   };
 }
@@ -177,6 +183,8 @@ function fromTeam(d: Partial<TeamDriver>) {
     // A rate without a type is meaningless — the backend treats "" as unconfigured and
     // reports pay as 0, so never ship a stale rate alongside it.
     pay_rate: d.payType ? (d.payRate ?? 0) : 0,
+    // Only meaningful when the pay is changing; the backend ignores it otherwise.
+    pay_active_from: d.payActiveFrom || undefined,
     next_load_id: d.nextLoadId || null,
   };
 }
@@ -1037,18 +1045,32 @@ function LoadQueue({ items, hasDeck, readOnly, onChange }: {
 // changes meaning with it: $/mile for RPM (paid on total distance, deadhead included),
 // or a 0–100 share of gross for percent. Clamped to 100 for percent because the backend
 // rejects more (55 mistyped as 5500 would otherwise skew every gross week it touched).
-function PayFields({ payType, payRate, onChange }: {
+function PayFields({ driverId, was, payType, payRate, activeFrom, onChange }: {
+  driverId?: string;                                  // set when editing — its pay history is shown
+  was: { payType: PayType; payRate?: number };        // the pay the form opened with
   payType: PayType;
   payRate?: number;
-  onChange: (patch: { payType?: PayType; payRate?: number }) => void;
+  activeFrom?: string;
+  onChange: (patch: { payType?: PayType; payRate?: number; payActiveFrom?: string }) => void;
 }) {
   const isPercent = payType === "percent";
-  const numStyle: React.CSSProperties = {
-    fontFamily: "var(--font-sans)", fontSize: 13, height: 36, borderRadius: 8,
-    border: "1px solid var(--border)", backgroundColor: "var(--card)",
-    color: "var(--foreground)", outline: "none", width: "100%", boxSizing: "border-box",
-    padding: isPercent ? "7px 26px 7px 10px" : "7px 10px 7px 22px",
-  };
+  const today = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; })();
+  // A pay change takes effect from a day, never backwards. The date is only asked for once
+  // the pay actually differs from what the driver had when the form opened.
+  const changed = payType !== was.payType || (payType !== "" && (payRate ?? 0) !== (was.payRate ?? 0));
+  const from = activeFrom || today;
+  const describe = (t: string, r: number) => t === "percent" ? `${r}% of gross` : t === "rpm" ? `$${r}/mi` : "No pay";
+
+  const [history, setHistory] = useState<{ pay_type: string; pay_rate: number; active_from: string }[]>([]);
+  useEffect(() => {
+    if (!driverId) return;
+    let gone = false;
+    api.get<{ history: { pay_type: string; pay_rate: number; active_from: string }[] }>(`/drivers/${driverId}/pay-rates`)
+      .then((r) => { if (!gone) setHistory(r?.history ?? []); })
+      .catch(() => {}); // an older server has no history to show — the fields still work
+    return () => { gone = true; };
+  }, [driverId]);
+
   return (
     <>
       <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
@@ -1064,28 +1086,39 @@ function PayFields({ payType, payRate, onChange }: {
       {payType !== "" && (
         <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
           <FieldLabel>{isPercent ? "Percent of gross" : "Rate per mile"}</FieldLabel>
-          <div style={{ position: "relative" }}>
-            <span style={{ position: "absolute", [isPercent ? "right" : "left"]: 10, top: "50%", transform: "translateY(-50%)", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)", pointerEvents: "none" }}>
-              {isPercent ? "%" : "$"}
-            </span>
-            <input
-              type="number" min={0} max={isPercent ? 100 : undefined} step={isPercent ? 1 : 0.01}
-              value={payRate ?? ""}
-              onChange={(e) => {
-                if (e.target.value === "") { onChange({ payRate: undefined }); return; }
-                const n = Number(e.target.value);
-                onChange({ payRate: isPercent ? Math.min(100, Math.max(0, n)) : Math.max(0, n) });
-              }}
-              placeholder={isPercent ? "e.g. 25" : "e.g. 0.55"}
-              style={numStyle}
-              onFocus={(e) => { e.currentTarget.style.borderColor = "var(--primary)"; e.currentTarget.style.boxShadow = "0 0 0 3px var(--primary-soft)"; }}
-              onBlur={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.boxShadow = "none"; }}
-            />
-          </div>
-          <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "var(--muted-foreground)" }}>
-            {isPercent ? "Share of the driver's gross." : "Paid on total distance driven — deadhead included."}
-          </span>
+          <NumberField label={isPercent ? "Percent of gross" : "Rate per mile"} value={payRate}
+            prefix={isPercent ? undefined : "$"} suffix={isPercent ? "%" : undefined} max={isPercent ? 100 : undefined}
+            placeholder={isPercent ? "e.g. 25" : "e.g. 0.55"}
+            onChange={(n) => onChange({ payRate: n === 0 ? undefined : n })} />
         </label>
+      )}
+
+      {changed && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+          <FieldLabel>Active from</FieldLabel>
+          <DatePicker label="Pay active from" value={from} min={today} onChange={(day) => onChange({ payActiveFrom: day })} />
+        </div>
+      )}
+
+      {/* What the change does — and, when editing, what the driver has been on */}
+      {(changed || history.length > 0) && (
+        <div style={{ gridColumn: "1 / -1", display: "flex", flexDirection: "column", gap: 4, fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)", lineHeight: 1.45 }}>
+          {changed && (
+            <span style={{ color: "var(--foreground)" }}>
+              {payType === "" ? "Pay stops" : "This pay applies"} from <strong>{fmtDate(from)}</strong>. Earlier days keep {was.payType ? describe(was.payType, was.payRate ?? 0).toLowerCase() : "no pay"}.
+            </span>
+          )}
+          {history.length > 0 && (
+            <span style={{ display: "flex", flexWrap: "wrap", gap: "2px 10px" }}>
+              <span style={{ fontWeight: 600 }}>History</span>
+              {history.map((h) => (
+                <span key={h.active_from} style={{ whiteSpace: "nowrap" }}>
+                  {describe(h.pay_type, h.pay_rate)} {h.active_from <= "2000-01-01" ? "from the start" : `from ${fmtDate(h.active_from)}`}{h.active_from > today ? " (scheduled)" : ""}
+                </span>
+              ))}
+            </span>
+          )}
+        </div>
       )}
     </>
   );
@@ -1179,22 +1212,16 @@ function SoloModal({ driver, onClose, onSave, canReorderLoads, saving, error, fi
 
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
             <FieldLabel>Weekly gross target</FieldLabel>
-            <div style={{ position: "relative" }}>
-              <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)", pointerEvents: "none" }}>$</span>
-              <input
-                type="number" min={0} value={form.weeklyGrossTarget ?? ""}
-                onChange={(e) => setForm((f) => ({ ...f, weeklyGrossTarget: e.target.value === "" ? undefined : Number(e.target.value) }))}
-                placeholder="e.g. 5000"
-                style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 10px 7px 22px", borderRadius: 8, height: 36, border: "1px solid var(--border)", backgroundColor: "var(--card)", color: "var(--foreground)", outline: "none", width: "100%", boxSizing: "border-box" }}
-                onFocus={(e) => { e.currentTarget.style.borderColor = "var(--primary)"; e.currentTarget.style.boxShadow = "0 0 0 3px var(--primary-soft)"; }}
-                onBlur={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.boxShadow = "none"; }}
-              />
-            </div>
+            <NumberField label="Weekly gross target" prefix="$" placeholder="e.g. 5000" value={form.weeklyGrossTarget}
+              onChange={(n) => setForm((f) => ({ ...f, weeklyGrossTarget: n === 0 ? undefined : n }))} />
           </label>
 
           <PayFields
+            driverId={driver.id || undefined}
+            was={{ payType: driver.payType ?? "", payRate: driver.payRate }}
             payType={form.payType ?? ""}
             payRate={form.payRate}
+            activeFrom={form.payActiveFrom}
             onChange={(patch) => setForm((f) => ({ ...f, ...patch }))}
           />
 
@@ -1331,22 +1358,16 @@ function TeamModal({ driver, onClose, onSave, canReorderLoads, saving, error, fi
 
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
             <FieldLabel>Weekly gross target</FieldLabel>
-            <div style={{ position: "relative" }}>
-              <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)", pointerEvents: "none" }}>$</span>
-              <input
-                type="number" min={0} value={form.weeklyGrossTarget ?? ""}
-                onChange={(e) => setForm((f) => ({ ...f, weeklyGrossTarget: e.target.value === "" ? undefined : Number(e.target.value) }))}
-                placeholder="e.g. 7000"
-                style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 10px 7px 22px", borderRadius: 8, height: 36, border: "1px solid var(--border)", backgroundColor: "var(--card)", color: "var(--foreground)", outline: "none", width: "100%", boxSizing: "border-box" }}
-                onFocus={(e) => { e.currentTarget.style.borderColor = "var(--primary)"; e.currentTarget.style.boxShadow = "0 0 0 3px var(--primary-soft)"; }}
-                onBlur={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.boxShadow = "none"; }}
-              />
-            </div>
+            <NumberField label="Weekly gross target" prefix="$" placeholder="e.g. 7000" value={form.weeklyGrossTarget}
+              onChange={(n) => setForm((f) => ({ ...f, weeklyGrossTarget: n === 0 ? undefined : n }))} />
           </label>
 
           <PayFields
+            driverId={driver.id || undefined}
+            was={{ payType: driver.payType ?? "", payRate: driver.payRate }}
             payType={form.payType ?? ""}
             payRate={form.payRate}
+            activeFrom={form.payActiveFrom}
             onChange={(patch) => setForm((f) => ({ ...f, ...patch }))}
           />
 

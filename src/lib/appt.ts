@@ -20,13 +20,17 @@ export function cleanAppt(raw?: string): string {
 // 1200"), people type their own. Everything the app SHOWS and everything the form SAVES
 // goes through here, so it all reads the same way:
 //
-//   MM.DD.YY · HH:MM                a date and a time
-//   MM.DD.YY · HH:MM-HH:MM          a date and a time window
-//   MM.DD-MM.DD.YY · HH:MM-HH:MM    a date range (the year is written once when both
+//   DD.MM.YY · HH:MM                a date and a time
+//   DD.MM.YY · HH:MM-HH:MM          a date and a time window
+//   DD.MM-DD.MM.YY · HH:MM-HH:MM    a date range (the year is written once when both
 //                                   days share it) and a time window
 //
-// The date part is the app-wide date format (see lib/dates). Older values written with
-// slashes ("07/15/26") are still read, and come out with dots.
+// The date part is the app-wide date format (see lib/dates): day first, with dots.
+//
+// Reading goes by the separator, because that is what tells the two orders apart:
+//   · dots    → day first   ("20.07.26")  — what this app writes
+//   · slashes → month first ("07/20/2026") — how US rate confirmations and older loads
+//               write it; they are read as such and come out day-first with dots.
 //
 // Text that isn't a date or a time at all ("FCFS", "Call for appt") is kept as written.
 
@@ -55,8 +59,9 @@ export function normalizeTime(raw: string): string {
   return h < 24 && m < 60 ? `${pad2(h)}:${pad2(m)}` : "";
 }
 
-// A date: "7/15", "07/15/2026", "07.15.26" — and the first half of a dotted range
-// ("07.15" in "07.15-07.17.26"). A dotted pair on its own is NOT a date: "8.30" is a time.
+// A date: slashed and month-first ("7/15", "07/15/2026"), or dotted and day-first
+// ("15.07.26") — and the first half of a dotted range ("15.07" in "15.07-17.07.26"). A
+// dotted pair on its own is NOT a date: "8.30" is a time.
 const DATE_RE = /(?<![\d/.])(?:(\d{1,2})\/(\d{1,2})(?:\/(\d{4}|\d{2}))?|(\d{1,2})\.(\d{1,2})\.(\d{4}|\d{2})|(\d{1,2})\.(\d{1,2})(?=\s*[-–]\s*\d{1,2}\.\d{1,2}\.\d{2,4}))(?![\d/.])/g;
 // A time token: "14:00", "0800", "8:30 AM", "5pm". Bare one- or two-digit numbers only
 // count when a meridiem follows ("5pm") — otherwise "07/06 2 pallets" would read as 02:00.
@@ -70,8 +75,17 @@ export function parseAppt(raw?: string): ApptParts {
 
   // Up to two dates: a day, or the first and last day of a range.
   const found: { mo: number; d: number; y: number | null }[] = [];
-  let rest = text.replace(DATE_RE, (m, sm, sd, sy, dm, dd, dy, rm, rd) => {
-    const mo = sm ?? dm ?? rm, d = sd ?? dd ?? rd, y = sy ?? dy;
+  let rest = text.replace(DATE_RE, (m, sm, sd, sy, dd, dm, dy, rd, rm) => {
+    // Slashes: month/day. Dots: day.month — unless that can't be a date and the other
+    // order can ("07.20.26"), which is a month-first value from before the format changed.
+    let mo = sm, d = sd;
+    if (sm === undefined) {
+      const first = dd ?? rd, second = dm ?? rm;
+      const dayFirst = !(parseInt(second, 10) > 12 && parseInt(first, 10) <= 12);
+      d = dayFirst ? first : second;
+      mo = dayFirst ? second : first;
+    }
+    const y = sy ?? dy;
     const mi = parseInt(mo, 10) - 1, di = parseInt(d, 10);
     if (found.length >= 2 || mi < 0 || mi > 11 || di < 1 || di > 31) return m;
     found.push({ mo: mi, d: di, y: fullYear(y) });
@@ -115,7 +129,7 @@ export function formatApptParts(p: ApptParts): string {
   // A date with no stated year is taken to be this year — the only thing it can mean when
   // it was typed, and what makes old "07/15 · 08:00" values line up with the new ones.
   const thisYear = new Date().getFullYear();
-  const md = (mo: number, d: number) => `${pad2(mo + 1)}.${pad2(d)}`;
+  const md = (mo: number, d: number) => `${pad2(d)}.${pad2(mo + 1)}`; // day first
   const yy = (y: number | null) => pad2((y ?? thisYear) % 100);
   let date = "";
   if (p.mo !== null && p.d !== null) {

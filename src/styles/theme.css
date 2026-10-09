@@ -45,7 +45,10 @@
   --sidebar-accent-foreground: #111827;
   --sidebar-border: #E5E7EB;
   --sidebar-ring: #178A4C;
-  --font-mono: 'JetBrains Mono', monospace;
+  /* One typeface across the app. Numbers and IDs used to be set in JetBrains Mono; they now
+     share the UI font, with tabular figures (see body) so digits still line up in columns.
+     The token stays so every place that asks for it follows along. */
+  --font-mono: var(--font-sans);
   --font-sans: 'Plus Jakarta Sans', system-ui, sans-serif;
 }
 
@@ -141,6 +144,8 @@
 
   body {
     @apply bg-background text-foreground;
+    /* Digits all the same width, so numbers line up down a column in the one UI font. */
+    font-variant-numeric: tabular-nums;
   }
 
   /**

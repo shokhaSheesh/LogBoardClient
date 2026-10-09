@@ -25,6 +25,7 @@ import { PeriodFilter, ALL_TIME, type Period } from "./PeriodFilter";
 import { CAL } from "./calendar";
 import { Dash } from "./Dash";
 import { fmtDateTime } from "../lib/dates";
+import { NumberField } from "./NumberField";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -348,9 +349,9 @@ function Pagination({ page, total, pageSize, onPage, onPageSize, loading = false
 const TH = ({ children, width, align = "left", pinned = false }: { children: React.ReactNode; width?: number; align?: string; pinned?: boolean }) => (
   <th style={{
     padding: "8px 14px", textAlign: align as "left" | "center" | "right",
-    fontFamily: "var(--font-sans)", fontSize: 10, fontWeight: 600,
-    color: "var(--muted-foreground)", letterSpacing: "0.07em",
-    textTransform: "uppercase", backgroundColor: "var(--muted)",
+    fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600,
+    color: "var(--muted-foreground)", letterSpacing: "0.06em",
+    textTransform: "uppercase", backgroundColor: "var(--card)",
     borderBottom: "1px solid var(--border)",
     whiteSpace: "nowrap", userSelect: "none",
     width: width ?? "auto", minWidth: width ?? "auto",
@@ -400,8 +401,16 @@ function StatusDropdown({ value, onChange, readOnly = false }: { value: Status; 
     const h = (e: MouseEvent) => {
       if (!anchorRef.current?.contains(e.target as Node) && !dropRef.current?.contains(e.target as Node)) setOpen(false);
     };
+    // Pinned to where its cell was: close when the table scrolls out from under it.
+    const onScroll = (e: Event) => { if (!dropRef.current?.contains(e.target as Node)) setOpen(false); };
     document.addEventListener("mousedown", h);
-    return () => document.removeEventListener("mousedown", h);
+    window.addEventListener("scroll", onScroll, true);
+    window.addEventListener("resize", onScroll);
+    return () => {
+      document.removeEventListener("mousedown", h);
+      window.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("resize", onScroll);
+    };
   }, [open]);
 
   const cfg = SHARED_STATUS_CONFIG[value];
@@ -553,10 +562,10 @@ function ExtractModal({ onClose, onExtracted }: {
     <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div style={{ backgroundColor: "var(--card)", borderRadius: 12, width: 540, boxShadow: "0 20px 60px rgba(0,0,0,0.22)" }}>
         {/* Header */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderBottom: "1px solid var(--border)", backgroundColor: "var(--muted)", borderRadius: "12px 12px 0 0" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 20px", borderBottom: "1px solid var(--border)", borderRadius: "12px 12px 0 0" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-            <div style={{ width: 30, height: 30, borderRadius: 8, backgroundColor: "rgba(139,92,246,0.14)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <Sparkles size={15} color="#8B5CF6" />
+            <div style={{ width: 30, height: 30, borderRadius: 8, backgroundColor: "var(--primary-soft)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <Sparkles size={15} color="var(--primary)" />
             </div>
             <span style={{ fontFamily: "var(--font-sans)", fontSize: 14, fontWeight: 600, color: "var(--foreground)" }}>AI Smart Extract</span>
           </div>
@@ -572,9 +581,9 @@ function ExtractModal({ onClose, onExtracted }: {
             onDragLeave={() => setDragging(false)}
             onDrop={(e) => { e.preventDefault(); setDragging(false); if (!busy) pickFile(e.dataTransfer.files[0]); }}
             style={{
-              border: `2px dashed ${dragging ? "#8B5CF6" : file ? "#10B981" : "var(--border)"}`,
+              border: `2px dashed ${dragging ? "var(--primary)" : file ? "var(--primary)" : "var(--border)"}`,
               borderRadius: 10, padding: "34px 20px", textAlign: "center",
-              backgroundColor: dragging ? "rgba(139,92,246,0.12)" : file ? "rgba(16,185,129,0.10)" : "var(--input-background)",
+              backgroundColor: dragging ? "var(--primary-soft)" : file ? "var(--primary-faint)" : "var(--input-background)",
               cursor: busy ? "default" : "pointer", transition: "all 0.15s",
             }}
           >
@@ -582,7 +591,7 @@ function ExtractModal({ onClose, onExtracted }: {
             {file ? (
               <>
                 <div style={{ width: 44, height: 44, borderRadius: 10, backgroundColor: "rgba(16,185,129,0.16)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 12px" }}>
-                  <FileText size={22} color="#10B981" />
+                  <FileText size={22} color="var(--primary)" />
                 </div>
                 <div style={{ fontFamily: "var(--font-sans)", fontSize: 14, fontWeight: 600, color: "var(--foreground)" }}>{file.name}</div>
                 <div style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)", marginTop: 4 }}>
@@ -596,7 +605,7 @@ function ExtractModal({ onClose, onExtracted }: {
                 </div>
                 <div style={{ fontFamily: "var(--font-sans)", fontSize: 14, fontWeight: 500, color: "var(--foreground)" }}>Drop the rate confirmation here</div>
                 <div style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)", marginTop: 4 }}>
-                  or <span style={{ color: "#8B5CF6", fontWeight: 500 }}>browse files</span> — PDF, photo/scan, or text (max 10 MB)
+                  or <span style={{ color: "var(--primary)", fontWeight: 500 }}>browse files</span> — PDF, photo/scan, or text (max 10 MB)
                 </div>
               </>
             )}
@@ -609,9 +618,9 @@ function ExtractModal({ onClose, onExtracted }: {
           </div>
 
           {busy && (
-            <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", backgroundColor: "rgba(139,92,246,0.10)", border: "1px solid rgba(139,92,246,0.35)", borderRadius: 8 }}>
-              <span style={{ width: 15, height: 15, borderRadius: "50%", border: "2px solid rgba(139,92,246,0.35)", borderTopColor: "#8B5CF6", animation: "spin 0.7s linear infinite", flexShrink: 0 }} />
-              <div style={{ fontFamily: "var(--font-sans)", fontSize: 12.5, color: "#8B5CF6", lineHeight: 1.45 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", backgroundColor: "var(--primary-faint)", border: "1px solid var(--primary-soft)", borderRadius: 8 }}>
+              <span style={{ width: 15, height: 15, borderRadius: "50%", border: "2px solid var(--primary-soft)", borderTopColor: "var(--primary)", animation: "spin 0.7s linear infinite", flexShrink: 0 }} />
+              <div style={{ fontFamily: "var(--font-sans)", fontSize: 12.5, color: "var(--primary)", lineHeight: 1.45 }}>
                 Reading the document… this usually takes 5–15 seconds.
               </div>
             </div>
@@ -637,7 +646,7 @@ function ExtractModal({ onClose, onExtracted }: {
               display: "flex", alignItems: "center", gap: 6,
               fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 16px",
               borderRadius: 6, border: "none",
-              backgroundColor: canSubmit && !busy ? "#7C3AED" : "var(--muted)",
+              backgroundColor: canSubmit && !busy ? "var(--primary)" : "var(--muted)",
               color: canSubmit && !busy ? "#fff" : "var(--muted-foreground)",
               cursor: canSubmit && !busy ? "pointer" : "not-allowed",
             }}
@@ -673,7 +682,7 @@ function AddLoadMenu({ onManual, onExtract }: { onManual: () => void; onExtract:
     },
     {
       icon: <Sparkles size={16} />,
-      iconColor: "#8B5CF6", iconBg: "rgba(139,92,246,0.14)",
+      iconColor: "var(--primary)", iconBg: "var(--primary-soft)",
       label: "AI Smart Extract",
       desc: "Parse load info from a rate confirmation",
       comingSoon: false,
@@ -735,7 +744,7 @@ function AddLoadMenu({ onManual, onExtract }: { onManual: () => void; onExtract:
                   {item.comingSoon && (
                     <span style={{
                       fontFamily: "var(--font-sans)", fontSize: 10, fontWeight: 700,
-                      color: "#8B5CF6", backgroundColor: "rgba(139,92,246,0.14)",
+                      color: "var(--primary)", backgroundColor: "var(--primary-soft)",
                       borderRadius: 4, padding: "1px 6px", letterSpacing: "0.04em",
                     }}>
                       SOON
@@ -848,7 +857,7 @@ function draftToLoad(d: ExtractDraft): Partial<Load> {
 // The backend's `appt` is one free-text string, shown as written on the Board and in the
 // list. The form edits it as parts — a day or a range of days, a time or a time window —
 // and writes it back in the app's one appointment format (see lib/appt), e.g.
-// "MM.DD.YY · HH:MM" or "MM.DD-MM.DD.YY · HH:MM-HH:MM". Text the parts can't describe
+// "DD.MM.YY · HH:MM" or "DD.MM-DD.MM.YY · HH:MM-HH:MM". Text the parts can't describe
 // (a rate con's "FCFS") is kept as-is until it's replaced.
 
 // These boxes hold load data, not the user's own details. Without this Chrome reads the
@@ -1103,63 +1112,6 @@ function DateRangeField({ p, onDates, label }: { p: ApptParts; onDates: (patch: 
           </div>
         </div>,
         document.body
-      )}
-    </div>
-  );
-}
-
-// ─── Number field ─────────────────────────────────────────────────────────────
-
-// A plain text box for an amount, in place of the browser's number input (no spinner
-// arrows, no scroll-wheel changes). A zero shows as an empty box with a "0" placeholder,
-// so typing into it replaces the value instead of producing "05". While focused it holds
-// exactly what was typed; on leaving it shows the number with thousands separators.
-function NumberField({ value, onChange, prefix, suffix, decimals = 2, label, busy = false, onClear, mono = true }: {
-  value: number | undefined;
-  onChange: (n: number) => void;
-  prefix?: string; suffix?: string;
-  decimals?: number;        // 0 for whole numbers (miles)
-  label: string;
-  busy?: boolean;           // a background calculation is filling this in
-  onClear?: () => void;     // shows an × that empties the field
-  mono?: boolean;
-}) {
-  const [focused, setFocused] = useState(false);
-  const [text, setText] = useState("");
-  const shown = value ? value.toLocaleString("en-US", { maximumFractionDigits: decimals }) : "";
-  const clearable = !!onClear && !!value && !busy;
-
-  return (
-    <div style={{ ...fieldBox(focused), display: "flex", alignItems: "center", gap: 4, padding: "0 10px", width: "100%" }}>
-      {prefix && <span style={{ fontFamily: "var(--font-mono)", fontSize: 13, color: "var(--muted-foreground)", flexShrink: 0 }}>{prefix}</span>}
-      <input
-        value={focused ? text : shown}
-        aria-label={label}
-        placeholder="0"
-        inputMode={decimals > 0 ? "decimal" : "numeric"}
-        autoComplete="off"
-        onFocus={(e) => { setText(value ? String(value) : ""); setFocused(true); requestAnimationFrame(() => e.target.select()); }}
-        onBlur={() => setFocused(false)}
-        onChange={(e) => {
-          let t = e.target.value.replace(decimals > 0 ? /[^0-9.]/g : /[^0-9]/g, "");
-          // One decimal point, and no more decimals than the field holds.
-          const dot = t.indexOf(".");
-          if (dot !== -1) t = t.slice(0, dot + 1) + t.slice(dot + 1).replace(/\./g, "").slice(0, decimals);
-          setText(t);
-          onChange(Number(t) || 0);
-        }}
-        onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
-        style={{ flex: 1, minWidth: 0, height: "100%", border: "none", outline: "none", background: "transparent", padding: 0, color: "var(--foreground)", fontFamily: mono ? "var(--font-mono)" : "var(--font-sans)", fontSize: 13 }}
-      />
-      {suffix && <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)", flexShrink: 0 }}>{suffix}</span>}
-      {busy && <span style={{ width: 14, height: 14, borderRadius: "50%", border: "2px solid var(--border)", borderTopColor: "var(--muted-foreground)", animation: "spin 0.7s linear infinite", flexShrink: 0, boxSizing: "border-box" }} />}
-      {clearable && (
-        <button type="button" aria-label={`Clear ${label.toLowerCase()}`} title="Clear" onClick={onClear}
-          style={{ display: "flex", padding: 0, border: "none", background: "none", color: "var(--muted-foreground)", cursor: "pointer", flexShrink: 0 }}
-          onMouseEnter={(e) => { e.currentTarget.style.color = "#EF4444"; }}
-          onMouseLeave={(e) => { e.currentTarget.style.color = "var(--muted-foreground)"; }}>
-          <X size={13} />
-        </button>
       )}
     </div>
   );
@@ -2500,9 +2452,9 @@ export function LoadsPage() {
                 {loads.map((l, i) => (
                   <tr
                     key={l.id}
-                    style={{ backgroundColor: i % 2 === 0 ? "var(--card)" : "var(--background)" }}
+                    style={{ backgroundColor: "var(--card)" }}
                     onMouseEnter={(e) => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = "var(--primary-faint)"; }}
-                    onMouseLeave={(e) => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = i % 2 === 0 ? "var(--card)" : "var(--background)"; }}
+                    onMouseLeave={(e) => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = "var(--card)"; }}
                   >
                     <td style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--muted-foreground)", textAlign: "center", verticalAlign: "middle" }}>
                       {(page - 1) * pageSize + i + 1}
@@ -2604,7 +2556,7 @@ export function LoadsPage() {
                     </td>
                     {/* Pinned right. It carries the row's own stripe colour as a solid fill, so the
                         columns scrolling underneath never show through. */}
-                    <td style={{ padding: "8px 10px", borderBottom: "1px solid var(--border)", verticalAlign: "middle", textAlign: "center", position: "sticky", right: 0, backgroundColor: i % 2 === 0 ? "var(--card)" : "var(--background)", boxShadow: "inset 1px 0 0 var(--border)" }}>
+                    <td style={{ padding: "8px 10px", borderBottom: "1px solid var(--border)", verticalAlign: "middle", textAlign: "center", position: "sticky", right: 0, backgroundColor: "var(--card)", boxShadow: "inset 1px 0 0 var(--border)" }}>
                       <div style={{ display: "inline-flex", gap: 2 }}>
                         {canUpdate && <ActionBtn label={`Edit ${l.loadId || "load"}`} tone="edit" icon={<Pencil size={14} />} onClick={() => openEdit(l)} />}
                         {canDelete && <ActionBtn label={`Delete ${l.loadId || "load"}`} tone="delete" icon={<Trash2 size={14} />} onClick={() => setDeleting(l)} />}

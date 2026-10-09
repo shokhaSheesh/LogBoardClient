@@ -297,7 +297,7 @@ interface Point { label: string; tip: string; gross: number; loads: number }
 function toSeries(daily: WeekData["daily"]): { unit: "day" | "week" | "month"; points: Point[] } {
   const n = daily.length;
   if (n <= 31) {
-    return { unit: "day", points: daily.map((d) => ({ label: n <= 7 ? fmtDayLabel(d.date) : `${d.date.slice(5, 7)}.${d.date.slice(8, 10)}`, tip: `${fmtDayLabel(d.date)} · ${fmtDateRange(d.date, d.date)}`, gross: d.gross, loads: d.completedLoads })) };
+    return { unit: "day", points: daily.map((d) => ({ label: n <= 7 ? fmtDayLabel(d.date) : `${d.date.slice(8, 10)}.${d.date.slice(5, 7)}`, tip: `${fmtDayLabel(d.date)} · ${fmtDateRange(d.date, d.date)}`, gross: d.gross, loads: d.completedLoads })) };
   }
   const groups = new Map<string, { first: string; last: string; gross: number; loads: number }>();
   const byMonth = n > 120;
@@ -313,7 +313,7 @@ function toSeries(daily: WeekData["daily"]): { unit: "day" | "week" | "month"; p
     points: [...groups.values()].map((g) => ({
       label: byMonth
         ? `${MONTHS_SHORT[Number(g.first.slice(5, 7)) - 1]}${manyYears ? ` ${g.first.slice(2, 4)}` : ""}`
-        : `${g.first.slice(5, 7)}.${g.first.slice(8, 10)}`,
+        : `${g.first.slice(8, 10)}.${g.first.slice(5, 7)}`,
       tip: fmtDateRange(g.first, g.last), gross: g.gross, loads: g.loads,
     })),
   };

@@ -11,8 +11,9 @@ import { hasPerm } from "../lib/permissions";
 import { useTheme } from "../lib/theme";
 import { Dash } from "./Dash";
 import { Kpi } from "./Kpi";
-import { DateRangePicker } from "./DateRangePicker";
+import { PeriodFilter, type PeriodMode } from "./PeriodFilter";
 import { fmtDate, fmtDateRange } from "../lib/dates";
+import { NumberField } from "./NumberField";
 
 type CellType = Status | "load" | "empty";
 
@@ -494,20 +495,7 @@ function CellEditPanel({
             </div>
             <div>
               <div style={editCap}>Amount</div>
-              <div style={{ position: "relative" }}>
-                <span style={{ position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)", fontFamily: "var(--font-mono)", fontSize: 13, color: "var(--muted-foreground)", pointerEvents: "none" }}>$</span>
-                <input
-                  type="number"
-                  min={0}
-                  placeholder="0"
-                  aria-label="Amount"
-                  value={edit.amount}
-                  onChange={(e) => onAmount(e.target.value)}
-                  style={{ width: "100%", paddingLeft: 24, paddingRight: 10, height: 36, borderRadius: 8, border: "1px solid var(--border)", fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 600, color: "var(--foreground)", backgroundColor: "var(--card)", outline: "none", boxSizing: "border-box" }}
-                  onFocus={(e) => { e.currentTarget.style.borderColor = "var(--primary)"; e.currentTarget.style.boxShadow = "0 0 0 3px var(--primary-soft)"; }}
-                  onBlur={(e)  => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.boxShadow = "none"; }}
-                />
-              </div>
+              <NumberField label="Amount" prefix="$" value={Number(edit.amount) || 0} onChange={(n) => onAmount(n ? String(n) : "")} />
               <div style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "var(--muted-foreground)", marginTop: 5 }}>
                 {edit.loadIds.length > 0
                   ? `Filled from the ${edit.loadIds.length === 1 ? "load" : `${edit.loadIds.length} loads`} you ticked — you can change it.`
@@ -607,6 +595,8 @@ export function GrossMatrix() {
   const [loadErr,  setLoadErr]  = useState<string | null>(null); // fetch failure
   const [search,   setSearch]   = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
+  // Which unit the period control is on; the dates themselves are dateFrom/dateTo.
+  const [periodMode, setPeriodMode] = useState<PeriodMode>("week");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo,   setDateTo]   = useState("");
   const [viewMode, setViewMode] = useState<"all" | "teams">("all"); // one table vs a section per team
@@ -874,24 +864,10 @@ export function GrossMatrix() {
               </div>
             )}
 
-            <div style={{ display: "inline-flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
-              <button onClick={() => shiftWeek(-1)} aria-label="Previous week" title="Previous week" style={navBtn}
-                onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--muted)"; e.currentTarget.style.color = "var(--foreground)"; }}
-                onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "var(--card)"; e.currentTarget.style.color = "var(--muted-foreground)"; }}>
-                <ChevronLeft size={15} />
-              </button>
-              <DateRangePicker from={dateFrom} to={dateTo} onChange={(f, t) => loadGross(f, t, debouncedSearch)} />
-              <button onClick={() => shiftWeek(1)} aria-label="Next week" title="Next week" style={navBtn}
-                onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--muted)"; e.currentTarget.style.color = "var(--foreground)"; }}
-                onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "var(--card)"; e.currentTarget.style.color = "var(--muted-foreground)"; }}>
-                <ChevronRight size={15} />
-              </button>
-            </div>
-
-            <button onClick={() => loadGross(fmtD(thisWeek.from), fmtD(thisWeek.to), debouncedSearch)} disabled={isThisWeek}
-              style={{ height: 34, padding: "0 12px", borderRadius: 8, border: "1px solid var(--border)", backgroundColor: "var(--card)", fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 500, color: isThisWeek ? "var(--muted-foreground)" : "var(--foreground)", cursor: isThisWeek ? "default" : "pointer", opacity: isThisWeek ? 0.6 : 1, flexShrink: 0 }}>
-              This week
-            </button>
+            {/* Period — the control the other pages use, with the units a day-by-day grid can show */}
+            <PeriodFilter modes={["week", "month", "custom"]} future weekStartDay={weekStartDay}
+              value={{ mode: periodMode, from: dateFrom, to: dateTo }}
+              onChange={(p) => { setPeriodMode(p.mode); loadGross(p.from, p.to, debouncedSearch); }} />
           </div>
 
           {/* The loader lives in here, so the controls above stay put (and keep focus) while a

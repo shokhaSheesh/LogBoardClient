@@ -1,11 +1,11 @@
 // ─── One date format ──────────────────────────────────────────────────────────
 //
-// Every date the app shows is written the same way:
+// Every date the app shows is written the same way, day first:
 //
-//   MM.DD.YY                 a day                    10.08.26
-//   MM.DD-MM.DD.YY           a range of days          10.05-10.11.26
-//   MM.DD.YY-MM.DD.YY        a range across a year    12.29.26-01.04.27
-//   MM.DD.YY · HH:MM         a day and a time         10.08.26 · 14:20
+//   DD.MM.YY                 a day                    08.10.26   (8 October 2026)
+//   DD.MM-DD.MM.YY           a range of days          05.10-11.10.26
+//   DD.MM.YY-DD.MM.YY        a range across a year    29.12.26-04.01.27
+//   DD.MM.YY · HH:MM         a day and a time         08.10.26 · 14:20
 //
 // Appointments (free text on the backend) get the same shape from lib/appt.
 
@@ -26,25 +26,26 @@ function toDate(v: DateLike): Date | null {
   return isNaN(d.getTime()) ? null : d;
 }
 
-const md = (d: Date) => `${pad2(d.getMonth() + 1)}.${pad2(d.getDate())}`;
+// Day first, then month — DD.MM.
+const dm = (d: Date) => `${pad2(d.getDate())}.${pad2(d.getMonth() + 1)}`;
 const yy = (d: Date) => pad2(d.getFullYear() % 100);
 
-// "10.08.26" — or "" when there's no (readable) date, so callers pick their own blank.
+// "08.10.26" — or "" when there's no (readable) date, so callers pick their own blank.
 export function fmtDate(v: DateLike): string {
   const d = toDate(v);
-  return d ? `${md(d)}.${yy(d)}` : "";
+  return d ? `${dm(d)}.${yy(d)}` : "";
 }
 
-// "10.05-10.11.26"; one day when both ends are the same.
+// "05.10-11.10.26"; one day when both ends are the same.
 export function fmtDateRange(from: DateLike, to: DateLike): string {
   const a = toDate(from), b = toDate(to);
   if (!a || !b) return fmtDate(a ?? b);
   if (a.getFullYear() !== b.getFullYear()) return `${fmtDate(a)}-${fmtDate(b)}`;
   if (a.getMonth() === b.getMonth() && a.getDate() === b.getDate()) return fmtDate(a);
-  return `${md(a)}-${md(b)}.${yy(b)}`;
+  return `${dm(a)}-${dm(b)}.${yy(b)}`;
 }
 
-// "10.08.26 · 14:20" — the same 24-hour clock appointments use.
+// "08.10.26 · 14:20" — the same 24-hour clock appointments use.
 export function fmtDateTime(v: DateLike): string {
   const d = toDate(v);
   return d ? `${fmtDate(d)} · ${pad2(d.getHours())}:${pad2(d.getMinutes())}` : "";

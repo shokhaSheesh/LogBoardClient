@@ -20,6 +20,7 @@ import { driverDisplayName } from "../lib/driverName";
 import { Dash } from "./Dash";
 import { fmtDate, fmtDateTime } from "../lib/dates";
 import { DatePicker } from "./DatePicker";
+import { NumberField } from "./NumberField";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -615,8 +616,9 @@ interface KpiChange { percent: number; activeFrom: string }
 
 const todayIso = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
 
-function UserModal({ user, roles, teams, saving, error, onClose, onSave }: {
+function UserModal({ user, roles, teams, saving, error, onClose, onSave, canSetPay }: {
   user: Partial<User>; roles: Role[]; teams: Team[];
+  canSetPay: boolean; // setting a pay percent needs users.update — without it the section is hidden
   saving?: boolean; error?: string | null; onClose: () => void; onSave: (u: User, kpi: KpiChange | null) => void;
 }) {
   const [form, setForm] = useState<Partial<User>>(user);
@@ -672,7 +674,7 @@ function UserModal({ user, roles, teams, saving, error, onClose, onSave }: {
 
   // ── Pay per load (dispatcher KPI) ─────────────────────────────────────────
   // Only an owner or a dispatcher can be named on a load, so only they can be paid on one.
-  const payable = /:(owner|dispatcher)$/.test(effectiveRoleId) || ["owner", "dispatcher"].includes((matchedRole?.name ?? form.roleName ?? "").toLowerCase());
+  const payable = canSetPay && (/:(owner|dispatcher)$/.test(effectiveRoleId) || ["owner", "dispatcher"].includes((matchedRole?.name ?? form.roleName ?? "").toLowerCase()));
   const [rates, setRates]   = useState<KpiRates | null>(null);
   const [paid, setPaid]     = useState(false);
   const [percent, setPercent] = useState("");
@@ -683,7 +685,7 @@ function UserModal({ user, roles, teams, saving, error, onClose, onSave }: {
   const wasPaid = !!latest && latest.percent > 0;
 
   useEffect(() => {
-    if (!user.id) return;
+    if (!user.id || !canSetPay) return;
     let gone = false;
     api.get<KpiRates>(`/kpi/rates?user_id=${user.id}`)
       .then((r) => {
@@ -857,12 +859,8 @@ function UserModal({ user, roles, teams, saving, error, onClose, onSave }: {
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: "12px 14px" }}>
                   <label style={fieldStyle}>
                     <span style={capStyle}>Percent of the load's rate <span style={{ color: "#EF4444" }}>*</span></span>
-                    <div style={{ position: "relative" }}>
-                      <input value={percent} inputMode="decimal" placeholder="e.g. 1.5" autoComplete="off"
-                        onChange={(e) => setPercent(e.target.value.replace(/[^0-9.]/g, "").replace(/(\..*)\./g, "$1").slice(0, 6))}
-                        style={{ ...inputStyle, paddingRight: 30, fontFamily: "var(--font-mono)", border: submitted && percentErr ? RED : inputStyle.border }} />
-                      <span style={{ position: "absolute", right: 11, top: "50%", transform: "translateY(-50%)", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)", pointerEvents: "none" }}>%</span>
-                    </div>
+                    <NumberField label="Percent of the load's rate" suffix="%" max={100} placeholder="e.g. 1.5" invalid={submitted && !!percentErr}
+                      value={Number(percent) || 0} onChange={(n) => setPercent(n ? String(n) : "")} />
                     <FieldHint text={submitted ? percentErr : null} />
                   </label>
                   <div style={fieldStyle}>
@@ -1175,7 +1173,7 @@ function UsersTab({ roles, teams, reloadTeams, reloadRoles, canCreate, canUpdate
 
 
       {(modal === "create" || modal === "edit") && (
-        <UserModal user={editing} roles={roles} teams={teams} saving={saving} error={saveErr} onClose={() => { setModal(null); setSaveErr(null); }} onSave={(u, kpi) => { void save(u, kpi); }} />
+        <UserModal canSetPay={canUpdate} user={editing} roles={roles} teams={teams} saving={saving} error={saveErr} onClose={() => { setModal(null); setSaveErr(null); }} onSave={(u, kpi) => { void save(u, kpi); }} />
       )}
       {deleting && <DeleteConfirm label={deleting.name} busy={delBusy} error={delErr} onClose={() => { setDeleting(null); setDelErr(null); }} onConfirm={() => confirmDelete(deleting)} />}
       {saving && <div style={{ position: "fixed", inset: 0, zIndex: 200 }} />}

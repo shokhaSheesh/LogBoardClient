@@ -36,11 +36,11 @@ export function weekOf(day: Date, weekStartDay: number): Period {
 
 // The calendar month / year around `anchor`, never running past today: one that is still
 // going is measured up to now, so it compares with an equally long stretch before.
-function calendarSpan(mode: "month" | "year", anchor: Date): Period {
+function calendarSpan(mode: "month" | "year", anchor: Date, whole = false): Period {
   const first = mode === "month" ? new Date(anchor.getFullYear(), anchor.getMonth(), 1) : new Date(anchor.getFullYear(), 0, 1);
   const last  = mode === "month" ? new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0) : new Date(anchor.getFullYear(), 11, 31);
   const today = new Date();
-  return { mode, from: isoDay(first), to: isoDay(last > today ? today : last) };
+  return { mode, from: isoDay(first), to: isoDay(!whole && last > today ? today : last) };
 }
 
 // The weeks of a month, as the company counts them: every day the work week starts on that
@@ -119,11 +119,15 @@ function Header({ title, onPrev, onNext, nextDisabled }: { title: string; onPrev
   );
 }
 
-export function PeriodFilter({ value, onChange, weekStartDay, thisWeek }: {
+export function PeriodFilter({ value, onChange, weekStartDay, thisWeek, modes, future = false }: {
   value: Period;
   onChange: (p: Period) => void;
   weekStartDay: number;       // 0=Sunday … 6=Saturday — the company's work-week anchor
   thisWeek?: Period;          // the current week as the server reckons it, when the page knows it
+  modes?: PeriodMode[];       // which units to offer; all five when left out
+  // A page that plans ahead (Gross) can go past today: whole months, and weeks and months
+  // that haven't started. Pages that report what happened stop at today.
+  future?: boolean;
 }) {
   const now = new Date();
   const currentWeek = thisWeek ?? weekOf(now, weekStartDay);
@@ -145,12 +149,12 @@ export function PeriodFilter({ value, onChange, weekStartDay, thisWeek }: {
   const pickMode = (m: PeriodMode) => {
     if (m === mode) return;
     if (m === "week") onChange(currentWeek);
-    else if (m === "month" || m === "year") onChange(calendarSpan(m, now));
+    else if (m === "month" || m === "year") onChange(calendarSpan(m, now, future));
     else if (m === "all") onChange(ALL_TIME);
     else onChange({ mode: "custom", from: from || currentWeek.from, to: to || currentWeek.to });
   };
 
-  const atLatest =
+  const atLatest = future ? false :
     mode === "week" ? from >= currentWeek.from
     : mode === "month" ? start.getFullYear() === now.getFullYear() && start.getMonth() === now.getMonth()
     : mode === "year" ? start.getFullYear() === now.getFullYear()
@@ -159,8 +163,8 @@ export function PeriodFilter({ value, onChange, weekStartDay, thisWeek }: {
   const step = (dir: -1 | 1) => {
     if (dir === 1 && atLatest) return;
     if (mode === "week") onChange(weekOf(new Date(start.getFullYear(), start.getMonth(), start.getDate() + dir * 7), weekStartDay));
-    else if (mode === "month") onChange(calendarSpan("month", new Date(start.getFullYear(), start.getMonth() + dir, 1)));
-    else if (mode === "year") onChange(calendarSpan("year", new Date(start.getFullYear() + dir, 0, 1)));
+    else if (mode === "month") onChange(calendarSpan("month", new Date(start.getFullYear(), start.getMonth() + dir, 1), future));
+    else if (mode === "year") onChange(calendarSpan("year", new Date(start.getFullYear() + dir, 0, 1), future));
   };
 
   const weeks  = weeksOfMonth(listMonth.getFullYear(), listMonth.getMonth(), weekStartDay);
@@ -171,7 +175,7 @@ export function PeriodFilter({ value, onChange, weekStartDay, thisWeek }: {
   return (
     <div style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
       <div role="group" aria-label="Period" style={{ display: "inline-flex", height: 34, boxSizing: "border-box", padding: 3, gap: 2, border: "1px solid var(--border)", borderRadius: 8, backgroundColor: "var(--card)", flexShrink: 0 }}>
-        {MODES.map((m) => (
+        {MODES.filter((m) => !modes || modes.includes(m.id)).map((m) => (
           <button key={m.id} onClick={() => pickMode(m.id)} aria-pressed={mode === m.id}
             style={{ padding: "0 12px", border: "none", borderRadius: 6, cursor: "pointer", fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 500, backgroundColor: mode === m.id ? "var(--primary)" : "transparent", color: mode === m.id ? "var(--primary-foreground)" : "var(--muted-foreground)", whiteSpace: "nowrap" }}>
             {m.label}
@@ -193,14 +197,14 @@ export function PeriodFilter({ value, onChange, weekStartDay, thisWeek }: {
                 <Header title={`${MONTHS_FULL[listMonth.getMonth()]} ${listMonth.getFullYear()}`}
                   onPrev={() => setListMonth((m) => new Date(m.getFullYear(), m.getMonth() - 1, 1))}
                   onNext={() => setListMonth((m) => new Date(m.getFullYear(), m.getMonth() + 1, 1))}
-                  nextDisabled={listMonth.getFullYear() === now.getFullYear() && listMonth.getMonth() === now.getMonth()} />
+                  nextDisabled={!future && listMonth.getFullYear() === now.getFullYear() && listMonth.getMonth() === now.getMonth()} />
                 <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
                   {weeks.map((w) => {
                     const active = w.start === from;
-                    const future = w.start > currentWeek.from;
+                    const ahead = !future && w.start > currentWeek.from;
                     return (
-                      <button key={w.start} disabled={future} onClick={() => { onChange({ mode: "week", from: w.start, to: w.end }); close(); }}
-                        style={{ ...CAL.option(active, future), display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", textAlign: "left" }} {...calHover(active, future)}>
+                      <button key={w.start} disabled={ahead} onClick={() => { onChange({ mode: "week", from: w.start, to: w.end }); close(); }}
+                        style={{ ...CAL.option(active, ahead), display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", textAlign: "left" }} {...calHover(active, ahead)}>
                         <span style={{ fontWeight: 600, width: 50 }}>Week {w.n}</span>
                         <span style={{ flex: 1, whiteSpace: "nowrap", opacity: active ? 0.9 : 0.7 }}>{fmtDateRange(w.start, w.end)}</span>
                         {w.start === currentWeek.from && <span style={{ fontSize: 11, fontWeight: 600, opacity: 0.8 }}>Now</span>}
@@ -216,14 +220,14 @@ export function PeriodFilter({ value, onChange, weekStartDay, thisWeek }: {
           {mode === "month" && (
             <Menu label={`${MONTHS_FULL[start.getMonth()]} ${start.getFullYear()}`}>
               {(close) => (<>
-                <Header title={String(listYear)} onPrev={() => setListYear((y) => y - 1)} onNext={() => setListYear((y) => y + 1)} nextDisabled={listYear >= now.getFullYear()} />
+                <Header title={String(listYear)} onPrev={() => setListYear((y) => y - 1)} onNext={() => setListYear((y) => y + 1)} nextDisabled={!future && listYear >= now.getFullYear()} />
                 <div style={CAL.grid}>
                   {MONTHS_SHORT.map((name, mi) => {
                     const active = start.getFullYear() === listYear && start.getMonth() === mi;
-                    const future = listYear > now.getFullYear() || (listYear === now.getFullYear() && mi > now.getMonth());
+                    const ahead = !future && (listYear > now.getFullYear() || (listYear === now.getFullYear() && mi > now.getMonth()));
                     return (
-                      <button key={name} disabled={future} onClick={() => { onChange(calendarSpan("month", new Date(listYear, mi, 1))); close(); }}
-                        style={CAL.option(active, future)} {...calHover(active, future)}>
+                      <button key={name} disabled={ahead} onClick={() => { onChange(calendarSpan("month", new Date(listYear, mi, 1), future)); close(); }}
+                        style={CAL.option(active, ahead)} {...calHover(active, ahead)}>
                         {name}
                       </button>
                     );
@@ -236,14 +240,14 @@ export function PeriodFilter({ value, onChange, weekStartDay, thisWeek }: {
           {mode === "year" && (
             <Menu label={String(start.getFullYear())}>
               {(close) => (<>
-                <Header title={String(start.getFullYear())} onPrev={() => setYearPage((p) => p - 12)} onNext={() => setYearPage((p) => p + 12)} nextDisabled={yearPage + 12 > now.getFullYear()} />
+                <Header title={String(start.getFullYear())} onPrev={() => setYearPage((p) => p - 12)} onNext={() => setYearPage((p) => p + 12)} nextDisabled={!future && yearPage + 12 > now.getFullYear()} />
                 <div style={CAL.grid}>
                   {Array.from({ length: 12 }, (_, i) => yearPage + i).map((y) => {
                     const active = start.getFullYear() === y;
-                    const future = y > now.getFullYear();
+                    const ahead = !future && y > now.getFullYear();
                     return (
-                      <button key={y} disabled={future} onClick={() => { onChange(calendarSpan("year", new Date(y, 0, 1))); close(); }}
-                        style={CAL.option(active, future)} {...calHover(active, future)}>
+                      <button key={y} disabled={ahead} onClick={() => { onChange(calendarSpan("year", new Date(y, 0, 1), future)); close(); }}
+                        style={CAL.option(active, ahead)} {...calHover(active, ahead)}>
                         {y}
                       </button>
                     );

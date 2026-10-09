@@ -15,6 +15,7 @@ import { Kpi } from "../components/Kpi";
 import { PeriodFilter, ALL_TIME, type Period } from "../components/PeriodFilter";
 import { useNavigate } from "react-router";
 import { fmtDate, fmtDateRange } from "../lib/dates";
+import { NumberField } from "../components/NumberField";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -142,11 +143,11 @@ function AdjustModal({ payout, onSave, onClose, saving, error }: {
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
               <label htmlFor="payout-added" style={labelStyle}>Added</label>
-              <input id="payout-added" autoFocus type="number" min={0} value={added} onChange={(e) => setAdded(e.target.value)} placeholder="0" style={inputStyle} />
+              <NumberField id="payout-added" label="Added" prefix="$" autoFocus value={Number(added) || 0} onChange={(n) => setAdded(n ? String(n) : "")} />
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
               <label htmlFor="payout-deducted" style={labelStyle}>Deducted</label>
-              <input id="payout-deducted" type="number" min={0} value={deducted} onChange={(e) => setDeducted(e.target.value)} placeholder="0" style={inputStyle} />
+              <NumberField id="payout-deducted" label="Deducted" prefix="$" value={Number(deducted) || 0} onChange={(n) => setDeducted(n ? String(n) : "")} />
             </div>
           </div>
 
