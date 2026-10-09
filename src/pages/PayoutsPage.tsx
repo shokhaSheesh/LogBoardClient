@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import {
   X, Search, ChevronDown, DollarSign,
   ChevronLeft, ChevronRight, Pencil, Check,
-  CalendarDays, FileText, AlertCircle, Info,
+  CalendarDays, FileText, AlertCircle, Info, CirclePlus, CircleMinus, Wallet, HandCoins,
 } from "lucide-react";
 import { api } from "../lib/api";
 import { PageLoader } from "../components/PageLoader";
@@ -11,6 +11,9 @@ import { FormError, formErrorInModal, friendlyError, notify } from "../component
 import { useAuth } from "../lib/auth";
 import { hasPerm } from "../lib/permissions";
 import { Dash } from "../components/Dash";
+import { Kpi } from "../components/Kpi";
+import { PeriodFilter, ALL_TIME, type Period } from "../components/PeriodFilter";
+import { useNavigate } from "react-router";
 import { fmtDate, fmtDateRange } from "../lib/dates";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -72,57 +75,6 @@ function toPayout(b: BackendPayout): Payout {
 
 // Sign-aware: a negative net must read "-$50", not "$50".
 function fmtMoney(n: number) { return `${n < 0 ? "-" : ""}$${Math.abs(n).toLocaleString()}`; }
-
-
-// ─── Date helpers ─────────────────────────────────────────────────────────────
-
-type DateMode = "day" | "week" | "month";
-
-// weekStart is the company's Work Week setting (0=Sunday … 6=Saturday), so "Week" here
-// covers the same seven days as the Gross and Dashboard pages.
-function startOfWeek(d: Date, weekStart: number): Date {
-  const r = new Date(d);
-  r.setDate(r.getDate() - ((r.getDay() - weekStart + 7) % 7));
-  r.setHours(0, 0, 0, 0);
-  return r;
-}
-
-function toApiRange(mode: DateMode, anchor: Date, weekStart: number): { from: string; to: string } {
-  const fmt = (d: Date) => {
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, "0");
-    const day = String(d.getDate()).padStart(2, "0");
-    return `${y}-${m}-${day}`;
-  };
-  if (mode === "day") return { from: fmt(anchor), to: fmt(anchor) };
-  if (mode === "week") {
-    const mon = startOfWeek(anchor, weekStart);
-    const sun = new Date(mon); sun.setDate(mon.getDate() + 6);
-    return { from: fmt(mon), to: fmt(sun) };
-  }
-  const first = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
-  const last  = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0);
-  return { from: fmt(first), to: fmt(last) };
-}
-
-function fmtDateLabel(mode: DateMode, anchor: Date, weekStart: number): string {
-  const M = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-  if (mode === "day") return fmtDate(anchor);
-  if (mode === "week") {
-    const mon = startOfWeek(anchor, weekStart);
-    const sun = new Date(mon); sun.setDate(mon.getDate() + 6);
-    return fmtDateRange(mon, sun);
-  }
-  return `${M[anchor.getMonth()]} ${anchor.getFullYear()}`;
-}
-
-function shiftAnchor(mode: DateMode, anchor: Date, dir: -1 | 1): Date {
-  const d = new Date(anchor);
-  if (mode === "day")   d.setDate(d.getDate() + dir);
-  if (mode === "week")  d.setDate(d.getDate() + dir * 7);
-  if (mode === "month") d.setMonth(d.getMonth() + dir);
-  return d;
-}
 
 // ─── Edit modal (add/deduct/notes only) ───────────────────────────────────────
 
@@ -376,8 +328,9 @@ export function PayoutsPage() {
   const [dispatchers, setDispatchers]   = useState<DispatcherOpt[]>([]);
   const [dispFilter, setDispFilter]     = useState<DispatcherOpt | null>(null);
   const [filterOpen, setFilterOpen]     = useState(false);
-  const [dateMode, setDateMode]         = useState<DateMode | null>(null);
-  const [anchor, setAnchor]             = useState<Date>(today);
+  // Which stretch of completion dates to list. All time = no date filter.
+  const [period, setPeriod]             = useState<Period>(ALL_TIME);
+  const navigate = useNavigate();
 
   const [loadErr, setLoadErr]           = useState<string | null>(null);
   const [editing, setEditing]           = useState<Payout | null>(null);
@@ -429,12 +382,11 @@ export function PayoutsPage() {
     let cancelled = false;
     setLoading(true);
     setLoadErr(null);
-    const dateRange = dateMode ? toApiRange(dateMode, anchor, weekStart) : { from: undefined, to: undefined };
     api.getPayouts<BackendPayout>({
       q:             debouncedSearch || undefined,
       dispatcher_id: dispFilter?.id || undefined,
-      from:          dateRange.from,
-      to:            dateRange.to,
+      from:          period.from || undefined,
+      to:            period.to || undefined,
       page,
       page_size:     pageSize,
     }).then(({ items, total: t, totals: tots }) => {
@@ -445,7 +397,7 @@ export function PayoutsPage() {
     }).catch((e) => { if (!cancelled) setLoadErr(friendlyError(e, "Couldn't load payouts.")); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [fetchKey, debouncedSearch, dispFilter, dateMode, anchor, page, pageSize, weekStart]);
+  }, [fetchKey, debouncedSearch, dispFilter, period, page, pageSize]);
 
   const handleSave = async (added: number, deducted: number, notes: string) => {
     if (!editing) return;
@@ -464,10 +416,7 @@ export function PayoutsPage() {
     }
   };
 
-  const selectMode = (m: DateMode) => {
-    if (dateMode === m) { setDateMode(null); } else { setDateMode(m); setAnchor(today); }
-    setPage(1);
-  };
+
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", backgroundColor: "var(--background)", overflow: "hidden" }}>
@@ -483,6 +432,14 @@ export function PayoutsPage() {
       )}
 
       <div style={{ flex: 1, overflow: "hidden", padding: "14px 24px", display: "flex", flexDirection: "column", gap: 12 }}>
+
+      {/* Totals for the whole filtered period — from the server, so they cover every page */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 12, flexShrink: 0 }}>
+        <Kpi icon={<DollarSign size={18} />}  label="Rate"       value={fmtMoney(totals.rate)} note={`${total} ${total === 1 ? "load" : "loads"}`} />
+        <Kpi icon={<CirclePlus size={18} />}  label="Added"      value={totals.added > 0 ? `+${fmtMoney(totals.added)}` : fmtMoney(0)} tone={totals.added > 0 ? "good" : "plain"} />
+        <Kpi icon={<CircleMinus size={18} />} label="Deducted"   value={totals.deducted > 0 ? `-${fmtMoney(totals.deducted)}` : fmtMoney(0)} tone={totals.deducted > 0 ? "bad" : "plain"} />
+        <Kpi icon={<Wallet size={18} />}      label="Net payout" value={fmtMoney(totals.net)} />
+      </div>
 
       <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 12 }}>
 
@@ -521,36 +478,16 @@ export function PayoutsPage() {
           )}
         </div>
 
-        {/* Date range picker */}
-        <div style={{ display: "flex", alignItems: "center", gap: 0, borderRadius: 8, border: "1px solid var(--border)", overflow: "hidden", flexShrink: 0 }}>
-          {(["day", "week", "month"] as DateMode[]).map((m) => (
-            <button key={m} onClick={() => selectMode(m)} aria-pressed={dateMode === m}
-              style={{ padding: "8px 14px", fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: dateMode === m ? 700 : 500, color: dateMode === m ? "#fff" : "var(--muted-foreground)", backgroundColor: dateMode === m ? "var(--primary)" : "transparent", border: "none", borderRight: m !== "month" ? "1px solid var(--border)" : "none", cursor: "pointer", textTransform: "capitalize", outline: "none", transition: "background-color 0.12s" }}>
-              {m.charAt(0).toUpperCase() + m.slice(1)}
-            </button>
-          ))}
-        </div>
+        {/* Period — the same control as the Dashboard */}
+        <PeriodFilter value={period} onChange={(p) => { setPeriod(p); setPage(1); }} weekStartDay={weekStart} />
 
-        {/* Date nav */}
-        {dateMode && (
-          <div style={{ display: "flex", alignItems: "center", gap: 0, borderRadius: 8, border: "1px solid var(--border)", overflow: "hidden", flexShrink: 0 }}>
-            <button aria-label={`Previous ${dateMode}`} onClick={() => { setAnchor((a) => shiftAnchor(dateMode, a, -1)); setPage(1); }}
-              style={{ width: 32, height: 34, display: "flex", alignItems: "center", justifyContent: "center", border: "none", borderRight: "1px solid var(--border)", backgroundColor: "transparent", cursor: "pointer", color: "var(--foreground)", outline: "none" }}
-              onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--muted)"; }}
-              onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = "transparent"; }}>
-              <ChevronLeft size={14} />
-            </button>
-            <div style={{ padding: "0 14px", fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 600, color: "var(--foreground)", whiteSpace: "nowrap", lineHeight: "34px" }}>
-              {fmtDateLabel(dateMode, anchor, weekStart)}
-            </div>
-            <button aria-label={`Next ${dateMode}`} onClick={() => { setAnchor((a) => shiftAnchor(dateMode, a, 1)); setPage(1); }}
-              style={{ width: 32, height: 34, display: "flex", alignItems: "center", justifyContent: "center", border: "none", borderLeft: "1px solid var(--border)", backgroundColor: "transparent", cursor: "pointer", color: "var(--foreground)", outline: "none" }}
-              onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--muted)"; }}
-              onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = "transparent"; }}>
-              <ChevronRight size={14} />
-            </button>
-          </div>
-        )}
+        <div style={{ flex: 1 }} />
+
+        {/* What these loads earn each dispatcher — opens its own page, on the period picked above */}
+        <button onClick={() => navigate(`/workspace/payouts/kpi${period.mode === "all" ? "" : `?mode=${period.mode}&from=${period.from}&to=${period.to}`}`)}
+          style={{ display: "inline-flex", alignItems: "center", gap: 7, height: 34, padding: "0 14px", borderRadius: 8, border: "none", backgroundColor: "var(--primary)", color: "var(--primary-foreground)", fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>
+          <HandCoins size={15} /> Generate KPI
+        </button>
       </div>
 
       {/* ── Table — dim existing rows while a page-change refetch is in flight ── */}
@@ -668,21 +605,6 @@ export function PayoutsPage() {
             })}
           </tbody>
 
-          {/* Totals footer — from server, covers all pages; pinned so it's always in view */}
-          {total > 0 && payouts.length > 0 && (
-            <tfoot>
-              <tr style={{ backgroundColor: "var(--card)" }}>
-                <td colSpan={5} style={{ padding: "10px 14px", position: "sticky", bottom: 0, backgroundColor: "var(--card)", boxShadow: "inset 0 1px 0 var(--border)", fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, color: "var(--muted-foreground)" }}>
-                  Totals ({total} {total === 1 ? "record" : "records"})
-                </td>
-                <td style={{ padding: "10px 14px", position: "sticky", bottom: 0, backgroundColor: "var(--card)", boxShadow: "inset 0 1px 0 var(--border)", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 700, color: "var(--foreground)" }}>{fmtMoney(totals.rate)}</td>
-                <td style={{ padding: "10px 14px", position: "sticky", bottom: 0, backgroundColor: "var(--card)", boxShadow: "inset 0 1px 0 var(--border)", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 700, color: "var(--primary)" }}>{totals.added > 0 ? `+${fmtMoney(totals.added)}` : <Dash />}</td>
-                <td style={{ padding: "10px 14px", position: "sticky", bottom: 0, backgroundColor: "var(--card)", boxShadow: "inset 0 1px 0 var(--border)", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 700, color: "#EF4444" }}>{totals.deducted > 0 ? `-${fmtMoney(totals.deducted)}` : <Dash />}</td>
-                <td style={{ padding: "10px 14px", position: "sticky", bottom: 0, backgroundColor: "var(--card)", boxShadow: "inset 0 1px 0 var(--border)", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 700, color: "var(--foreground)" }}>{fmtMoney(totals.net)}</td>
-                <td colSpan={3} style={{ position: "sticky", bottom: 0, backgroundColor: "var(--card)", boxShadow: "inset 0 1px 0 var(--border)" }} />
-              </tr>
-            </tfoot>
-          )}
         </table>
       </div>
 

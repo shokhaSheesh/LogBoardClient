@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router";
 import { createPortal } from "react-dom";
-import { MapPin, Lock, MessageSquare, ChevronDown, Search, Navigation, Check, ArrowRight, History, X, AlertCircle, RotateCcw, Users, Rows3, ExternalLink, Copy } from "lucide-react";
+import { MapPin, Lock, MessageSquare, ChevronDown, Search, Navigation, Check, ArrowRight, History, X, AlertCircle, RotateCcw, Users, Rows3, Copy } from "lucide-react";
 import { Status, STATUS_CONFIG, ALL_STATUSES } from "../lib/statuses";
 import { api, getCompanyId, ApiError } from "../lib/api";
 import { useAuth } from "../lib/auth";
@@ -14,7 +14,7 @@ import { friendlyError, notify } from "./feedback";
 import { cleanAppt, formatAppt } from "../lib/appt";
 import { UncompleteConfirm } from "./UncompleteConfirm";
 import { Dash } from "./Dash";
-import { fmtDate } from "../lib/dates";
+import { fmtDate, fmtDateTime } from "../lib/dates";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -83,6 +83,10 @@ interface BoardRow {
   load?: BoardLoad | null; // full current load (null when idle) — holds the ordered stops
   location: string;
   eta_km: number | null;
+  // Road miles from the truck to the next stop not ticked done, measured by the server after
+  // each ELD poll. Null unless the driver is on a load, the truck has a position and that
+  // stop has coordinates. `approx` = a straight-line estimate (the router was unreachable).
+  eta?: { miles: number; approx: boolean; stop_index: number; computed_at: string | null } | null;
   speed_mph: number | null;
   eld?: EldBlock | null;
   comments: string;
@@ -114,7 +118,10 @@ interface Driver {
   pickupAppt: string;
   dropAppt: string;
   location: string;
-  etaKm: number | null;
+  etaMiles: number | null;   // miles left to the next stop; null = unknown
+  etaApprox: boolean;        // true when that figure is a straight-line estimate
+  etaStop: number | null;    // which stop of the route it is measured to (0-based)
+  etaAt: string | null;      // when it was measured
   speedMph: number | null;
   eld?: EldBlock | null;   // truck telemetry, read-only display (never PUT back)
   comments: string;
@@ -201,21 +208,34 @@ const TYPE_CONFIG: Record<DriverType, { color: string; bg: string }> = {
 };
 
 const LOAD_ID_LEFT   = 0;
-const DRIVER_NM_LEFT = 200; // = Load ID width, so Driver Name sticks right after it
+const DRIVER_NM_LEFT = 204; // = Load ID width, so Driver Name sticks right after it
 
+// One thing per column, each at a fixed width, so every value sits at the same x on every
+// row. A team's two people take two lines across Driver and Phone — no taller than a
+// two-stop route.
 const COLUMNS = [
-  { label: "Load ID",        width: 200, sticky: true,  left: LOAD_ID_LEFT   },
-  { label: "Driver Name",    width: 180, sticky: true,  left: DRIVER_NM_LEFT },
-  { label: "Phone",          width: 148, sticky: false                        },
-  { label: "Unit",           width: 116, sticky: false                        },
-  { label: "Type",           width: 72,  sticky: false                        },
-  { label: "Status",         width: 130, sticky: false                        },
-  { label: "Origin / Dest.", width: 230, sticky: false                        },
-  { label: "Appt. Times",   width: 178,  sticky: false                        },
-  { label: "Curr. Location", width: 158, sticky: false                        },
-  { label: "ETA / Dist.",    width: 108, sticky: false                        },
-  { label: "Comments",       width: 280, sticky: false                        },
+  { label: "Load",         width: 204, sticky: true,  left: LOAD_ID_LEFT   },
+  { label: "Driver",       width: 176, sticky: true,  left: DRIVER_NM_LEFT },
+  { label: "Phone",        width: 140, sticky: false                        },
+  { label: "Unit",         width: 104, sticky: false                        },
+  { label: "Type",         width: 78,  sticky: false                        },
+  { label: "Status",       width: 134, sticky: false                        },
+  { label: "Route",        width: 214, sticky: false                        },
+  { label: "Appointments", width: 232, sticky: false                        },
+  { label: "Location",     width: 244, sticky: false                        },
+  { label: "ETA",          width: 150, sticky: false                        },
+  { label: "Comments",     width: 250, sticky: false                        },
 ];
+
+const TABLE_W = COLUMNS.reduce((sum, c) => sum + c.width, 0);
+
+// A status as a soft chip: a light tint of its colour with the text in a deeper shade,
+// plus the full colour for dots and row edges. Mixed against the theme's own card and
+// text colours, so it reads in light and dark without a second palette.
+function softStatus(s: Status): { bg: string; color: string; dot: string } {
+  const c = STATUS_CONFIG[s].bg;
+  return { bg: `color-mix(in srgb, ${c} 16%, var(--card))`, color: `color-mix(in srgb, ${c} 52%, var(--foreground))`, dot: c };
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -259,7 +279,11 @@ function fromBoardRow(r: BoardRow): Driver {
     pickupAppt:  formatAppt(r.pickup_appt)  || "—",
     dropAppt:    formatAppt(r.drop_appt)    || "—",
     location:    r.location     || "—",
-    etaKm:       r.eta_km,
+    // Older servers only send eta_km (and always null); newer ones send eta in miles.
+    etaMiles:    r.eta?.miles ?? (r.eta_km != null ? r.eta_km / 1.609344 : null),
+    etaApprox:   r.eta?.approx ?? false,
+    etaStop:     r.eta?.stop_index ?? null,
+    etaAt:       r.eta?.computed_at ?? null,
     speedMph:    r.speed_mph,
     eld:         r.eld ?? null,
     comments:    r.comments     || "",
@@ -267,12 +291,11 @@ function fromBoardRow(r: BoardRow): Driver {
   };
 }
 
-function etaColor(km: number | null): string {
-  if (km === null) return "var(--muted-foreground)";
-  if (km <= 0)    return "#10B981";
-  if (km < 200)   return "#10B981";
-  if (km < 400)   return "#F59E0B";
-  return "#EF4444";
+// Miles left, as a dispatcher would say it: whole miles, one decimal under ten, and
+// "At stop" once the truck is within half a mile.
+function fmtMilesLeft(mi: number): string {
+  if (mi < 0.5) return "At stop";
+  return `${mi < 10 ? mi.toFixed(1) : Math.round(mi).toLocaleString()} mi`;
 }
 
 // Board display order: by status (the fixed status order — Re-Update first … Home last),
@@ -369,14 +392,16 @@ function StatusDropdown({ value, onChange, disabled = false, onOpenChange }: { v
   };
 
   const inactive = busy || disabled;
+  const soft = softStatus(value);
   return (
     <>
       <div ref={anchorRef} onClick={inactive ? undefined : toggle} style={{ cursor: inactive ? "default" : "pointer", display: "inline-flex", opacity: disabled ? 0.55 : 1 }}>
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600, color: cfg.color, backgroundColor: cfg.bg, borderRadius: 4, padding: "3px 8px", whiteSpace: "nowrap", userSelect: "none" }}>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: 600, color: soft.color, backgroundColor: soft.bg, borderRadius: 6, padding: "3px 8px 3px 9px", whiteSpace: "nowrap", userSelect: "none" }}>
+          <span style={{ width: 6, height: 6, borderRadius: "50%", backgroundColor: soft.dot, flexShrink: 0 }} />
           {cfg.label}
           {busy
-            ? <span style={{ width: 9, height: 9, borderRadius: "50%", border: `1.5px solid ${cfg.color}55`, borderTopColor: cfg.color, animation: "spin 0.7s linear infinite", display: "inline-block", marginLeft: 1 }} />
-            : <ChevronDown size={10} style={{ opacity: 0.7, marginLeft: 1 }} />}
+            ? <span style={{ width: 9, height: 9, borderRadius: "50%", border: "1.5px solid var(--border)", borderTopColor: soft.color, animation: "spin 0.7s linear infinite", display: "inline-block" }} />
+            : <ChevronDown size={11} style={{ opacity: 0.7 }} />}
         </span>
       </div>
       {open && rect && (() => {
@@ -388,12 +413,12 @@ function StatusDropdown({ value, onChange, disabled = false, onOpenChange }: { v
             const active = s === value;
             return (
               <button key={s} onMouseDown={(e) => { e.preventDefault(); select(s); }}
-                style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 8px", border: "none", borderRadius: 6, backgroundColor: active ? c.bg : "transparent", cursor: "pointer", width: "100%", textAlign: "left" }}
+                style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 8px", border: "none", borderRadius: 6, backgroundColor: active ? softStatus(s).bg : "transparent", cursor: "pointer", width: "100%", textAlign: "left" }}
                 onMouseEnter={(e) => { if (!active) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--muted)"; }}
                 onMouseLeave={(e) => { if (!active) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "transparent"; }}>
                 <span style={{ width: 10, height: 10, borderRadius: "50%", backgroundColor: c.bg, border: `2px solid ${c.bg}`, flexShrink: 0, boxShadow: active ? `0 0 0 2px ${c.bg}44` : "none" }} />
-                <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: active ? 600 : 400, color: active ? c.color : "var(--foreground)", flex: 1 }}>{c.label}</span>
-                {active && <Check size={12} style={{ color: c.color, flexShrink: 0 }} />}
+                <span style={{ fontFamily: "var(--font-sans)", fontSize: 12.5, fontWeight: active ? 600 : 400, color: active ? softStatus(s).color : "var(--foreground)", flex: 1 }}>{c.label}</span>
+                {active && <Check size={12} style={{ color: softStatus(s).color, flexShrink: 0 }} />}
               </button>
             );
           })}
@@ -494,7 +519,7 @@ function InlineCell({ value, onCommit, mono, fontSize = 12, color = "var(--foreg
 // not the board — the board only shows it and ticks stops off as done.
 function ApptText({ value, color, done }: { value: string; color: string; done?: boolean }) {
   return (
-    <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color, textDecoration: done ? "line-through" : "none" }}>{value && value !== "—" ? value : <Dash />}</span>
+    <span style={{ display: "block", height: 20, lineHeight: "20px", fontFamily: "var(--font-mono)", fontSize: 11.5, whiteSpace: "nowrap", color, textDecoration: done ? "line-through" : "none" }}>{value && value !== "—" ? value : <Dash />}</span>
   );
 }
 
@@ -609,7 +634,7 @@ function StopList({ origin, originDone, destination, destinationDone, stops, ori
   };
 
   const textStyle = (done: boolean, isCurrent = true): React.CSSProperties => ({
-    fontFamily: "var(--font-sans)", fontSize: 12,
+    fontFamily: "var(--font-sans)", fontSize: 12.5,
     color: done ? "var(--muted-foreground)" : isCurrent ? "var(--foreground)" : "var(--muted-foreground)",
     textDecoration: done ? "line-through" : "none",
     fontWeight: isCurrent && !done ? 500 : 400,
@@ -624,7 +649,7 @@ function StopList({ origin, originDone, destination, destinationDone, stops, ori
   ];
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
       {allStops.map((stop, idx) => {
         const prevDone  = idx === 0 || allStops[idx - 1].done;
         const isCurrent = !stop.done && prevDone;
@@ -632,8 +657,7 @@ function StopList({ origin, originDone, destination, destinationDone, stops, ori
         const canToggle = !disabled && (stop.done || prevDone);
 
         return (
-          <div key={idx} className="cp-wrap" style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0 }}>
-            <span style={labelStyle}>#{idx + 1}</span>
+          <div key={idx} className="cp-wrap" style={{ display: "flex", alignItems: "center", gap: 7, minWidth: 0, height: 20 }}>
             <TickBtn done={stop.done} isCurrent={isCurrent} canToggle={canToggle} onToggle={canToggle ? stop.onToggle : undefined} />
             <span style={{ ...textStyle(stop.done, isCurrent), flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{stop.city || <Dash />}</span>
             {stop.city && stop.city !== "—" && <CopyBtn value={stop.copy} />}
@@ -656,24 +680,6 @@ function HistoryPanel({ events, loading, onClose, onRevert }: {
   const [skipped, setSkipped]     = useState<string[] | null>(null);
   // Which of the event's fields to undo. Empty set = the whole event.
   const [picked, setPicked]       = useState<Set<string>>(new Set());
-
-  const fmtTime = (iso: string) => {
-    const d = Date.now() - new Date(iso).getTime();
-    if (d < 60000)     return "just now";
-    if (d < 3600000)   return `${Math.floor(d / 60000)}m ago`;
-    if (d < 86400000)  return `${Math.floor(d / 3600000)}h ago`;
-    if (d < 172800000) return "yesterday";
-    return fmtDate(iso);
-  };
-
-  const actionColor = (a: string) => a === "create" ? "#10B981" : a === "delete" ? "#EF4444" : "#3B82F6";
-  const actionBg    = (a: string) => a === "create" ? "rgba(16,185,129,0.14)" : a === "delete" ? "rgba(239,68,68,0.14)" : "rgba(59,130,246,0.14)";
-
-  const entityColor = (t: string) => {
-    if (t === "load")   return { color: "#8B5CF6", bg: "rgba(139,92,246,0.14)" };
-    if (t === "driver") return { color: "#22D3EE", bg: "rgba(34,211,238,0.14)" };
-    return { color: "var(--foreground)", bg: "var(--muted)" };
-  };
 
   // The server works out whether an undo would actually succeed — the 24h window, the
   // already-undone claim, the stale check, the permission of the undone action — and
@@ -730,16 +736,50 @@ function HistoryPanel({ events, loading, onClose, onRevert }: {
     }
   };
 
+  // Escape closes the panel — or just the confirm, when that's what's open.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || reverting) return;
+      if (confirm) setConfirm(null); else onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [confirm, reverting, onClose]);
+
+  // Events are listed newest first under the day they happened on.
+  const dayLabel = (iso: string) => {
+    const d = new Date(iso), now = new Date();
+    const days = Math.round((new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime() - new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()) / 86400000);
+    return days === 0 ? "Today" : days === 1 ? "Yesterday" : fmtDate(iso);
+  };
+  const clock = (iso: string) => fmtDateTime(iso).split(" · ")[1] ?? "";
+  const ACTION: Record<string, { verb: string; color: string; bg: string }> = {
+    create: { verb: "added",   color: "var(--primary)", bg: "var(--primary-soft)" },
+    update: { verb: "changed", color: "#2563EB",        bg: "rgba(59,130,246,0.12)" },
+    delete: { verb: "removed", color: "#DC2626",        bg: "rgba(239,68,68,0.12)" },
+  };
+  const tag = (text: string, color: string, bg: string) => (
+    <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600, color, backgroundColor: bg, borderRadius: 5, padding: "0 6px", whiteSpace: "nowrap" }}>{text}</span>
+  );
+  const shown = (v: unknown) => (v === null || v === undefined || v === "" ? <Dash /> : String(v));
+
   return createPortal(
-    <div style={{ position: "fixed", inset: 0, zIndex: 9000 }} onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div style={{ position: "absolute", top: 0, right: 0, bottom: 0, width: 420, backgroundColor: "var(--card)", borderLeft: "1px solid var(--border)", boxShadow: "-8px 0 32px rgba(0,0,0,0.12)", display: "flex", flexDirection: "column" }}>
+    <div style={{ position: "fixed", inset: 0, zIndex: 9000, backgroundColor: "rgba(0,0,0,0.18)" }} onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div role="dialog" aria-label="Board history" style={{ position: "absolute", top: 0, right: 0, bottom: 0, width: "min(460px, 100vw)", backgroundColor: "var(--card)", borderLeft: "1px solid var(--border)", boxShadow: "-12px 0 36px rgba(0,0,0,0.14)", display: "flex", flexDirection: "column" }}>
         {/* Header */}
-        <div style={{ display: "flex", alignItems: "center", padding: "16px 20px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
-          <History size={16} style={{ color: "var(--primary)", marginRight: 8 }} />
-          <span style={{ fontFamily: "var(--font-sans)", fontSize: 15, fontWeight: 700, color: "var(--foreground)", flex: 1 }}>Change History</span>
-          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", padding: 4, borderRadius: 6, color: "var(--muted-foreground)", display: "flex" }}
-            onMouseEnter={(e) => ((e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--muted)")}
-            onMouseLeave={(e) => ((e.currentTarget as HTMLButtonElement).style.backgroundColor = "transparent")}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 18px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
+          <span style={{ width: 32, height: 32, borderRadius: 9, backgroundColor: "var(--primary-soft)", color: "var(--primary)", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <History size={16} />
+          </span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontFamily: "var(--font-sans)", fontSize: 15, fontWeight: 700, color: "var(--foreground)" }}>History</div>
+            <div style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)" }}>
+              {loading ? "Loading…" : events.length === 0 ? "Nothing yet" : `${events.length} recent ${events.length === 1 ? "change" : "changes"} · undo within 24 hours`}
+            </div>
+          </div>
+          <button onClick={onClose} aria-label="Close history" style={{ background: "none", border: "none", cursor: "pointer", padding: 6, borderRadius: 7, color: "var(--muted-foreground)", display: "flex" }}
+            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--muted)"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; }}>
             <X size={16} />
           </button>
         </div>
@@ -749,58 +789,60 @@ function HistoryPanel({ events, loading, onClose, onRevert }: {
           {loading ? (
             <div style={{ padding: "48px 20px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>Loading…</div>
           ) : events.length === 0 ? (
-            <div style={{ padding: "48px 20px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>No history yet.</div>
-          ) : (
-            <div style={{ padding: "12px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
-              {events.map((ev) => {
-                const ec = entityColor(ev.entity_type);
-                return (
-                  <div key={ev.id} style={{ backgroundColor: "var(--background)", border: "1px solid var(--border)", borderRadius: 10, padding: "12px 14px", display: "flex", flexDirection: "column", gap: 8 }}>
-                    {/* Header row */}
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                      <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: 600, color: "var(--foreground)" }}>{ev.actor_name || "Unknown"}</span>
-                      <span style={{ fontFamily: "var(--font-sans)", fontSize: 10, fontWeight: 700, color: actionColor(ev.action), backgroundColor: actionBg(ev.action), borderRadius: 4, padding: "1px 6px", textTransform: "uppercase", letterSpacing: "0.05em" }}>{ev.action}</span>
-                      <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600, color: ec.color, backgroundColor: ec.bg, borderRadius: 4, padding: "1px 6px" }}>{ev.entity_ref || ev.entity_type}</span>
-                      {ev.revert_of && (
-                        <span style={{ fontFamily: "var(--font-sans)", fontSize: 10, fontWeight: 700, color: "#F59E0B", backgroundColor: "rgba(245,158,11,0.14)", borderRadius: 4, padding: "1px 6px", textTransform: "uppercase", letterSpacing: "0.05em" }}>Undo</span>
-                      )}
-                      {ev.reverted_at && (
-                        <span style={{ fontFamily: "var(--font-sans)", fontSize: 10, fontWeight: 700, color: "var(--muted-foreground)", backgroundColor: "var(--muted)", borderRadius: 4, padding: "1px 6px", textTransform: "uppercase", letterSpacing: "0.05em" }}>Undone</span>
-                      )}
-                      <span style={{ marginLeft: "auto", fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--muted-foreground)", whiteSpace: "nowrap" }}>{fmtTime(ev.created_at)}</span>
-                    </div>
-                    {/* Changes */}
-                    {ev.changes && ev.changes.length > 0 && (
-                      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                        {ev.changes.map((c, i) => (
-                          <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, fontFamily: "var(--font-sans)", fontSize: 12 }}>
-                            <span style={{ color: "var(--muted-foreground)", minWidth: 80, textTransform: "capitalize", fontSize: 11 }}>{c.field.replace(/_/g, " ")}</span>
-                            <span style={{ color: "#EF4444", backgroundColor: "rgba(239,68,68,0.14)", borderRadius: 3, padding: "0 5px", fontFamily: "var(--font-mono)", fontSize: 11, textDecoration: "line-through" }}>{String(c.from ?? "—")}</span>
-                            <span style={{ color: "var(--muted-foreground)", fontSize: 10 }}>→</span>
-                            <span style={{ color: "#10B981", backgroundColor: "rgba(16,185,129,0.14)", borderRadius: 3, padding: "0 5px", fontFamily: "var(--font-mono)", fontSize: 11 }}>{String(c.to ?? "—")}</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                    {/* Undo — enabled/disabled by the server, so it never discovers a refusal on click */}
-                    {canUndo(ev) ? (
-                      <button onClick={() => openConfirm(ev)}
-                        style={{ alignSelf: "flex-start", display: "inline-flex", alignItems: "center", gap: 5, marginTop: 2, padding: "3px 9px", borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "transparent", cursor: "pointer", fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600, color: "var(--muted-foreground)" }}
-                        onMouseEnter={(e) => { const b = e.currentTarget as HTMLButtonElement; b.style.borderColor = "var(--primary)"; b.style.color = "var(--primary)"; }}
-                        onMouseLeave={(e) => { const b = e.currentTarget as HTMLButtonElement; b.style.borderColor = "var(--border)"; b.style.color = "var(--muted-foreground)"; }}>
-                        <RotateCcw size={11} /> {undoLabel(ev)}
-                      </button>
-                    ) : ev.revert_reason && ev.revert_reason !== "not_revertable" ? (
-                      <button disabled title={REVERT_REASON_TEXT[ev.revert_reason] ?? ev.revert_reason}
-                        style={{ alignSelf: "flex-start", display: "inline-flex", alignItems: "center", gap: 5, marginTop: 2, padding: "3px 9px", borderRadius: 6, border: "1px dashed var(--border)", backgroundColor: "transparent", cursor: "not-allowed", fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600, color: "var(--muted-foreground)", opacity: 0.55 }}>
-                        <RotateCcw size={11} /> {undoLabel(ev)}
-                      </button>
-                    ) : null}
+            <div style={{ padding: "48px 20px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>Changes made on the board will show up here.</div>
+          ) : events.map((ev, i) => {
+            const act = ACTION[ev.action] ?? ACTION.update;
+            const day = dayLabel(ev.created_at);
+            const newDay = i === 0 || dayLabel(events[i - 1].created_at) !== day;
+            const undone = !!ev.reverted_at;
+            return (
+              <div key={ev.id}>
+                {newDay && (
+                  <div style={{ position: "sticky", top: 0, zIndex: 1, padding: "7px 18px", backgroundColor: "var(--muted)", borderBottom: "1px solid var(--border)", borderTop: i === 0 ? "none" : "1px solid var(--border)", fontFamily: "var(--font-sans)", fontSize: 11.5, fontWeight: 600, color: "var(--muted-foreground)" }}>{day}</div>
+                )}
+                <div style={{ padding: "12px 18px", borderTop: newDay ? "none" : "1px solid var(--border)", display: "flex", flexDirection: "column", gap: 8, opacity: undone ? 0.6 : 1 }}>
+                  {/* Who did what to which row, and when */}
+                  <div style={{ display: "flex", alignItems: "baseline", gap: 6, flexWrap: "wrap", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
+                    <span style={{ fontWeight: 600, color: "var(--foreground)" }}>{ev.actor_name || "Unknown"}</span>
+                    <span>{act.verb}</span>
+                    <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 600, color: act.color, backgroundColor: act.bg, borderRadius: 5, padding: "1px 7px", whiteSpace: "nowrap" }}>{ev.entity_ref || ev.entity_type}</span>
+                    {ev.revert_of && tag("Undo", "#B45309", "rgba(245,158,11,0.16)")}
+                    {undone && tag("Undone", "var(--muted-foreground)", "var(--muted)")}
+                    <span title={fmtDateTime(ev.created_at)} style={{ marginLeft: "auto", fontFamily: "var(--font-mono)", fontSize: 11.5, whiteSpace: "nowrap" }}>{clock(ev.created_at)}</span>
                   </div>
-                );
-              })}
-            </div>
-          )}
+                  {/* What changed: old value struck through, then the new one */}
+                  {ev.changes && ev.changes.length > 0 && (
+                    <div style={{ display: "grid", gridTemplateColumns: "minmax(70px, 110px) minmax(0, 1fr)", gap: "4px 12px", fontFamily: "var(--font-sans)", fontSize: 12.5 }}>
+                      {ev.changes.map((c, ci) => (
+                        <div key={ci} style={{ display: "contents" }}>
+                          <span style={{ color: "var(--muted-foreground)" }}>{prettyField(c.field).replace(/^./, (ch) => ch.toUpperCase())}</span>
+                          <span style={{ display: "flex", alignItems: "baseline", gap: 7, flexWrap: "wrap", minWidth: 0 }}>
+                            <span style={{ color: "var(--muted-foreground)", textDecoration: c.from === null || c.from === undefined || c.from === "" ? "none" : "line-through", overflowWrap: "anywhere" }}>{shown(c.from)}</span>
+                            <ArrowRight size={11} style={{ color: "var(--muted-foreground)", flexShrink: 0, alignSelf: "center" }} />
+                            <span style={{ color: "var(--foreground)", fontWeight: 600, overflowWrap: "anywhere" }}>{shown(c.to)}</span>
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {/* Undo — enabled/disabled by the server, so it never discovers a refusal on click */}
+                  {canUndo(ev) ? (
+                    <button onClick={() => openConfirm(ev)}
+                      style={{ alignSelf: "flex-start", display: "inline-flex", alignItems: "center", gap: 6, height: 28, padding: "0 10px", borderRadius: 7, border: "1px solid var(--border)", backgroundColor: "var(--card)", cursor: "pointer", fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: 600, color: "var(--foreground)" }}
+                      onMouseEnter={(e) => { const b = e.currentTarget; b.style.borderColor = "var(--primary)"; b.style.color = "var(--primary)"; }}
+                      onMouseLeave={(e) => { const b = e.currentTarget; b.style.borderColor = "var(--border)"; b.style.color = "var(--foreground)"; }}>
+                      <RotateCcw size={12} /> {undoLabel(ev)}
+                    </button>
+                  ) : ev.revert_reason && ev.revert_reason !== "not_revertable" ? (
+                    // Why it can't be undone is said in words, not hidden in a tooltip.
+                    <span style={{ fontFamily: "var(--font-sans)", fontSize: 11.5, color: "var(--muted-foreground)", lineHeight: 1.4 }}>
+                      {REVERT_REASON_TEXT[ev.revert_reason] ?? ev.revert_reason}
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
 
@@ -813,7 +855,7 @@ function HistoryPanel({ events, loading, onClose, onRevert }: {
             onClick={(e) => { if (e.target === e.currentTarget && !reverting) setConfirm(null); }}>
             <div style={{ backgroundColor: "var(--card)", borderRadius: 12, width: 400, boxShadow: "0 20px 60px rgba(0,0,0,0.25)", overflow: "hidden" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "16px 20px", borderBottom: "1px solid var(--border)" }}>
-                <div style={{ width: 30, height: 30, borderRadius: 8, backgroundColor: "var(--secondary)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <div style={{ width: 30, height: 30, borderRadius: 8, backgroundColor: "var(--primary-soft)", display: "flex", alignItems: "center", justifyContent: "center" }}>
                   <RotateCcw size={15} style={{ color: "var(--primary)" }} />
                 </div>
                 <span style={{ fontFamily: "var(--font-sans)", fontSize: 14, fontWeight: 600, color: "var(--foreground)" }}>
@@ -847,7 +889,7 @@ function HistoryPanel({ events, loading, onClose, onRevert }: {
                           )}
                           <span style={{ color: "var(--muted-foreground)", minWidth: 74, textTransform: "capitalize", fontSize: 11 }}>{prettyField(c.field)}</span>
                           <span style={{ color: "var(--muted-foreground)", fontSize: 10 }}>→</span>
-                          <span style={{ color: "#10B981", backgroundColor: "rgba(16,185,129,0.14)", borderRadius: 3, padding: "1px 6px", fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 600 }}>{String(c.from ?? "—")}</span>
+                          <span style={{ color: "var(--foreground)", fontWeight: 600, overflowWrap: "anywhere" }}>{shown(c.from)}</span>
                         </label>
                       );
                     })}
@@ -875,17 +917,17 @@ function HistoryPanel({ events, loading, onClose, onRevert }: {
               <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, padding: "14px 20px", borderTop: "1px solid var(--border)" }}>
                 {skipped ? (
                   <button onClick={() => setConfirm(null)}
-                    style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 16px", borderRadius: 6, border: "none", backgroundColor: "var(--primary)", color: "#fff", cursor: "pointer" }}>
+                    style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, height: 34, padding: "0 16px", borderRadius: 8, border: "none", backgroundColor: "var(--primary)", color: "#fff", cursor: "pointer" }}>
                     Close
                   </button>
                 ) : (
                   <>
                     <button onClick={() => setConfirm(null)} disabled={reverting}
-                      style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 16px", borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "var(--muted)", color: "var(--foreground)", cursor: reverting ? "default" : "pointer" }}>
+                      style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 500, height: 34, padding: "0 16px", borderRadius: 8, border: "1px solid var(--border)", backgroundColor: "var(--card)", color: "var(--foreground)", cursor: reverting ? "default" : "pointer" }}>
                       Cancel
                     </button>
                     <button onClick={doRevert} disabled={reverting}
-                      style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 16px", borderRadius: 6, border: "none", backgroundColor: reverting ? "var(--muted)" : "var(--primary)", color: reverting ? "var(--muted-foreground)" : "#fff", cursor: reverting ? "default" : "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+                      style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, height: 34, padding: "0 16px", borderRadius: 8, border: "none", backgroundColor: reverting ? "var(--muted)" : "var(--primary)", color: reverting ? "var(--muted-foreground)" : "#fff", cursor: reverting ? "default" : "pointer", display: "flex", alignItems: "center", gap: 6 }}>
                       <RotateCcw size={13} /> {reverting ? "Working…" : isRestore ? "Restore" : confirm.revert_of ? "Redo" : "Undo"}
                     </button>
                   </>
@@ -1322,12 +1364,13 @@ export function DispatchTable() {
   // moments (fetch, snapshot, and after a write SUCCEEDS via resort()), never on the
   // optimistic edit. So a status change updates the cell in place and the row only moves
   // once the backend confirms it — a failed save reverts without the row ever jumping.
-  const visible = rows.filter((d) => {
-    const ms = statusFilter === "all" || d.status === statusFilter;
+  const pool = rows.filter((d) => {
     const mq = !q || d.name.toLowerCase().includes(q) || (d.name2 ?? "").toLowerCase().includes(q) || d.loadId.toLowerCase().includes(q) || d.unit.toLowerCase().includes(q) || d.location.toLowerCase().includes(q);
     const mt = !activeTeam || activeTeam.driverIds.has(d.driverId);
-    return ms && mq && mt;
+    return mq && mt;
   });
+  // `pool` is what the status counters count (search + team); the status filter narrows it.
+  const visible = statusFilter === "all" ? pool : pool.filter((d) => d.status === statusFilter);
 
   // "By team" view: a separate table per team (plus an "Unassigned" section) instead of
   // one shared table — each section gets its own non-scrolling header bar with the
@@ -1372,42 +1415,40 @@ export function DispatchTable() {
         />
       )}
 
-      {/* ── Toolbar ── */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 16px", flexShrink: 0, backgroundColor: "var(--card)", borderBottom: "1px solid var(--border)", height: 52, gap: 10, borderRadius: "12px 12px 0 0" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          {/* Search */}
-          <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
-            <Search size={13} style={{ position: "absolute", left: 9, color: "var(--muted-foreground)", pointerEvents: "none" }} />
-            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search driver, load, unit…"
-              style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--foreground)", backgroundColor: "var(--muted)", border: "1px solid var(--border)", borderRadius: 7, padding: "5px 10px 5px 30px", outline: "none", width: 220 }} />
-          </div>
+      {/* ── Toolbar: search, filters, view — History on the right ── */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", padding: "10px 16px", flexShrink: 0, backgroundColor: "var(--card)", borderBottom: "1px solid var(--border)", borderRadius: "12px 12px 0 0" }}>
+        {/* Search */}
+        <div style={{ position: "relative", flexShrink: 0 }}>
+          <Search size={13} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--muted-foreground)", pointerEvents: "none" }} />
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search driver, load, unit…" aria-label="Search the board"
+            style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "0 10px 0 30px", height: 34, width: 240, borderRadius: 8, border: "1px solid var(--border)", backgroundColor: "var(--card)", color: "var(--foreground)", outline: "none", boxSizing: "border-box", transition: "border-color 0.15s, box-shadow 0.15s" }}
+            onFocus={(e) => { e.currentTarget.style.borderColor = "var(--primary)"; e.currentTarget.style.boxShadow = "0 0 0 3px var(--primary-soft)"; }}
+            onBlur={(e)  => { e.currentTarget.style.borderColor = "var(--border)";  e.currentTarget.style.boxShadow = "none"; }} />
+        </div>
 
-          {/* Status filter */}
-          <div ref={filterRef} style={{ position: "relative" }}>
-            <button onClick={() => { const r = filterRef.current?.getBoundingClientRect(); if (r) setFilterRect(r); setFilterOpen((p) => !p); }}
-              style={{ display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "var(--font-sans)", fontSize: 12, color: statusFilter === "all" ? "var(--muted-foreground)" : STATUS_CONFIG[statusFilter].color, backgroundColor: statusFilter === "all" ? "var(--muted)" : STATUS_CONFIG[statusFilter].bg, border: "1px solid var(--border)", borderRadius: 7, padding: "5px 10px", cursor: "pointer", whiteSpace: "nowrap" }}>
-              {statusFilter === "all" ? "All Statuses" : STATUS_CONFIG[statusFilter].label}
-              <ChevronDown size={11} />
+        {/* Team filter (only shown when the company has dispatch pods) */}
+        {teams.length > 0 && (
+          <div ref={teamRef} style={{ position: "relative" }}>
+            <button onClick={() => { const r = teamRef.current?.getBoundingClientRect(); if (r) setTeamRect(r); setTeamOpen((p) => !p); }}
+              aria-haspopup="listbox" aria-expanded={teamOpen}
+              style={{ display: "inline-flex", alignItems: "center", gap: 7, height: 34, fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 500, color: activeTeam ? "var(--primary)" : "var(--foreground)", backgroundColor: activeTeam ? "var(--primary-soft)" : "var(--card)", border: `1px solid ${activeTeam ? "transparent" : "var(--border)"}`, borderRadius: 8, padding: "0 12px", cursor: "pointer", whiteSpace: "nowrap" }}>
+              <Users size={13} />
+              {activeTeam ? activeTeam.name : "All teams"}
+              <ChevronDown size={13} style={{ color: "var(--muted-foreground)" }} />
             </button>
             {/* Portal + fixed: the board card clips its overflow, so an absolutely-positioned
                 menu gets cut off whenever the table is short (e.g. a filter matched nothing). */}
-            {filterOpen && filterRect && createPortal(
-              <div ref={filterPanelRef} style={{ position: "fixed", ...menuPosition(filterRect, ALL_STATUSES.length + 1, 180), zIndex: 9999, backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 8, boxShadow: "0 8px 24px rgba(0,0,0,0.28)", minWidth: 180, padding: "4px 0", maxHeight: "min(60vh, 420px)", overflowY: "auto" }}>
-                <button onClick={() => { setStatusFilter("all"); setFilterOpen(false); }} style={{ width: "100%", textAlign: "left", padding: "7px 12px", fontFamily: "var(--font-sans)", fontSize: 12, color: statusFilter === "all" ? "var(--primary)" : "var(--foreground)", backgroundColor: statusFilter === "all" ? "var(--secondary)" : "transparent", border: "none", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span>All Statuses</span>
-                  <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--muted-foreground)" }}>{rows.length}</span>
-                </button>
-                <div style={{ height: 1, backgroundColor: "var(--border)", margin: "3px 0" }} />
-                {ALL_STATUSES.map((s) => {
-                  const active = statusFilter === s;
+            {teamOpen && teamRect && createPortal(
+              <div ref={teamPanelRef} role="listbox" style={{ position: "fixed", ...menuPosition(teamRect, teams.length + 1, 200), zIndex: 9999, backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 10, boxShadow: "0 10px 30px rgba(0,0,0,0.16)", minWidth: 200, padding: 5, maxHeight: "min(60vh, 420px)", overflowY: "auto" }}>
+                {[{ id: "all", name: "All teams", count: rows.length }, ...teams.map((t) => ({ id: t.id, name: t.name, count: rows.filter((d) => t.driverIds.has(d.driverId)).length }))].map((t) => {
+                  const active = teamFilter === t.id;
                   return (
-                    <button key={s} onClick={() => { setStatusFilter(s); setFilterOpen(false); }}
-                      style={{ width: "100%", textAlign: "left", padding: "7px 12px", fontFamily: "var(--font-sans)", fontSize: 12, color: active ? STATUS_CONFIG[s].color : "var(--foreground)", backgroundColor: active ? `${STATUS_CONFIG[s].bg}22` : "transparent", border: "none", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-                        <span style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: STATUS_CONFIG[s].bg, flexShrink: 0 }} />
-                        {STATUS_CONFIG[s].label}
-                      </div>
-                      <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--muted-foreground)" }}>{rows.filter((d) => d.status === s).length}</span>
+                    <button key={t.id} role="option" aria-selected={active} onClick={() => { setTeamFilter(t.id); setTeamOpen(false); }}
+                      style={{ width: "100%", textAlign: "left", padding: "7px 9px", fontFamily: "var(--font-sans)", fontSize: 12.5, fontWeight: active ? 600 : 400, color: active ? "var(--primary)" : "var(--foreground)", backgroundColor: active ? "var(--primary-soft)" : "transparent", border: "none", borderRadius: 6, cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}
+                      onMouseEnter={(e) => { if (!active) e.currentTarget.style.backgroundColor = "var(--muted)"; }}
+                      onMouseLeave={(e) => { if (!active) e.currentTarget.style.backgroundColor = "transparent"; }}>
+                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</span>
+                      <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--muted-foreground)" }}>{t.count}</span>
                     </button>
                   );
                 })}
@@ -1415,67 +1456,52 @@ export function DispatchTable() {
               document.body
             )}
           </div>
+        )}
 
-          {/* Team filter (only shown when the company has dispatch pods) */}
-          {teams.length > 0 && (
-            <div ref={teamRef} style={{ position: "relative" }}>
-              <button onClick={() => { const r = teamRef.current?.getBoundingClientRect(); if (r) setTeamRect(r); setTeamOpen((p) => !p); }}
-                style={{ display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "var(--font-sans)", fontSize: 12, color: activeTeam ? "var(--primary)" : "var(--muted-foreground)", backgroundColor: activeTeam ? "var(--secondary)" : "var(--muted)", border: "1px solid var(--border)", borderRadius: 7, padding: "5px 10px", cursor: "pointer", whiteSpace: "nowrap" }}>
-                <Users size={12} />
-                {activeTeam ? activeTeam.name : "All Teams"}
-                <ChevronDown size={11} />
+        {/* View toggle: one table vs a section per team */}
+        {teams.length > 0 && (
+          <div role="group" aria-label="View" style={{ display: "inline-flex", height: 34, boxSizing: "border-box", padding: 3, gap: 2, border: "1px solid var(--border)", borderRadius: 8, backgroundColor: "var(--card)", flexShrink: 0 }}>
+            {([["all", "All drivers", Rows3], ["teams", "By team", Users]] as const).map(([m, label, Icon]) => (
+              <button key={m} onClick={() => setViewMode(m)} aria-pressed={viewMode === m}
+                style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "0 11px", border: "none", borderRadius: 6, cursor: "pointer", fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 500, backgroundColor: viewMode === m ? "var(--primary)" : "transparent", color: viewMode === m ? "var(--primary-foreground)" : "var(--muted-foreground)", whiteSpace: "nowrap" }}>
+                <Icon size={14} /> {label}
               </button>
-              {/* Portalled for the same reason as the status filter — see above. */}
-              {teamOpen && teamRect && createPortal(
-                <div ref={teamPanelRef} style={{ position: "fixed", ...menuPosition(teamRect, teams.length + 1, 180), zIndex: 9999, backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 8, boxShadow: "0 8px 24px rgba(0,0,0,0.28)", minWidth: 180, padding: "4px 0", maxHeight: "min(60vh, 420px)", overflowY: "auto" }}>
-                  <button onClick={() => { setTeamFilter("all"); setTeamOpen(false); }} style={{ width: "100%", textAlign: "left", padding: "7px 12px", fontFamily: "var(--font-sans)", fontSize: 12, color: teamFilter === "all" ? "var(--primary)" : "var(--foreground)", backgroundColor: teamFilter === "all" ? "var(--secondary)" : "transparent", border: "none", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <span>All Teams</span>
-                    <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--muted-foreground)" }}>{rows.length}</span>
-                  </button>
-                  <div style={{ height: 1, backgroundColor: "var(--border)", margin: "3px 0" }} />
-                  {teams.map((t) => {
-                    const active = teamFilter === t.id;
-                    return (
-                      <button key={t.id} onClick={() => { setTeamFilter(t.id); setTeamOpen(false); }}
-                        style={{ width: "100%", textAlign: "left", padding: "7px 12px", fontFamily: "var(--font-sans)", fontSize: 12, color: active ? "var(--primary)" : "var(--foreground)", backgroundColor: active ? "var(--secondary)" : "transparent", border: "none", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-                        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</span>
-                        <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--muted-foreground)" }}>{rows.filter((d) => t.driverIds.has(d.driverId)).length}</span>
-                      </button>
-                    );
-                  })}
-                </div>,
-                document.body
-              )}
-            </div>
+            ))}
+          </div>
+        )}
+
+        <div style={{ flex: 1 }} />
+
+        <button
+          onClick={() => { setHistoryOpen(true); fetchHistory(); }}
+          style={{ display: "inline-flex", alignItems: "center", gap: 7, height: 34, fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 500, color: "var(--foreground)", backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 8, padding: "0 12px", cursor: "pointer" }}
+          onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--muted)"; }}
+          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "var(--card)"; }}>
+          <History size={14} style={{ color: "var(--muted-foreground)" }} /> History
+          {historyBadge > 0 && (
+            <span style={{ fontFamily: "var(--font-mono)", fontSize: 10.5, fontWeight: 700, color: "#fff", backgroundColor: "var(--primary)", borderRadius: 10, padding: "1px 6px" }}>
+              {historyBadge}
+            </span>
           )}
+        </button>
+      </div>
 
-          {/* View toggle: one table vs a section per team */}
-          {teams.length > 0 && (
-            <div style={{ display: "inline-flex", border: "1px solid var(--border)", borderRadius: 7, overflow: "hidden" }}>
-              {([["all", "All drivers", Rows3], ["teams", "By team", Users]] as const).map(([m, label, Icon]) => (
-                <button key={m} onClick={() => setViewMode(m)} title={label}
-                  style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 30, height: 28, border: "none", cursor: "pointer", backgroundColor: viewMode === m ? "var(--primary)" : "transparent", color: viewMode === m ? "#fff" : "var(--muted-foreground)" }}>
-                  <Icon size={13} />
-                </button>
-              ))}
-            </div>
-          )}
-
-          <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--muted-foreground)" }}>{visible.length} / {rows.length}</span>
-        </div>
-
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <button
-            onClick={() => { setHistoryOpen(true); fetchHistory(); }}
-            style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)", backgroundColor: "var(--muted)", border: "1px solid var(--border)", borderRadius: 7, padding: "5px 12px", cursor: "pointer", position: "relative" }}>
-            <History size={12} /> History
-            {historyBadge > 0 && (
-              <span style={{ fontFamily: "var(--font-mono)", fontSize: 9, fontWeight: 700, color: "#fff", backgroundColor: "var(--primary)", borderRadius: 10, padding: "1px 5px", marginLeft: 2 }}>
-                {historyBadge}
-              </span>
-            )}
-          </button>
-        </div>
+      {/* ── Status counters: how the fleet splits right now, and the status filter ── */}
+      <div role="group" aria-label="Filter by status" style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", padding: "8px 16px", flexShrink: 0, backgroundColor: "var(--card)", borderBottom: "1px solid var(--border)" }}>
+        {(["all", ...ALL_STATUSES] as const).map((s) => {
+          const count  = s === "all" ? pool.length : pool.filter((d) => d.status === s).length;
+          const active = statusFilter === s;
+          // A status nobody is in right now is left out — unless it's the one being filtered on.
+          if (s !== "all" && count === 0 && !active) return null;
+          return (
+            <button key={s} onClick={() => setStatusFilter(active && s !== "all" ? "all" : s)} aria-pressed={active}
+              style={{ display: "inline-flex", alignItems: "center", gap: 6, height: 28, padding: "0 10px", borderRadius: 999, cursor: "pointer", whiteSpace: "nowrap", fontFamily: "var(--font-sans)", fontSize: 12.5, fontWeight: active ? 600 : 500, border: `1px solid ${active ? "var(--foreground)" : "var(--border)"}`, backgroundColor: active ? "var(--foreground)" : "var(--card)", color: active ? "var(--card)" : "var(--foreground)" }}>
+              {s !== "all" && <span style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: STATUS_CONFIG[s].bg, flexShrink: 0 }} />}
+              {s === "all" ? "All" : STATUS_CONFIG[s].label}
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: 11.5, fontWeight: 600, color: active ? "var(--card)" : "var(--muted-foreground)" }}>{count}</span>
+            </button>
+          );
+        })}
       </div>
 
       {/* ── Table(s) ── */}
@@ -1523,21 +1549,22 @@ export function DispatchTable() {
   // single "All drivers" table, and once per section in the "By team" view.
   function renderBoardTable(driversList: Driver[], emptyMessage: string) {
     return (
-          <table style={{ width: "max-content", minWidth: "100%", borderCollapse: "separate", borderSpacing: 0, tableLayout: "fixed" }}>
+          <table style={{ width: `max(100%, ${TABLE_W}px)`, borderCollapse: "separate", borderSpacing: 0, tableLayout: "fixed" }}>
+            {/* Every column keeps its exact width — the pinned Driver column is placed by the
+                Load column's — and only the last one (Comments) takes up any spare room. */}
             <colgroup>
-              {COLUMNS.map((c) => <col key={c.label} style={{ width: c.width, minWidth: c.width }} />)}
+              {COLUMNS.map((c, i) => <col key={c.label} style={i === COLUMNS.length - 1 ? undefined : { width: c.width }} />)}
             </colgroup>
             <thead>
               <tr style={{ position: "sticky", top: 0, zIndex: 15 }}>
                 {COLUMNS.map((col, i) => (
                   <th key={col.label} style={{
-                    padding: "10px 14px", textAlign: "left",
-                    fontFamily: "var(--font-sans)", fontSize: 10, fontWeight: 600,
-                    color: "var(--muted-foreground)", letterSpacing: "0.07em", textTransform: "uppercase",
-                    backgroundColor: "var(--muted)", borderBottom: "1px solid var(--border)",
-                    borderRight: i < COLUMNS.length - 1 ? "1px solid var(--border)" : "none",
+                    padding: "9px 14px", textAlign: "left",
+                    fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600,
+                    color: "var(--muted-foreground)", letterSpacing: "0.06em", textTransform: "uppercase",
+                    backgroundColor: "var(--card)", borderBottom: "1px solid var(--border)",
                     whiteSpace: "nowrap", userSelect: "none",
-                    ...(col.sticky ? { position: "sticky" as const, left: col.left, zIndex: 16, boxShadow: i === 1 ? "2px 0 5px rgba(0,0,0,0.07)" : undefined } : {}),
+                    ...(col.sticky ? { position: "sticky" as const, left: col.left, zIndex: 16, boxShadow: i === 1 ? "inset -1px 0 0 var(--border)" : undefined } : {}),
                   }}>
                     {col.label}
                   </th>
@@ -1563,12 +1590,11 @@ export function DispatchTable() {
                 const noLoadEdit   = isLockedByOther || !canEditLoad;
                 const lockColor = isLockedByOther ? "#8B5CF6" : isLockedByMe ? "#3B82F6" : undefined;
                 const isEven   = i % 2 === 0;
-                const kmColor  = etaColor(driver.etaKm);
                 // The lock highlight rides as a background *image* layer over an opaque
                 // background *color*. It must not be a translucent backgroundColor: td()
                 // paints the sticky Load ID / Driver Name columns too, and a see-through
                 // sticky cell lets the horizontally-scrolled cells bleed through it.
-                const rowBg    = isEven ? "var(--card)" : "var(--background)";
+                const rowBg    = "var(--card)";
                 const tint     = (c: string) => `linear-gradient(${c}, ${c})`;
                 const rowTint  = isLockedByOther ? tint("rgba(139,92,246,0.14)")
                                : isLockedByMe    ? tint("rgba(59,130,246,0.14)")
@@ -1578,30 +1604,34 @@ export function DispatchTable() {
                 const lockOnOpen = (o: boolean) => (o ? claimLock(driver.driverId) : releaseLock(driver.driverId));
 
                 const td = (extra: React.CSSProperties = {}): React.CSSProperties => ({
-                  padding: "10px 14px", backgroundColor: rowBg, backgroundImage: rowTint,
-                  borderBottom: border, verticalAlign: "middle", ...extra,
+                  padding: "9px 14px", backgroundColor: rowBg, backgroundImage: rowTint,
+                  borderBottom: border, verticalAlign: "top", ...extra,
                 });
 
                 // No active load → route/appointment cells are empty and non-interactive.
                 const hasLoad = !!driver.loadRaw?.id;
+                // Every cell is built from 20px lines, so line 1 and line 2 sit level across the row.
+                const line: React.CSSProperties = { display: "flex", alignItems: "center", height: 20, minWidth: 0 };
                 const emptyDash = <Dash />;
 
                 return (
                   <tr key={driver.driverId}>
 
-                    {/* Load ID — sticky, read-only. Upcoming queued loads render below,
-                        smaller and muted, so they read as "next" rather than current. */}
-                    <td style={td({ position: "sticky", left: LOAD_ID_LEFT, zIndex: 3, width: 200, minWidth: 200, borderRight: border })}>
-                      <span className="cp-wrap" style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0 }}>
-                        <span style={{ flex: 1, minWidth: 0 }}>
-                          <BrokerLoadId broker={driver.loadRaw?.broker} loadId={driver.loadId} color="var(--primary)" size={12} weight={500} onOpen={driver.loadUuid ? () => openLoad(driver.loadUuid) : undefined} />
-                        </span>
-                        {/* Copy the FULL broker (no "…" truncation) + id, even though the
-                            cell shows a shortened broker. */}
-                        {driver.loadId && driver.loadId !== "—" && (
+                    {/* Load — sticky, read-only, with the status colour down its left edge.
+                        Upcoming queued loads render below, smaller, so they read as "next". */}
+                    <td style={td({ position: "sticky", left: LOAD_ID_LEFT, zIndex: 3, width: 204, minWidth: 204, boxShadow: `inset 3px 0 0 ${softStatus(driver.status).dot}` })}>
+                      {driver.loadId && driver.loadId !== "—" ? (
+                        <span className="cp-wrap" style={{ ...line, gap: 4 }}>
+                          <span style={{ flex: 1, minWidth: 0 }}>
+                            <BrokerLoadId broker={driver.loadRaw?.broker} loadId={driver.loadId} color="var(--primary)" size={12.5} weight={600} onOpen={driver.loadUuid ? () => openLoad(driver.loadUuid) : undefined} />
+                          </span>
+                          {/* Copy the FULL broker (no "…" truncation) + id, even though the
+                              cell shows a shortened broker. */}
                           <CopyBtn value={driver.loadRaw?.broker ? `${driver.loadRaw.broker} - ${driver.loadId}` : driver.loadId} />
-                        )}
-                      </span>
+                        </span>
+                      ) : (
+                        <span style={{ ...line, fontFamily: "var(--font-sans)", fontSize: 12.5, color: "var(--muted-foreground)" }}>No load</span>
+                      )}
                       {(() => {
                         const queue = driver.nextLoads ?? [];
                         if (queue.length === 0) return null;
@@ -1609,73 +1639,74 @@ export function DispatchTable() {
                         const shown = queue.slice(0, SHOWN);
                         const overflow = queue.length - shown.length;
                         return (
-                          <div style={{ marginTop: 2, display: "flex", flexDirection: "column", gap: 1 }}>
+                          <div style={{ marginTop: 3, display: "flex", flexDirection: "column", gap: 1 }}>
                             {shown.map((q) => (
-                              <BrokerLoadId key={q.id} broker={q.broker} loadId={q.loadId} color="#F59E0B" size={11} weight={600} onOpen={() => openLoad(q.id)} />
+                              <span key={q.id} style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0 }}>
+                                <span style={{ fontFamily: "var(--font-sans)", fontSize: 10.5, fontWeight: 600, color: "#B45309", backgroundColor: "rgba(245,158,11,0.16)", borderRadius: 4, padding: "0 5px", flexShrink: 0 }}>Next</span>
+                                <span style={{ flex: 1, minWidth: 0 }}>
+                                  <BrokerLoadId broker={q.broker} loadId={q.loadId} color="var(--foreground)" size={11.5} weight={500} onOpen={() => openLoad(q.id)} />
+                                </span>
+                              </span>
                             ))}
                             {overflow > 0 && (
-                              <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--muted-foreground)", opacity: 0.75 }}>+{overflow} more</span>
+                              <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "var(--muted-foreground)" }}>+{overflow} more queued</span>
                             )}
                           </div>
                         );
                       })()}
                     </td>
 
-                    {/* Driver Name — sticky, read-only. Shows a "being edited by X" note when locked. */}
-                    <td style={td({ position: "sticky", left: DRIVER_NM_LEFT, zIndex: 3, width: 180, minWidth: 180, borderRight: border, boxShadow: "2px 0 5px rgba(0,0,0,0.07)" })}>
-                      {/* Team drivers show each name on its own copyable line. */}
-                      <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                        <Copyable value={driver.name} size={12} weight={500} />
-                        {driver.team && driver.name2 && <Copyable value={driver.name2} size={12} weight={500} />}
+                    {/* Driver — sticky, read-only. A team shows both people, one per line.
+                        Shows a "being edited by X" note when locked. */}
+                    <td style={td({ position: "sticky", left: DRIVER_NM_LEFT, zIndex: 3, width: 176, minWidth: 176, boxShadow: "inset -1px 0 0 var(--border)" })}>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                        <div style={line}><Copyable value={driver.name} size={13} weight={600} /></div>
+                        {driver.team && driver.name2 && <div style={line}><Copyable value={driver.name2} size={13} weight={600} /></div>}
                       </div>
-                      {isLockedByOther && (
-                        <span style={{ display: "inline-flex", alignItems: "center", gap: 3, marginTop: 2, fontFamily: "var(--font-sans)", fontSize: 10, color: lockColor, whiteSpace: "nowrap" }}>
-                          <Lock size={9} /> Editing by {lock!.holder_name}
-                        </span>
-                      )}
-                      {isLockedByMe && (
-                        <span style={{ display: "inline-flex", alignItems: "center", gap: 3, marginTop: 2, fontFamily: "var(--font-sans)", fontSize: 10, color: lockColor, whiteSpace: "nowrap" }}>
-                          <Lock size={9} /> You're editing
+                      {(isLockedByOther || isLockedByMe) && (
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 4, marginTop: 3, fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 500, color: lockColor, whiteSpace: "nowrap" }}>
+                          <Lock size={10} /> {isLockedByOther ? `${lock!.holder_name} is editing` : "You're editing"}
                         </span>
                       )}
                     </td>
 
-                    {/* Phone — read-only (team drivers show both contacts, each copyable) */}
-                    <td style={td({ borderRight: border })}>
-                      <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                        <Copyable value={driver.phone} size={11} color="var(--muted-foreground)" mono />
-                        {driver.team && driver.phone2 && <Copyable value={driver.phone2} size={11} color="var(--muted-foreground)" mono />}
+                    {/* Phone — each line level with the person it belongs to */}
+                    <td style={td()}>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                        <div style={line}>{driver.phone && driver.phone !== "—" ? <Copyable value={driver.phone} size={12} color="var(--muted-foreground)" mono /> : <Dash />}</div>
+                        {driver.team && driver.phone2 && <div style={line}><Copyable value={driver.phone2} size={12} color="var(--muted-foreground)" mono /></div>}
                       </div>
                     </td>
 
-                    {/* Unit (+ trailer below) — each copyable when it's a real value */}
-                    <td style={td({ borderRight: border })}>
-                      <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0 }}>
-                          {isLockedByOther && <Lock size={10} style={{ color: lockColor, flexShrink: 0 }} />}
+                    {/* Unit, with the trailer below */}
+                    <td style={td()}>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                        <div style={line}>
                           {driver.unit && driver.unit !== "—"
-                            ? <Copyable value={driver.unit} size={11} weight={500} color={isLockedByOther ? lockColor : "var(--foreground)"} mono />
+                            ? <Copyable value={driver.unit} size={12.5} weight={600} mono />
                             : <Dash />}
                         </div>
                         {driver.trailer && driver.trailer !== "—" && (
-                          <Copyable value={driver.trailer} size={10} color="var(--muted-foreground)" mono />
+                          <div style={line}><Copyable value={driver.trailer} size={11.5} color="var(--muted-foreground)" mono /></div>
                         )}
                       </div>
                     </td>
 
                     {/* Type */}
-                    <td style={td({ borderRight: border })}>
-                      <TypeDropdown value={driver.type} disabled={noDriverEdit} onOpenChange={lockOnOpen} onChange={(t) => patch(driver.driverId, { type: t })} />
+                    <td style={td()}>
+                      <div style={line}><TypeDropdown value={driver.type} disabled={noDriverEdit} onOpenChange={lockOnOpen} onChange={(t) => patch(driver.driverId, { type: t })} /></div>
                     </td>
 
                     {/* Status */}
-                    <td style={td({ borderRight: border })}>
-                      <StatusDropdown value={driver.status} disabled={noDriverEdit} onOpenChange={lockOnOpen}
-                        onChange={(s) => requestStatus(driver, s)} />
+                    <td style={td()}>
+                      <div style={line}>
+                        <StatusDropdown value={driver.status} disabled={noDriverEdit} onOpenChange={lockOnOpen}
+                          onChange={(s) => requestStatus(driver, s)} />
+                      </div>
                     </td>
 
-                    {/* Origin / Dest with stops — only when the driver has a load */}
-                    <td style={td({ borderRight: border, verticalAlign: hasLoad ? "top" : "middle", paddingTop: 12, paddingBottom: 12 })}>
+                    {/* Route with its stops — only when the driver has a load */}
+                    <td style={td()}>
                       {!hasLoad ? emptyDash : (
                       <StopList
                         origin={driver.origin}
@@ -1696,123 +1727,128 @@ export function DispatchTable() {
                       )}
                     </td>
 
-                    {/* Appt. Times — #1 pickup, intermediate stops, then destination */}
-                    {!hasLoad ? (
-                      <td style={td({ borderRight: border })}>{emptyDash}</td>
-                    ) : (() => {
-                      const stops = driver.stops ?? [];
-                      const labelStyle: React.CSSProperties = { fontFamily: "var(--font-mono)", fontSize: 9, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase" as const, flexShrink: 0, width: 30 };
-                      const pickupDone = driver.originDone ?? false;
-                      const destDone   = driver.destinationDone ?? false;
-                      const destNum    = stops.length + 2;
-                      return (
-                        <td style={td({ borderRight: border, verticalAlign: "top", paddingTop: 12, paddingBottom: 12 })}>
-                          <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-                            {/* #1 pickup → route index 0 */}
-                            <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                              <span style={{ ...labelStyle, color: "var(--muted-foreground)" }}>#1</span>
-                              <ApptText value={driver.pickupAppt} color={driver.pickupAppt === "—" || pickupDone ? "var(--muted-foreground)" : "var(--foreground)"} done={pickupDone} />
-                            </div>
-                            {/* intermediate stops → route index idx+1 */}
-                            {stops.map((stop, idx) => {
-                              const prevDone  = idx === 0 ? pickupDone : stops[idx - 1].done;
-                              const isCurrent = !stop.done && prevDone;
-                              return (
-                                <div key={idx} style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                                  <span style={{ ...labelStyle, color: "var(--muted-foreground)" }}>#{idx + 2}</span>
-                                  <ApptText value={formatAppt(stop.appt) || "—"} color={stop.done || !stop.appt ? "var(--muted-foreground)" : isCurrent ? "var(--foreground)" : "var(--muted-foreground)"} done={stop.done} />
-                                </div>
-                              );
-                            })}
-                            {/* destination → route index stops.length+1 (only when there's a distinct last stop) */}
-                            {driver.dropAppt !== "—" && (
-                              <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                                <span style={{ ...labelStyle, color: "var(--muted-foreground)" }}>#{destNum}</span>
-                                <ApptText value={driver.dropAppt} color={destDone ? "var(--muted-foreground)" : "var(--foreground)"} done={destDone} />
-                              </div>
-                            )}
-                          </div>
-                        </td>
-                      );
-                    })()}
-
-                    {/* Current Location — the truck's real ELD position when it's reporting,
-                        else the dispatcher's typed location. Shown next to the pin, with the
-                        ELD freshness beneath. */}
-                    <td style={td({ borderRight: border, verticalAlign: "top", paddingTop: 10, paddingBottom: 10 })}>
-                      {(() => {
-                        const eld  = driver.eld;
-                        const loc  = eld?.location || driver.location;
-                        const fresh = eld ? eldFreshColor(eld.reported_at) : "var(--muted-foreground)";
-                        // Google Maps Directions with the truck's exact position as the
-                        // starting point (destination left blank) — click to open in a new
-                        // tab, type the other end, read the distance. Only when we have coords.
-                        const hasCoords = eld?.lat != null && eld?.lng != null;
+                    {/* Appointments — one line per stop, level with that stop in the Route column */}
+                    <td style={td()}>
+                      {!hasLoad ? emptyDash : (() => {
+                        const stops = driver.stops ?? [];
+                        const pickupDone = driver.originDone ?? false;
+                        const destDone   = driver.destinationDone ?? false;
                         return (
                           <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                              <MapPin size={11} style={{ color: fresh, flexShrink: 0 }} />
-                              <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--foreground)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}>{loc || <Dash />}</span>
-                              {hasCoords && (
+                            <ApptText value={driver.pickupAppt} color={pickupDone ? "var(--muted-foreground)" : "var(--foreground)"} done={pickupDone && driver.pickupAppt !== "—"} />
+                            {stops.map((stop, idx) => (
+                              <ApptText key={idx} value={formatAppt(stop.appt) || "—"} color={stop.done ? "var(--muted-foreground)" : "var(--foreground)"} done={stop.done && !!stop.appt} />
+                            ))}
+                            <ApptText value={driver.dropAppt} color={destDone ? "var(--muted-foreground)" : "var(--foreground)"} done={destDone && driver.dropAppt !== "—"} />
+                          </div>
+                        );
+                      })()}
+                    </td>
+
+                    {/* Location — the truck's real ELD position when it's reporting, else the
+                        dispatcher's typed one, with a button to open it in Google Maps. Under
+                        it: what the truck is doing, how fast, and how old that ELD report is. */}
+                    <td style={td()}>
+                      {(() => {
+                        const eld   = driver.eld;
+                        const loc   = eld?.location || (driver.location !== "—" ? driver.location : "");
+                        const fresh = eld ? eldFreshColor(eld.reported_at) : "var(--muted-foreground)";
+                        // Exact coordinates open directions starting from the truck; a typed
+                        // place name opens a search for it.
+                        const hasCoords = eld?.lat != null && eld?.lng != null;
+                        const mapsUrl = hasCoords
+                          ? `https://www.google.com/maps/dir/?api=1&origin=${eld!.lat},${eld!.lng}`
+                          : loc ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(loc)}` : null;
+                        return (
+                          <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                            <div style={{ ...line, gap: 6 }}>
+                              <MapPin size={13} style={{ color: fresh, flexShrink: 0 }} />
+                              <span title={loc || undefined} style={{ fontFamily: "var(--font-sans)", fontSize: 12.5, color: "var(--foreground)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}>{loc || <Dash />}</span>
+                              {mapsUrl && (
                                 <button
                                   type="button"
-                                  title="Directions from here in Google Maps"
-                                  onClick={() => window.open(`https://www.google.com/maps/dir/?api=1&origin=${eld!.lat},${eld!.lng}`, "_blank", "noopener,noreferrer")}
-                                  style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0, width: 20, height: 20, borderRadius: 5, border: "none", backgroundColor: "transparent", cursor: "pointer", color: "var(--muted-foreground)" }}
-                                  onMouseEnter={(e) => { const b = e.currentTarget; b.style.backgroundColor = "var(--muted)"; b.style.color = "var(--primary)"; }}
-                                  onMouseLeave={(e) => { const b = e.currentTarget; b.style.backgroundColor = "transparent"; b.style.color = "var(--muted-foreground)"; }}
+                                  aria-label="Open in Google Maps"
+                                  title={hasCoords ? "Directions from the truck in Google Maps" : "Open this place in Google Maps"}
+                                  onClick={() => window.open(mapsUrl, "_blank", "noopener,noreferrer")}
+                                  style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0, width: 24, height: 22, padding: 0, borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "var(--card)", cursor: "pointer", color: "var(--muted-foreground)" }}
+                                  onMouseEnter={(e) => { const b = e.currentTarget; b.style.borderColor = "var(--primary)"; b.style.color = "var(--primary)"; }}
+                                  onMouseLeave={(e) => { const b = e.currentTarget; b.style.borderColor = "var(--border)"; b.style.color = "var(--muted-foreground)"; }}
                                 >
-                                  <ExternalLink size={12} />
+                                  <Navigation size={12} />
                                 </button>
                               )}
                             </div>
+                            {/* When the ELD last reported — green while live, amber then red as it goes stale */}
                             {eld?.reported_at && (
-                              <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: fresh, whiteSpace: "nowrap", paddingLeft: 16 }}>ELD · {timeAgo(eld.reported_at)}</span>
+                              <span title={`ELD last reported ${fmtDateTime(eld.reported_at)}`}
+                                style={{ display: "inline-flex", alignItems: "center", gap: 5, paddingLeft: 19, fontFamily: "var(--font-sans)", fontSize: 11.5, color: "var(--muted-foreground)", whiteSpace: "nowrap" }}>
+                                <span style={{ width: 6, height: 6, borderRadius: "50%", backgroundColor: fresh, flexShrink: 0 }} />
+                                ELD {timeAgo(eld.reported_at)}
+                              </span>
                             )}
                           </div>
                         );
                       })()}
                     </td>
 
-                    {/* ETA / Dist. — eta_km is always null (no ELD reports an ETA), so it
-                        stays "—". Speed and HOS duty status come live from the ELD. */}
-                    <td style={td({ borderRight: border, verticalAlign: "top", paddingTop: 10, paddingBottom: 10 })}>
-                      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                        {driver.etaKm === null ? (
-                          <Dash />
-                        ) : driver.etaKm === 0 ? (
-                          <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 600, color: "#10B981" }}>At dest.</span>
-                        ) : (
-                          <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                            <Navigation size={11} style={{ color: kmColor, flexShrink: 0 }} />
-                            <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 600, color: kmColor, whiteSpace: "nowrap" }}>~{driver.etaKm} km</span>
+                    {/* ETA — road miles from the truck to the next stop not ticked done, measured
+                        by the server after each ELD update ("~" = a straight-line estimate). A
+                        dash when the driver has no load, no ELD position, or the stop was never
+                        located. Under it, what the truck is doing right now: HOS duty status
+                        and speed, live from the ELD. */}
+                    <td style={td()}>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                        <div style={line}>
+                          {driver.etaMiles === null ? <Dash /> : (() => {
+                            // Name the stop it is measured to, so "312 mi" is never ambiguous.
+                            const route  = driver.loadRaw?.stops ?? [];
+                            const target = driver.etaStop !== null ? route[driver.etaStop] : undefined;
+                            const where  = target ? cityState(target) || target.city : "the next stop";
+                            const tip = [
+                              `Road miles to ${where}`,
+                              driver.etaApprox ? "Estimated in a straight line — the route service didn't answer; it retries on the next ELD update" : "",
+                              driver.etaAt ? `Measured ${fmtDateTime(driver.etaAt)}` : "",
+                            ].filter(Boolean).join("\n");
+                            const arrived = driver.etaMiles < 0.5;
+                            return (
+                              <span title={tip} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: arrived ? "var(--font-sans)" : "var(--font-mono)", fontSize: 12.5, fontWeight: 600, color: arrived ? "var(--primary)" : "var(--foreground)", whiteSpace: "nowrap" }}>
+                                {driver.etaApprox && !arrived ? "~" : ""}{fmtMilesLeft(driver.etaMiles)}
+                              </span>
+                            );
+                          })()}
+                        </div>
+                        {(driver.eld?.duty_status || driver.speedMph != null) && (
+                          <div style={{ ...line, gap: 7 }}>
+                            {driver.eld?.duty_status && (() => {
+                              const dc = dutyConfig(driver.eld.duty_status);
+                              return (
+                                <span title={driver.eld.duty_since ? `Since ${fmtDateTime(driver.eld.duty_since)}` : undefined}
+                                  style={{ fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600, color: dc.color, backgroundColor: dc.bg, borderRadius: 5, padding: "0 6px", whiteSpace: "nowrap" }}>
+                                  {dc.label}
+                                </span>
+                              );
+                            })()}
+                            {driver.speedMph != null && (
+                              <span style={{ fontFamily: "var(--font-mono)", fontSize: 11.5, color: "var(--muted-foreground)", whiteSpace: "nowrap" }}>{driver.speedMph} mph</span>
+                            )}
                           </div>
-                        )}
-                        {driver.eld?.duty_status && (() => {
-                          const dc = dutyConfig(driver.eld.duty_status);
-                          return (
-                            <span title={driver.eld.duty_since ? `since ${timeAgo(driver.eld.duty_since)}` : undefined}
-                              style={{ alignSelf: "flex-start", fontFamily: "var(--font-sans)", fontSize: 9, fontWeight: 700, color: dc.color, backgroundColor: dc.bg, borderRadius: 4, padding: "1px 6px", textTransform: "uppercase", letterSpacing: "0.04em", whiteSpace: "nowrap" }}>
-                              {dc.label}
-                            </span>
-                          );
-                        })()}
-                        {driver.speedMph != null && (
-                          <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--muted-foreground)", whiteSpace: "nowrap" }}>{driver.speedMph} mph</span>
                         )}
                       </div>
                     </td>
 
-                    {/* Comments */}
+                    {/* Comments — click to edit; when the row was last changed sits under it */}
                     <td style={td()}>
-                      <div style={{ display: "flex", alignItems: "flex-start", gap: 6 }}>
-                        <MessageSquare size={11} style={{ color: "var(--muted-foreground)", marginTop: 2, flexShrink: 0 }} />
+                      <div style={{ display: "flex", alignItems: "flex-start", gap: 7 }}>
+                        <MessageSquare size={12} style={{ color: "var(--muted-foreground)", marginTop: 3, flexShrink: 0 }} />
                         <div style={{ minWidth: 0, flex: 1 }}>
                           {isEdit(driver.driverId, "comments")
                             ? <InlineCell value={driver.comments} onCommit={(v) => { patch(driver.driverId, { comments: v }); stopEdit(driver.driverId); }} />
-                            : <span onClick={noDriverEdit ? undefined : () => startEdit(driver.driverId, "comments")} style={{ cursor: noDriverEdit ? "default" : "text", fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--foreground)", display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{driver.comments || <Dash />}</span>
+                            : <span onClick={noDriverEdit ? undefined : () => startEdit(driver.driverId, "comments")} title={driver.comments || undefined}
+                                style={{ cursor: noDriverEdit ? "default" : "text", fontFamily: "var(--font-sans)", fontSize: 12.5, lineHeight: 1.4, color: driver.comments ? "var(--foreground)" : "var(--muted-foreground)", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+                                {driver.comments || (noDriverEdit ? <Dash /> : "Add a comment")}
+                              </span>
                           }
-                          <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--muted-foreground)", display: "block", marginTop: 1 }}>{driver.lastUpdate}</span>
+                          <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "var(--muted-foreground)", display: "block", marginTop: 2 }}>Updated {driver.lastUpdate}</span>
                         </div>
                       </div>
                     </td>

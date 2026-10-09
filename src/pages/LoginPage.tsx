@@ -3,6 +3,7 @@ import { useNavigate } from "react-router";
 import { Eye, EyeOff } from "lucide-react";
 import { useAuth } from "../lib/auth";
 import { STATUS_CONFIG, type Status } from "../lib/statuses";
+import { BRAND_NAME, BrandMark } from "../components/Brand";
 
 // ─── Board preview (right panel) ──────────────────────────────────────────────
 // A static slice of the dispatch board — sample rows, real status colours — so the
@@ -112,15 +113,9 @@ export function LoginPage() {
       >
         {/* Logo */}
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{
-            width: 34, height: 34, borderRadius: 10, flexShrink: 0,
-            display: "flex", alignItems: "center", justifyContent: "center",
-            backgroundColor: "var(--primary)", fontSize: 14, fontWeight: 800, color: "#fff",
-          }}>
-            LB
-          </div>
+          <BrandMark />
           <span style={{ fontSize: 15, fontWeight: 700, color: "var(--foreground)", letterSpacing: "-0.01em" }}>
-            Log Board
+            {BRAND_NAME}
           </span>
         </div>
 
@@ -224,7 +219,7 @@ export function LoginPage() {
         </div>
 
         <p style={{ fontSize: 12, color: "var(--muted-foreground)" }}>
-          © 2026 Log Board
+          © 2026 {BRAND_NAME}
         </p>
       </div>
 

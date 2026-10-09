@@ -1,14 +1,15 @@
 import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { Outlet, NavLink, useLocation, useNavigate } from "react-router";
+import { BRAND_NAME, BrandMark } from "../components/Brand";
 import {
-  LayoutDashboard,
-  Trello,
-  BarChart2,
-  Package,
-  Users,
+  ChartPie,
+  SquareKanban,
+  ChartColumnIncreasing,
+  PackageOpen,
+  IdCard,
   Truck,
-  DollarSign,
+  HandCoins,
   CreditCard,
   Settings,
   ChevronRight,
@@ -44,9 +45,8 @@ interface Account {
 // ─── Account Switcher (top header, right-aligned dropdown) ────────────────────
 
 const sectionLabelStyle: React.CSSProperties = {
-  fontFamily: "var(--font-sans)", fontSize: 10, fontWeight: 700,
-  textTransform: "uppercase", letterSpacing: "0.06em",
-  color: "var(--muted-foreground)", padding: "7px 10px 4px",
+  fontFamily: "var(--font-sans)", fontSize: 11.5, fontWeight: 600,
+  color: "var(--muted-foreground)", padding: "6px 10px 5px",
 };
 
 function AccountSwitcher({
@@ -112,11 +112,13 @@ function AccountSwitcher({
           display: "flex", alignItems: "center", gap: 9,
           height: 40, padding: "5px 10px 5px 6px",
           border: "1px solid var(--border)", borderRadius: 9,
-          backgroundColor: open ? "var(--accent)" : "var(--muted)",
-          cursor: "pointer", maxWidth: 220,
+          backgroundColor: open ? "var(--muted)" : "var(--card)",
+          boxShadow: open ? "0 0 0 3px var(--primary-soft)" : "none", borderColor: open ? "var(--primary)" : "var(--border)",
+          cursor: "pointer", maxWidth: 240, transition: "background-color 0.15s, box-shadow 0.15s",
         }}
-        onMouseEnter={(e) => { if (!open) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--accent)"; }}
-        onMouseLeave={(e) => { if (!open) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--muted)"; }}
+        aria-haspopup="menu" aria-expanded={open}
+        onMouseEnter={(e) => { if (!open) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--muted)"; }}
+        onMouseLeave={(e) => { if (!open) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--card)"; }}
       >
         {/* Company avatar */}
         <div style={{
@@ -131,11 +133,11 @@ function AccountSwitcher({
           <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--foreground)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
             {active.name}
           </div>
-          <div style={{ fontFamily: "var(--font-mono)", fontSize: 9.5, color: "var(--muted-foreground)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-            {active.mc ? `${active.mc} · ` : ""}{active.plan || "No"} Plan
+          <div style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "var(--muted-foreground)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+            {active.mc ? `${active.mc} · ` : ""}{active.plan || "No"} plan
           </div>
         </div>
-        <ChevronDown size={13} style={{ color: "var(--muted-foreground)", flexShrink: 0 }} />
+        <ChevronDown size={13} style={{ color: "var(--muted-foreground)", flexShrink: 0, transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s" }} />
       </button>
 
       {open && rect && createPortal(
@@ -151,14 +153,14 @@ function AccountSwitcher({
             backgroundColor: "var(--card)",
             border: "1px solid var(--border)",
             borderRadius: 12,
-            boxShadow: "0 12px 32px rgba(0,0,0,0.18)",
-            padding: "5px",
+            boxShadow: "0 10px 30px rgba(0,0,0,0.16)",
+            padding: 6,
             maxHeight: "calc(100vh - 90px)",
             overflowY: "auto",
             overflowX: "hidden",
           }}
         >
-          <div style={sectionLabelStyle}>Companies</div>
+          <div style={sectionLabelStyle}>{accounts.length > 1 ? "Switch company" : "Company"}</div>
 
           {/* Account list */}
           {accounts.map((acc) => {
@@ -170,9 +172,10 @@ function AccountSwitcher({
                 style={{
                   display: "flex", alignItems: "center", gap: 10,
                   width: "100%", boxSizing: "border-box", padding: "8px 10px", border: "none", borderRadius: 8,
-                  backgroundColor: isActive ? "var(--secondary)" : "transparent",
+                  backgroundColor: isActive ? "var(--primary-soft)" : "transparent",
                   cursor: "pointer", textAlign: "left",
                 }}
+                role="menuitemradio" aria-checked={isActive}
                 onMouseEnter={(e) => { if (!isActive) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--muted)"; }}
                 onMouseLeave={(e) => { if (!isActive) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "transparent"; }}
               >
@@ -184,14 +187,17 @@ function AccountSwitcher({
                   {acc.initials}
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: isActive ? 600 : 400, color: "var(--foreground)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: "var(--foreground)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                     {acc.name}
                   </div>
-                  <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--muted-foreground)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                    {acc.mc ? `${acc.mc} · ` : ""}{acc.plan || "No"} Plan
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2, minWidth: 0 }}>
+                    {acc.mc && <span style={{ fontFamily: "var(--font-sans)", fontSize: 11.5, color: "var(--muted-foreground)", whiteSpace: "nowrap" }}>{acc.mc}</span>}
+                    <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600, color: "var(--muted-foreground)", backgroundColor: isActive ? "var(--card)" : "var(--muted)", borderRadius: 5, padding: "0 6px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      {acc.plan || "No plan"}
+                    </span>
                   </div>
                 </div>
-                {isActive && <Check size={13} style={{ color: "var(--primary)", flexShrink: 0 }} />}
+                {isActive && <Check size={15} style={{ color: "var(--primary)", flexShrink: 0 }} />}
               </button>
             );
           })}
@@ -199,7 +205,7 @@ function AccountSwitcher({
           {/* Account section — Billing/Settings only for owners */}
           {menuItems.length > 0 && (
             <>
-              <div style={{ height: 1, backgroundColor: "var(--border)", margin: "4px 0" }} />
+              <div style={{ height: 1, backgroundColor: "var(--border)", margin: "6px 4px" }} />
               <div style={sectionLabelStyle}>Account</div>
               {menuItems.map(({ icon: Icon, label, path }) => (
                 <NavLink
@@ -210,13 +216,14 @@ function AccountSwitcher({
                     display: "flex", alignItems: "center", gap: 10,
                     padding: "8px 10px", borderRadius: 8, textDecoration: "none",
                     fontFamily: "var(--font-sans)", fontSize: 13,
+                    fontWeight: isActive ? 600 : 500,
                     color: isActive ? "var(--primary)" : "var(--foreground)",
-                    backgroundColor: isActive ? "var(--secondary)" : "transparent",
+                    backgroundColor: isActive ? "var(--primary-soft)" : "transparent",
                   })}
                   onMouseEnter={(e) => { (e.currentTarget as HTMLAnchorElement).style.backgroundColor = "var(--muted)"; }}
                   onMouseLeave={(e) => { (e.currentTarget as HTMLAnchorElement).style.backgroundColor = ""; }}
                 >
-                  <Icon size={14} style={{ flexShrink: 0, color: "var(--muted-foreground)" }} />
+                  <Icon size={15} style={{ flexShrink: 0, color: "var(--muted-foreground)" }} />
                   {label}
                 </NavLink>
               ))}
@@ -224,7 +231,7 @@ function AccountSwitcher({
           )}
 
           {/* Divider */}
-          <div style={{ height: 1, backgroundColor: "var(--border)", margin: "4px 0" }} />
+          <div style={{ height: 1, backgroundColor: "var(--border)", margin: "6px 4px" }} />
 
           <button
             onClick={handleLogout}
@@ -232,12 +239,12 @@ function AccountSwitcher({
               display: "flex", alignItems: "center", gap: 10,
               width: "100%", boxSizing: "border-box", padding: "8px 10px", border: "none", borderRadius: 8,
               backgroundColor: "transparent", cursor: "pointer", textAlign: "left",
-              fontFamily: "var(--font-sans)", fontSize: 13, color: "#EF4444",
+              fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 500, color: "#EF4444",
             }}
             onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = "rgba(239,68,68,0.07)"; }}
             onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = "transparent"; }}
           >
-            <LogOut size={14} style={{ flexShrink: 0 }} />
+            <LogOut size={15} style={{ flexShrink: 0 }} />
             Sign out
           </button>
         </div>,
@@ -261,16 +268,10 @@ function Logo({ collapsed }: { collapsed: boolean }) {
         textDecoration: "none",
       }}
     >
-      <div style={{
-        width: 34, height: 34, borderRadius: 10, flexShrink: 0,
-        display: "flex", alignItems: "center", justifyContent: "center",
-        backgroundColor: "var(--sidebar-primary)", fontSize: 14, fontWeight: 800, color: "#fff",
-      }}>
-        LB
-      </div>
+      <BrandMark />
       {!collapsed && (
         <span style={{ fontSize: 15, fontWeight: 700, color: "var(--sidebar-accent-foreground)", letterSpacing: "-0.01em" }}>
-          Log Board
+          {BRAND_NAME}
         </span>
       )}
     </NavLink>
@@ -288,28 +289,28 @@ const navSections: NavSection[] = [
   {
     title: "Overview",
     items: [
-      { icon: LayoutDashboard, label: "Dashboard", path: "dashboard", module: "dashboard" },
+      { icon: ChartPie, label: "Dashboard", path: "dashboard", module: "dashboard" },
     ],
   },
   {
     title: "Operations",
     items: [
-      { icon: Trello,  label: "Board", path: "board", module: "board" },
-      { icon: Package, label: "Loads", path: "loads", module: "loads" },
+      { icon: SquareKanban, label: "Board", path: "board", module: "board" },
+      { icon: PackageOpen,  label: "Loads", path: "loads", module: "loads" },
     ],
   },
   {
     title: "Fleet",
     items: [
-      { icon: Users, label: "Drivers",    path: "drivers",    module: "drivers"    },
+      { icon: IdCard, label: "Drivers",   path: "drivers",    module: "drivers"    },
       { icon: Truck, label: "Equipments", path: "equipments", module: "equipments" },
     ],
   },
   {
     title: "Financials",
     items: [
-      { icon: BarChart2,  label: "Gross",   path: "gross",   module: "gross"   },
-      { icon: DollarSign, label: "Payouts", path: "payouts", module: "payouts" },
+      { icon: ChartColumnIncreasing, label: "Gross",   path: "gross",   module: "gross"   },
+      { icon: HandCoins,             label: "Payouts", path: "payouts", module: "payouts" },
     ],
   },
 ];

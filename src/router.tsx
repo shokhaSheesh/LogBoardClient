@@ -13,6 +13,7 @@ import { SettingsPage } from "./pages/SettingsPage";
 import { BillingPage } from "./pages/BillingPage";
 import { useAuth } from "./lib/auth";
 import { canAccessPage, firstAccessiblePath } from "./lib/permissions";
+import { KpiPage } from "./pages/KpiPage";
 
 // Blocks a page the current user can't access, bouncing them to the first page
 // they can. Permissions are per-company, so this re-evaluates whenever the user
@@ -90,6 +91,7 @@ export const router = createBrowserRouter([
           { path: "drivers", element: <PermGuard path="drivers"><DriversPage /></PermGuard> },
           { path: "equipments", element: <PermGuard path="equipments"><EquipmentsPage /></PermGuard> },
           { path: "payouts", element: <PermGuard path="payouts"><PayoutsPage /></PermGuard> },
+          { path: "payouts/kpi", element: <PermGuard path="payouts"><KpiPage /></PermGuard> },
           { path: "billing", element: <PermGuard path="billing"><BillingPage /></PermGuard> },
           { path: "settings/*", element: <PermGuard path="settings"><SettingsPage /></PermGuard> },
         ],

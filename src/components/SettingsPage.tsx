@@ -18,7 +18,8 @@ const WEEK_DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
 import { api, getCompanyId, isForbidden, ApiError } from "../lib/api";
 import { driverDisplayName } from "../lib/driverName";
 import { Dash } from "./Dash";
-import { fmtDateTime } from "../lib/dates";
+import { fmtDate, fmtDateTime } from "../lib/dates";
+import { DatePicker } from "./DatePicker";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -605,9 +606,18 @@ const loadErrText = (e: unknown, what: string) => friendlyError(e, `Couldn't loa
 
 // ─── USERS TAB ────────────────────────────────────────────────────────────────
 
+// A person's pay per load (dispatcher KPI): the percent of each completed load's rate they
+// earn, as a history of "from this day on, this percent". 0% = not paid from that day.
+interface KpiRate { percent: number; active_from: string }
+interface KpiRates { current: KpiRate | null; history: KpiRate[]; today: string }
+// What the user form asks the page to save after the user itself: a new percent from a day.
+interface KpiChange { percent: number; activeFrom: string }
+
+const todayIso = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+
 function UserModal({ user, roles, teams, saving, error, onClose, onSave }: {
   user: Partial<User>; roles: Role[]; teams: Team[];
-  saving?: boolean; error?: string | null; onClose: () => void; onSave: (u: User) => void;
+  saving?: boolean; error?: string | null; onClose: () => void; onSave: (u: User, kpi: KpiChange | null) => void;
 }) {
   const [form, setForm] = useState<Partial<User>>(user);
   const [showPass, setShowPass] = useState(false);
@@ -660,11 +670,56 @@ function UserModal({ user, roles, teams, saving, error, onClose, onSave }: {
   const matchedRole = roles.find((r) => r.id === form.roleId) ?? roles.find((r) => r.name.toLowerCase() === (form.roleName ?? "").toLowerCase());
   const effectiveRoleId = matchedRole?.id ?? "";
 
+  // ── Pay per load (dispatcher KPI) ─────────────────────────────────────────
+  // Only an owner or a dispatcher can be named on a load, so only they can be paid on one.
+  const payable = /:(owner|dispatcher)$/.test(effectiveRoleId) || ["owner", "dispatcher"].includes((matchedRole?.name ?? form.roleName ?? "").toLowerCase());
+  const [rates, setRates]   = useState<KpiRates | null>(null);
+  const [paid, setPaid]     = useState(false);
+  const [percent, setPercent] = useState("");
+  const [activeFrom, setActiveFrom] = useState(todayIso());
+  const today = rates?.today ?? todayIso();
+  // The entry that will be in force once everything on file has started: the last one.
+  const latest = rates?.history.length ? rates.history[rates.history.length - 1] : null;
+  const wasPaid = !!latest && latest.percent > 0;
+
+  useEffect(() => {
+    if (!user.id) return;
+    let gone = false;
+    api.get<KpiRates>(`/kpi/rates?user_id=${user.id}`)
+      .then((r) => {
+        if (gone || !r) return;
+        setRates(r);
+        const last = r.history.length ? r.history[r.history.length - 1] : null;
+        setPaid(!!last && last.percent > 0);
+        if (last && last.percent > 0) setPercent(String(last.percent));
+        setActiveFrom(r.today);
+      })
+      // Not being able to read it (no permission, older server) just leaves the section as "not paid".
+      .catch(() => {});
+    return () => { gone = true; };
+  }, [user.id]);
+
+  const pct = Number(percent);
+  const percentErr = !paid ? null
+    : percent.trim() === "" ? "Enter the percent."
+    : !Number.isFinite(pct) || pct <= 0 || pct > 100 ? "Enter a percent above 0, up to 100."
+    : null;
+  const dateErr = paid && activeFrom < today ? "Pick today or a later day." : null;
+
+  // What, if anything, changed about the pay: a new percent from a day, or 0% from today
+  // to stop it. Nothing when it reads the same as what's already on file.
+  const kpiChange = (): KpiChange | null => {
+    if (!payable) return null;
+    if (!paid) return wasPaid ? { percent: 0, activeFrom: today } : null;
+    if (wasPaid && latest!.percent === pct && latest!.active_from >= activeFrom) return null;
+    return { percent: pct, activeFrom };
+  };
+
   const handleSave = () => {
     setSubmitted(true);
     // A role is present if we resolved a company role OR carry a coarse role marker.
     const hasRole = !!effectiveRoleId || !!form.roleName?.trim();
-    const missing = !form.name?.trim() || !hasRole || !!loginErr || !!passErr;
+    const missing = !form.name?.trim() || !hasRole || !!loginErr || !!passErr || (payable && (!!percentErr || !!dateErr));
     if (missing) return;
     onSave({
       ...form,
@@ -672,7 +727,7 @@ function UserModal({ user, roles, teams, saving, error, onClose, onSave }: {
       workDays: `${dayFrom}–${dayTo}`,
       workFrom: form.workFrom ?? "08:00",
       workTo:   form.workTo ?? "17:00",
-    } as User);
+    } as User, kpiChange());
   };
 
   return (
@@ -781,6 +836,74 @@ function UserModal({ user, roles, teams, saving, error, onClose, onSave }: {
               portal
             />
           </div>
+
+          {/* Pay per load — owners and dispatchers only */}
+          {payable && (
+            <div style={{ gridColumn: "1 / -1", border: "1px solid var(--border)", borderRadius: 10, padding: "12px 14px", display: "flex", flexDirection: "column", gap: 12 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, color: "var(--foreground)" }}>Paid per load</div>
+                  <div style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)", lineHeight: 1.45 }}>
+                    A percent of the rate of each load they dispatched, once it's completed.
+                  </div>
+                </div>
+                <button type="button" role="switch" aria-checked={paid} aria-label="Paid per load" onClick={() => setPaid((v) => !v)}
+                  style={{ width: 38, height: 22, borderRadius: 11, border: "none", padding: 2, cursor: "pointer", flexShrink: 0, backgroundColor: paid ? "var(--primary)" : "var(--switch-background)", transition: "background-color 0.15s" }}>
+                  <span style={{ display: "block", width: 18, height: 18, borderRadius: "50%", backgroundColor: "#fff", transform: paid ? "translateX(16px)" : "none", transition: "transform 0.15s", boxShadow: "0 1px 2px rgba(0,0,0,0.25)" }} />
+                </button>
+              </div>
+
+              {paid && (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: "12px 14px" }}>
+                  <label style={fieldStyle}>
+                    <span style={capStyle}>Percent of the load's rate <span style={{ color: "#EF4444" }}>*</span></span>
+                    <div style={{ position: "relative" }}>
+                      <input value={percent} inputMode="decimal" placeholder="e.g. 1.5" autoComplete="off"
+                        onChange={(e) => setPercent(e.target.value.replace(/[^0-9.]/g, "").replace(/(\..*)\./g, "$1").slice(0, 6))}
+                        style={{ ...inputStyle, paddingRight: 30, fontFamily: "var(--font-mono)", border: submitted && percentErr ? RED : inputStyle.border }} />
+                      <span style={{ position: "absolute", right: 11, top: "50%", transform: "translateY(-50%)", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)", pointerEvents: "none" }}>%</span>
+                    </div>
+                    <FieldHint text={submitted ? percentErr : null} />
+                  </label>
+                  <div style={fieldStyle}>
+                    <span style={capStyle}>Active from <span style={{ color: "#EF4444" }}>*</span></span>
+                    <DatePicker label="Active from" value={activeFrom} min={today} onChange={setActiveFrom} invalid={submitted && !!dateErr} />
+                    <FieldHint text={submitted ? dateErr : null} />
+                  </div>
+                  {/* What this does, in plain numbers, before it's saved */}
+                  <div style={{ ...fieldStyle, justifyContent: "flex-end" }}>
+                    <div style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)", lineHeight: 1.45 }}>
+                      {percentErr ? "Only today or a later day can be chosen." : <>A $1,000 load pays <strong style={{ color: "var(--foreground)" }}>${(10 * pct).toFixed(2)}</strong>.</>}
+                    </div>
+                  </div>
+                  <div style={{ gridColumn: "1 / -1", display: "flex", gap: 8, padding: "9px 11px", borderRadius: 8, backgroundColor: "var(--primary-faint)", fontFamily: "var(--font-sans)", fontSize: 12.5, color: "var(--foreground)", lineHeight: 1.5 }}>
+                    <AlertCircle size={14} style={{ color: "var(--primary)", flexShrink: 0, marginTop: 2 }} />
+                    <span>
+                      Applies to loads <strong>completed from {fmtDate(activeFrom)}</strong>.
+                      {wasPaid ? ` Earlier loads keep ${latest!.percent}%.` : " Earlier loads pay nothing."}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {!paid && wasPaid && (
+                <div style={{ fontFamily: "var(--font-sans)", fontSize: 12.5, color: "#B45309", lineHeight: 1.5 }}>
+                  Saving stops the pay from today ({fmtDate(today)}). Loads completed before today keep the {latest!.percent}% they earned.
+                </div>
+              )}
+
+              {rates && rates.history.length > 0 && (
+                <div style={{ display: "flex", alignItems: "baseline", gap: "4px 10px", flexWrap: "wrap", fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)" }}>
+                  <span style={{ fontWeight: 600 }}>History</span>
+                  {rates.history.map((h) => (
+                    <span key={h.active_from} style={{ whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>
+                      {h.percent > 0 ? `${h.percent}%` : "Off"} from {fmtDate(h.active_from)}{h.active_from > today ? " (scheduled)" : ""}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         <FormError message={error} style={formErrorInModal} />
@@ -836,7 +959,7 @@ function UsersTab({ roles, teams, reloadTeams, reloadRoles, canCreate, canUpdate
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const save = async (u: User) => {
+  const save = async (u: User, kpi: KpiChange | null) => {
     const isNew = modal === "create";
     setSaveErr(null);
     setSaving(true);
@@ -876,9 +999,21 @@ function UsersTab({ roles, teams, reloadTeams, reloadRoles, canCreate, canUpdate
         await reloadTeams();
       }
 
+      // 3) The pay percent, when the form changed it. Same rule as the team: the user is
+      //    saved, so a failure here is reported, not retried by reopening "Create".
+      let kpiErr: string | null = null;
+      if (userId && kpi) {
+        try {
+          await api.post(`/kpi/rates`, { user_id: userId, percent: kpi.percent, active_from: kpi.activeFrom });
+        } catch (e) {
+          kpiErr = friendlyError(e, "request failed");
+        }
+      }
+
       setFetchKey((k) => k + 1);
       setModal(null);
-      if (teamErr) notify.error(`User ${isNew ? "created" : "saved"}, but the team wasn't updated: ${teamErr}`);
+      const failed = [teamErr && `the team wasn't updated: ${teamErr}`, kpiErr && `the pay percent wasn't saved: ${kpiErr}`].filter(Boolean);
+      if (failed.length) notify.error(`User ${isNew ? "created" : "saved"}, but ${failed.join("; and ")}`);
       else notify.success(isNew ? "User created" : "User updated");
     } catch (e) {
       setSaveErr(friendlyError(e, "Save failed")); // keep modal open
@@ -1040,7 +1175,7 @@ function UsersTab({ roles, teams, reloadTeams, reloadRoles, canCreate, canUpdate
 
 
       {(modal === "create" || modal === "edit") && (
-        <UserModal user={editing} roles={roles} teams={teams} saving={saving} error={saveErr} onClose={() => { setModal(null); setSaveErr(null); }} onSave={(u) => { void save(u); }} />
+        <UserModal user={editing} roles={roles} teams={teams} saving={saving} error={saveErr} onClose={() => { setModal(null); setSaveErr(null); }} onSave={(u, kpi) => { void save(u, kpi); }} />
       )}
       {deleting && <DeleteConfirm label={deleting.name} busy={delBusy} error={delErr} onClose={() => { setDeleting(null); setDelErr(null); }} onConfirm={() => confirmDelete(deleting)} />}
       {saving && <div style={{ position: "fixed", inset: 0, zIndex: 200 }} />}

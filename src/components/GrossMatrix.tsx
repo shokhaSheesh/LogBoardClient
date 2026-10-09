@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from "react";
-import { Search, Calendar, Check, ChevronDown, ChevronLeft, ChevronRight, AlertCircle, X, Users, Rows3, BarChart3 } from "lucide-react";
+import { Search, Calendar, Check, ChevronDown, ChevronLeft, ChevronRight, AlertCircle, X, Users, Rows3, CircleDollarSign, Wallet, TrendingUp, Gauge } from "lucide-react";
 import { createPortal } from "react-dom";
 import { Status, STATUS_CONFIG, ALL_STATUSES } from "../lib/statuses";
 import { api, getCompanyId } from "../lib/api";
@@ -10,6 +10,8 @@ import { useAuth } from "../lib/auth";
 import { hasPerm } from "../lib/permissions";
 import { useTheme } from "../lib/theme";
 import { Dash } from "./Dash";
+import { Kpi } from "./Kpi";
+import { DateRangePicker } from "./DateRangePicker";
 import { fmtDate, fmtDateRange } from "../lib/dates";
 
 type CellType = Status | "load" | "empty";
@@ -558,256 +560,6 @@ function CellEditPanel({
   );
 }
 
-// ─── Date range picker ────────────────────────────────────────────────────────
-
-type CalView = "days" | "months" | "years";
-
-const MONTH_NAMES_FULL  = ["January","February","March","April","May","June","July","August","September","October","November","December"];
-const MONTH_NAMES_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-const DAY_ABBR = ["Su","Mo","Tu","We","Th","Fr","Sa"];
-
-function isoDate(y: number, m: number, d: number) {
-  return `${y}-${String(m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-}
-function daysInMonth(y: number, m: number) { return new Date(y, m + 1, 0).getDate(); }
-function firstDow(y: number, m: number)    { return new Date(y, m, 1).getDay(); }
-
-function fmtRange(from: string, to: string) {
-  if (!from && !to) return "Select range";
-  return fmtDateRange(from, to || from);
-}
-
-interface DateRangePickerProps {
-  from: string;
-  to: string;
-  onChange: (from: string, to: string) => void;
-}
-
-function DateRangePicker({ from, to, onChange }: DateRangePickerProps) {
-  const [open, setOpen]           = useState(false);
-  const [view, setView]           = useState<CalView>("days");
-  const [dispYear, setDispYear]   = useState(() => from ? Number(from.slice(0, 4)) : new Date().getFullYear());
-  const [dispMonth, setDispMonth] = useState(() => from ? Number(from.slice(5, 7)) - 1 : new Date().getMonth());
-  const [pending, setPending]     = useState<string | null>(null);
-  const [hover, setHover]         = useState<string | null>(null);
-  const [rect, setRect]           = useState<DOMRect | null>(null);
-  const anchorRef = useRef<HTMLDivElement>(null);
-  const panelRef  = useRef<HTMLDivElement>(null);
-
-  const navBtn: React.CSSProperties = {
-    width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center",
-    border: "1px solid var(--border)", borderRadius: 7, backgroundColor: "var(--muted)",
-    color: "var(--foreground)", fontSize: 15, cursor: "pointer", lineHeight: 1, flexShrink: 0,
-  };
-  const hdrBtn: React.CSSProperties = {
-    fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 700, color: "var(--foreground)",
-    background: "none", border: "none", cursor: "pointer", padding: "3px 10px",
-    borderRadius: 6, transition: "background 0.1s",
-  };
-
-  function openPicker() {
-    const r = anchorRef.current?.getBoundingClientRect();
-    if (r) setRect(r);
-    setView("days");
-    if (from) { setDispYear(Number(from.slice(0, 4))); setDispMonth(Number(from.slice(5, 7)) - 1); }
-    setPending(null); setHover(null);
-    setOpen(true);
-  }
-
-  useEffect(() => {
-    if (!open) return;
-    const h = (e: MouseEvent) => {
-      if (!anchorRef.current?.contains(e.target as Node) && !panelRef.current?.contains(e.target as Node)) {
-        setOpen(false); setPending(null);
-      }
-    };
-    document.addEventListener("mousedown", h);
-    return () => document.removeEventListener("mousedown", h);
-  }, [open]);
-
-  function pickDay(iso: string) {
-    if (!pending) { setPending(iso); }
-    else {
-      const [s, e] = iso >= pending ? [pending, iso] : [iso, pending];
-      onChange(s, e);
-      setPending(null); setHover(null); setOpen(false);
-    }
-  }
-
-  // Effective range to highlight (live while selecting)
-  const ps = pending ?? from;
-  const pe = pending ? (hover ?? pending) : to;
-  const [rs, re] = ps <= pe ? [ps, pe] : [pe, ps];
-
-  function renderDays() {
-    const fdow    = firstDow(dispYear, dispMonth);
-    const dim     = daysInMonth(dispYear, dispMonth);
-    const prevDim = daysInMonth(dispMonth === 0 ? dispYear - 1 : dispYear, dispMonth === 0 ? 11 : dispMonth - 1);
-    const cells: { iso: string; inMonth: boolean }[] = [];
-    for (let i = fdow - 1; i >= 0; i--) {
-      const pm = dispMonth === 0 ? 11 : dispMonth - 1;
-      const py = dispMonth === 0 ? dispYear - 1 : dispYear;
-      cells.push({ iso: isoDate(py, pm, prevDim - i), inMonth: false });
-    }
-    for (let d = 1; d <= dim; d++) cells.push({ iso: isoDate(dispYear, dispMonth, d), inMonth: true });
-    while (cells.length < 42) {
-      const nm = dispMonth === 11 ? 0 : dispMonth + 1;
-      const ny = dispMonth === 11 ? dispYear + 1 : dispYear;
-      cells.push({ iso: isoDate(ny, nm, cells.length - fdow - dim + 1), inMonth: false });
-    }
-
-    function prevM() { if (dispMonth === 0) { setDispMonth(11); setDispYear(y => y - 1); } else setDispMonth(m => m - 1); }
-    function nextM() { if (dispMonth === 11) { setDispMonth(0); setDispYear(y => y + 1); } else setDispMonth(m => m + 1); }
-
-    return (
-      <>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-          <button style={navBtn} onMouseDown={(e) => { e.preventDefault(); prevM(); }}>‹</button>
-          <button style={hdrBtn} onMouseDown={(e) => { e.preventDefault(); setView("months"); }}
-            onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--muted)"; }}
-            onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = "transparent"; }}>
-            {MONTH_NAMES_FULL[dispMonth]} {dispYear}
-          </button>
-          <button style={navBtn} onMouseDown={(e) => { e.preventDefault(); nextM(); }}>›</button>
-        </div>
-
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", marginBottom: 3 }}>
-          {DAY_ABBR.map((d) => (
-            <div key={d} style={{ textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 10, fontWeight: 600, color: "var(--muted-foreground)", padding: "0 0 4px", letterSpacing: "0.04em" }}>{d}</div>
-          ))}
-        </div>
-
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)" }}>
-          {cells.map(({ iso, inMonth }) => {
-            const isS   = iso === rs;
-            const isE   = iso === re && re !== rs;
-            const inRng = iso > rs && iso < re;
-            const d     = Number(iso.slice(8));
-            let bg = "transparent", color = inMonth ? "var(--foreground)" : "var(--muted-foreground)", br = "6px", fw: number | string = 400;
-            if (inRng) { bg = "var(--secondary)"; color = "var(--secondary-foreground)"; br = "0"; }
-            if (isS)   { bg = "var(--primary)"; color = "#fff"; br = "6px 0 0 6px"; fw = 700; }
-            if (isE)   { bg = "var(--primary)"; color = "#fff"; br = "0 6px 6px 0"; fw = 700; }
-            if (isS && isE) br = "6px";
-            return (
-              <div key={iso} style={{ height: 30, backgroundColor: bg, borderRadius: br, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
-                onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); if (inMonth) pickDay(iso); }}
-                onMouseEnter={() => { if (pending) setHover(iso); }}>
-                <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color, fontWeight: fw, width: 26, height: 26, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 5 }}>{d}</span>
-              </div>
-            );
-          })}
-        </div>
-
-        {pending && (
-          <div style={{ marginTop: 8, fontFamily: "var(--font-sans)", fontSize: 10, color: "var(--muted-foreground)", textAlign: "center" }}>
-            Now click an end date
-          </div>
-        )}
-      </>
-    );
-  }
-
-  function renderMonths() {
-    return (
-      <>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-          <button style={navBtn} onMouseDown={(e) => { e.preventDefault(); setDispYear(y => y - 1); }}>‹</button>
-          <button style={hdrBtn} onMouseDown={(e) => { e.preventDefault(); setView("years"); }}
-            onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--muted)"; }}
-            onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = "transparent"; }}>
-            {dispYear}
-          </button>
-          <button style={navBtn} onMouseDown={(e) => { e.preventDefault(); setDispYear(y => y + 1); }}>›</button>
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 5 }}>
-          {MONTH_NAMES_SHORT.map((m, idx) => {
-            const active = idx === dispMonth;
-            return (
-              <button key={m}
-                onMouseDown={(e) => { e.preventDefault(); setDispMonth(idx); setView("days"); }}
-                style={{ padding: "9px 0", borderRadius: 7, border: "none", fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: active ? 700 : 400, backgroundColor: active ? "var(--primary)" : "var(--muted)", color: active ? "#fff" : "var(--foreground)", cursor: "pointer" }}
-                onMouseEnter={(e) => { if (!active) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--border)"; }}
-                onMouseLeave={(e) => { if (!active) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--muted)"; }}>
-                {m}
-              </button>
-            );
-          })}
-        </div>
-      </>
-    );
-  }
-
-  function renderYears() {
-    const base  = Math.floor(dispYear / 12) * 12;
-    const years = Array.from({ length: 12 }, (_, i) => base + i);
-    return (
-      <>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-          <button style={navBtn} onMouseDown={(e) => { e.preventDefault(); setDispYear(y => y - 12); }}>‹</button>
-          <span style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 700, color: "var(--foreground)" }}>{base} – {base + 11}</span>
-          <button style={navBtn} onMouseDown={(e) => { e.preventDefault(); setDispYear(y => y + 12); }}>›</button>
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 5 }}>
-          {years.map((y) => {
-            const active = y === dispYear;
-            return (
-              <button key={y}
-                onMouseDown={(e) => { e.preventDefault(); setDispYear(y); setView("months"); }}
-                style={{ padding: "9px 0", borderRadius: 7, border: "none", fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: active ? 700 : 400, backgroundColor: active ? "var(--primary)" : "var(--muted)", color: active ? "#fff" : "var(--foreground)", cursor: "pointer" }}
-                onMouseEnter={(e) => { if (!active) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--border)"; }}
-                onMouseLeave={(e) => { if (!active) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--muted)"; }}>
-                {y}
-              </button>
-            );
-          })}
-        </div>
-      </>
-    );
-  }
-
-  const PANEL_W = 268;
-  const panelLeft = rect ? Math.min(rect.left, window.innerWidth - PANEL_W - 8) : 0;
-  const panelTop  = rect ? rect.bottom + 6 : 0;
-
-  return (
-    <>
-      <div ref={anchorRef} onClick={openPicker} style={{ flexShrink: 0 }}>
-        <button style={{
-          display: "inline-flex", alignItems: "center", gap: 7, height: 34, padding: "0 12px",
-          fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600,
-          backgroundColor: "var(--card)",
-          border: `1px solid ${open ? "var(--primary)" : "var(--border)"}`,
-          borderRadius: 8, color: "var(--foreground)", cursor: "pointer",
-          boxShadow: open ? "0 0 0 3px var(--primary-soft)" : "none", outline: "none",
-          whiteSpace: "nowrap",
-        }}>
-          <Calendar size={13} style={{ color: "var(--muted-foreground)", flexShrink: 0 }} />
-          {fmtRange(from, to)}
-          <ChevronDown size={12} style={{ color: "var(--muted-foreground)", transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s", marginLeft: 2 }} />
-        </button>
-      </div>
-
-      {open && rect && createPortal(
-        <div
-          ref={panelRef}
-          onMouseDown={(e) => e.stopPropagation()}
-          style={{
-            position: "fixed", top: panelTop, left: panelLeft, zIndex: 9999,
-            width: PANEL_W, backgroundColor: "var(--card)",
-            border: "1.5px solid var(--primary)", borderRadius: 12,
-            boxShadow: "0 8px 32px rgba(0,0,0,0.18)", padding: 14,
-          }}
-        >
-          {view === "days"   && renderDays()}
-          {view === "months" && renderMonths()}
-          {view === "years"  && renderYears()}
-        </div>,
-        document.body
-      )}
-    </>
-  );
-}
-
 // ─── Main component ───────────────────────────────────────────────────────────
 
 function getWeekRange(startDay: number): { from: Date; to: Date } {
@@ -833,18 +585,6 @@ const money = (n: number) => (n < 0 ? `-$${Math.abs(n).toLocaleString()}` : fmt(
 // A tint over an opaque base. Pinned (sticky) cells must stay opaque or the scrolled day
 // cells show through them, so the tint rides as a background *image* on a solid colour.
 const tintOver = (c: string) => `linear-gradient(${c}, ${c})`;
-
-function Kpi({ label, value, note }: { label: string; value: string; note?: string }) {
-  return (
-    <div style={{ backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 10, padding: "9px 14px", minWidth: 0 }}>
-      <div style={{ fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--muted-foreground)" }}>{label}</div>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 6, flexWrap: "wrap" }}>
-        <span style={{ fontFamily: "var(--font-sans)", fontSize: 19, fontWeight: 700, letterSpacing: "-0.02em", color: "var(--foreground)", fontVariantNumeric: "tabular-nums" }}>{value}</span>
-        {note && <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)" }}>{note}</span>}
-      </div>
-    </div>
-  );
-}
 
 export function GrossMatrix() {
   const { user } = useAuth();
@@ -1094,15 +834,40 @@ export function GrossMatrix() {
 
       <div style={{ flex: 1, overflow: "hidden", padding: "14px 24px", display: "flex", flexDirection: "column", gap: 12 }}>
 
-        {/* Controls */}
-        <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: "12px 18px", flexWrap: "wrap", flexShrink: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        {/* Summary of the rows on screen */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 12, flexShrink: 0 }}>
+          <Kpi icon={<CircleDollarSign size={18} />} label="Gross" value={money(all.gross)} note={`${filtered.length} ${filtered.length === 1 ? "driver" : "drivers"}`} />
+          <Kpi icon={<Wallet size={18} />} label="Driver pay" value={all.anyPay ? money(all.pay) : <Dash />} />
+          <Kpi icon={<TrendingUp size={18} />} label="Company profit" value={money(all.profit)} tone={all.profit < 0 ? "bad" : "plain"} />
+          <Kpi icon={<Gauge size={18} />} label="Rate per mile" value={`$${(all.rpm ?? 0).toFixed(2)}`} note={`${all.miles.toLocaleString()} mi`} />
+        </div>
+
+        {truncated && (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 12px", borderRadius: 8, backgroundColor: "rgba(245,158,11,0.10)", border: "1px solid rgba(245,158,11,0.35)", fontFamily: "var(--font-sans)", fontSize: 12.5, color: "var(--foreground)", flexShrink: 0 }}>
+            <AlertCircle size={14} style={{ color: "#D97706", flexShrink: 0 }} />
+            This range is {allDates.length} days long. Only the first {MAX_DAYS} days are shown — pick a shorter range to see the rest.
+          </div>
+        )}
+
+        {/* Matrix */}
+        <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", backgroundColor: "var(--card)", borderRadius: 12, overflow: "hidden", border: "1px solid var(--border)" }}>
+          {/* Toolbar — same place and order as every other list: search, then the view, then the dates */}
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", padding: "10px 16px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
+            <div style={{ position: "relative", flexShrink: 0 }}>
+              <Search size={13} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--muted-foreground)", pointerEvents: "none" }} />
+              <input value={search} onChange={(e) => { setSearch(e.target.value); }} placeholder="Search drivers…" aria-label="Search drivers"
+                style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "0 10px 0 30px", height: 34, width: 200, borderRadius: 8, border: "1px solid var(--border)", backgroundColor: "var(--card)", color: "var(--foreground)", outline: "none", transition: "border-color 0.15s, box-shadow 0.15s" }}
+                onFocus={(e) => { e.currentTarget.style.borderColor = "var(--primary)"; e.currentTarget.style.boxShadow = "0 0 0 3px var(--primary-soft)"; }}
+                onBlur={(e)  => { e.currentTarget.style.borderColor = "var(--border)";  e.currentTarget.style.boxShadow = "none"; }}
+              />
+            </div>
+
             {/* View toggle: one table vs a section per team */}
             {teams.length > 0 && (
-              <div role="group" aria-label="View" style={{ display: "inline-flex", height: 34, border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden", backgroundColor: "var(--card)", flexShrink: 0 }}>
+              <div role="group" aria-label="View" style={{ display: "inline-flex", height: 34, boxSizing: "border-box", padding: 3, gap: 2, border: "1px solid var(--border)", borderRadius: 8, backgroundColor: "var(--card)", flexShrink: 0 }}>
                 {([["all", "All drivers", Rows3], ["teams", "By team", Users]] as const).map(([m, label, Icon]) => (
                   <button key={m} onClick={() => setViewMode(m)} aria-pressed={viewMode === m}
-                    style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "0 12px", border: "none", cursor: "pointer", fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: viewMode === m ? 600 : 500, backgroundColor: viewMode === m ? "var(--primary)" : "transparent", color: viewMode === m ? "var(--primary-foreground)" : "var(--muted-foreground)", outline: "none" }}>
+                    style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "0 11px", border: "none", borderRadius: 6, cursor: "pointer", fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 500, backgroundColor: viewMode === m ? "var(--primary)" : "transparent", color: viewMode === m ? "var(--primary-foreground)" : "var(--muted-foreground)", outline: "none" }}>
                     <Icon size={14} /> {label}
                   </button>
                 ))}
@@ -1127,35 +892,8 @@ export function GrossMatrix() {
               style={{ height: 34, padding: "0 12px", borderRadius: 8, border: "1px solid var(--border)", backgroundColor: "var(--card)", fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 500, color: isThisWeek ? "var(--muted-foreground)" : "var(--foreground)", cursor: isThisWeek ? "default" : "pointer", opacity: isThisWeek ? 0.6 : 1, flexShrink: 0 }}>
               This week
             </button>
-
-            <div style={{ position: "relative", flexShrink: 0 }}>
-              <Search size={13} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--muted-foreground)", pointerEvents: "none" }} />
-              <input value={search} onChange={(e) => { setSearch(e.target.value); }} placeholder="Search drivers…" aria-label="Search drivers"
-                style={{ fontFamily: "var(--font-sans)", fontSize: 13, padding: "0 10px 0 30px", height: 34, width: 200, borderRadius: 8, border: "1px solid var(--border)", backgroundColor: "var(--card)", color: "var(--foreground)", outline: "none", transition: "border-color 0.15s, box-shadow 0.15s" }}
-                onFocus={(e) => { e.currentTarget.style.borderColor = "var(--primary)"; e.currentTarget.style.boxShadow = "0 0 0 3px var(--primary-soft)"; }}
-                onBlur={(e)  => { e.currentTarget.style.borderColor = "var(--border)";  e.currentTarget.style.boxShadow = "none"; }}
-              />
-            </div>
           </div>
-        </div>
 
-        {/* Summary of the rows on screen */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 12, flexShrink: 0 }}>
-          <Kpi label="Gross" value={money(all.gross)} note={`${filtered.length} ${filtered.length === 1 ? "driver" : "drivers"}`} />
-          <Kpi label="Driver pay" value={all.anyPay ? money(all.pay) : "—"} />
-          <Kpi label="Company profit" value={money(all.profit)} />
-          <Kpi label="Rate per mile" value={`$${(all.rpm ?? 0).toFixed(2)}`} note={`${all.miles.toLocaleString()} mi`} />
-        </div>
-
-        {truncated && (
-          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 12px", borderRadius: 8, backgroundColor: "rgba(245,158,11,0.10)", border: "1px solid rgba(245,158,11,0.35)", fontFamily: "var(--font-sans)", fontSize: 12.5, color: "var(--foreground)", flexShrink: 0 }}>
-            <AlertCircle size={14} style={{ color: "#D97706", flexShrink: 0 }} />
-            This range is {allDates.length} days long. Only the first {MAX_DAYS} days are shown — pick a shorter range to see the rest.
-          </div>
-        )}
-
-        {/* Matrix */}
-        <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", backgroundColor: "var(--card)", borderRadius: 12, overflow: "hidden", border: "1px solid var(--border)" }}>
           {/* The loader lives in here, so the controls above stay put (and keep focus) while a
               week change or a search is in flight. With rows on screen they're dimmed instead. */}
           <div style={{ flex: 1, overflow: "auto", scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent", opacity: loading && rows.length > 0 ? 0.5 : 1, pointerEvents: loading ? "none" : "auto", transition: "opacity 0.15s" }}>

@@ -5,7 +5,7 @@ import {
   Package, Plus, Pencil, Trash2, X, Check, AlertCircle,
   Search, ChevronDown, ChevronLeft, ChevronRight,
   ClipboardList, Sparkles, Upload, FileText,
-  ArrowLeft, ArrowRight, Building2, User, DollarSign, Clock, History, CalendarDays, Navigation, GripVertical,
+  ArrowLeft, ArrowRight, MapPin, Building2, User, DollarSign, Clock, History, CalendarDays, Navigation, GripVertical,
 } from "lucide-react";
 import { Status, STATUS_CONFIG as SHARED_STATUS_CONFIG, ALL_STATUSES as SHARED_ALL_STATUSES } from "../lib/statuses";
 import { api, ApiError, isForbidden } from "../lib/api";
@@ -21,6 +21,8 @@ import { FormError, friendlyError, notify } from "./feedback";
 import { AddressAutocomplete, type AddressParts } from "./AddressAutocomplete";
 import { UncompleteConfirm } from "./UncompleteConfirm";
 import { RouteMap, type RoutePoint } from "./RouteMap";
+import { PeriodFilter, ALL_TIME, type Period } from "./PeriodFilter";
+import { CAL } from "./calendar";
 import { Dash } from "./Dash";
 import { fmtDateTime } from "../lib/dates";
 
@@ -756,12 +758,7 @@ function AddLoadMenu({ onManual, onExtract }: { onManual: () => void; onExtract:
 
 const CAL_MONTHS   = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 const CAL_DAYS     = ["Su","Mo","Tu","We","Th","Fr","Sa"];
-const NAV_BTN: React.CSSProperties = {
-  width: 28, height: 28, border: "none", borderRadius: 6,
-  backgroundColor: "transparent", cursor: "pointer",
-  fontFamily: "var(--font-sans)", fontSize: 18, color: "var(--foreground)",
-  display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-};
+const NAV_BTN = CAL.nav;
 
 // The extractor's draft — exactly the fields a load stores. No driver/dispatcher
 // (a human assigns those), and draft stops carry no `done` flag.
@@ -895,7 +892,7 @@ function TimeField({ value, onChange, placeholder, label, wide = false }: { valu
   );
 }
 
-const APPT_POP_W = 296;
+const APPT_POP_W = CAL.width;
 const dayNum = (y: number, mo: number, d: number) => y * 10000 + mo * 100 + d;
 const NO_DATES = { y: null, mo: null, d: null, y2: null, mo2: null, d2: null };
 
@@ -986,17 +983,9 @@ function DateRangeField({ p, onDates, label }: { p: ApptParts; onDates: (patch: 
   const spanEnd = end ?? (pickingEnd && hover !== null && start !== null && hover > start ? hover : null);
 
   const text = formatApptParts({ ...p, from: "", to: "", note: "" });
-  const hdrBtn: React.CSSProperties = {
-    flex: 1, fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600,
-    background: "none", border: "none", cursor: "pointer", color: "var(--foreground)",
-    padding: "4px 6px", borderRadius: 6,
-  };
-  const pickCell = (sel: boolean): React.CSSProperties => ({
-    padding: "8px 4px", borderRadius: 6, border: "none", fontFamily: "var(--font-sans)", fontSize: 12,
-    backgroundColor: sel ? "var(--primary)" : "transparent", color: sel ? "#fff" : "var(--foreground)",
-    fontWeight: sel ? 600 : 400, cursor: "pointer",
-  });
-  const hint: React.CSSProperties = { fontFamily: "var(--font-sans)", fontSize: 11.5, color: "var(--muted-foreground)", lineHeight: 1.4 };
+  const hdrBtn: React.CSSProperties = { ...CAL.title, cursor: "pointer" };
+  const pickCell = (sel: boolean) => CAL.option(sel);
+  const hint = CAL.hint;
 
   return (
     <div style={{ position: "relative" }}>
@@ -1019,7 +1008,7 @@ function DateRangeField({ p, onDates, label }: { p: ApptParts; onDates: (patch: 
 
       {open && createPortal(
         <div ref={popRef} role="dialog" aria-label={label} style={{
-          position: "fixed", ...pos, zIndex: 9000, width: APPT_POP_W, padding: 12, boxSizing: "border-box", overflowY: "auto",
+          position: "fixed", ...pos, zIndex: 9000, width: APPT_POP_W, ...CAL.panel, overflowY: "auto",
           backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 10, boxShadow: "0 10px 28px rgba(0,0,0,0.16)",
           display: "flex", flexDirection: "column", gap: 10,
         }}>
@@ -1034,7 +1023,7 @@ function DateRangeField({ p, onDates, label }: { p: ApptParts; onDates: (patch: 
                 <button type="button" aria-label="Next month" style={NAV_BTN} onClick={() => { const n = new Date(vy, vmo + 1); setVmo(n.getMonth()); setVy(n.getFullYear()); }}>›</button>
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", marginBottom: 4 }}>
-                {CAL_DAYS.map((n) => <div key={n} style={{ textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 10, fontWeight: 600, color: "var(--muted-foreground)", padding: "2px 0" }}>{n}</div>)}
+                {CAL_DAYS.map((n) => <div key={n} style={CAL.weekday}>{n}</div>)}
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", rowGap: 2 }} onMouseLeave={() => setHover(null)}>
                 {cells.map((day, ci) => {
@@ -1050,7 +1039,7 @@ function DateRangeField({ p, onDates, label }: { p: ApptParts; onDates: (patch: 
                   return (
                     <button key={ci} type="button" onClick={() => pickDay(day)} onMouseEnter={() => setHover(n)}
                       aria-pressed={edge || inSpan}
-                      style={{ height: 30, border: "none", padding: 0, fontFamily: "var(--font-sans)", fontSize: 12, cursor: "pointer",
+                      style={{ height: 30, border: "none", padding: 0, ...CAL.dayText, cursor: "pointer",
                         borderRadius: `${joinL ? 0 : 6}px ${joinR ? 0 : 6}px ${joinR ? 0 : 6}px ${joinL ? 0 : 6}px`,
                         backgroundColor: edge ? "var(--primary)" : inSpan ? "var(--primary-soft)" : hover === n ? "var(--muted)" : "transparent",
                         color: edge ? "#fff" : isToday ? "var(--primary)" : "var(--foreground)",
@@ -1084,12 +1073,12 @@ function DateRangeField({ p, onDates, label }: { p: ApptParts; onDates: (patch: 
             {view === "year" && (<>
               <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 8 }}>
                 <button type="button" aria-label="Earlier years" style={NAV_BTN} onClick={() => setYPage((y) => y - 12)}>‹</button>
-                <span style={{ flex: 1, textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, color: "var(--foreground)" }}>{yPage}–{yPage + 11}</span>
+                <span style={{ flex: 1, textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, color: "var(--foreground)" }}>{vy}</span>
                 <button type="button" aria-label="Later years" style={NAV_BTN} onClick={() => setYPage((y) => y + 12)}>›</button>
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 4 }}>
                 {Array.from({ length: 12 }, (_, i) => yPage + i).map((y) => (
-                  <button key={y} type="button" onClick={() => { setVy(y); setYPage(Math.floor(y / 12) * 12); setView("month"); }} style={{ ...pickCell(y === vy), fontFamily: "var(--font-mono)" }}
+                  <button key={y} type="button" onClick={() => { setVy(y); setYPage(Math.floor(y / 12) * 12); setView("month"); }} style={pickCell(y === vy)}
                     onMouseEnter={(e) => { if (y !== vy) e.currentTarget.style.backgroundColor = "var(--muted)"; }}
                     onMouseLeave={(e) => { if (y !== vy) e.currentTarget.style.backgroundColor = "transparent"; }}
                   >{y}</button>
@@ -1347,6 +1336,9 @@ function LoadForm({ load, onCancel, onSave, saving = false, error, startDirty = 
         return hit ? { ...s, lat: hit.lat!, lng: hit.lng! } : s;
       }));
 
+      const missed = resolved.filter((r) => r.lat == null).map((r) => r.key.trim().toLowerCase());
+      if (missed.length) setFailed((prev) => new Set([...prev, ...missed]));
+
       const coords = resolved.filter((r) => r.lat != null).map((r) => ({ lat: r.lat!, lng: r.lng! }));
       if (coords.length < 2) { setMilesNote("Couldn't locate the stops — enter miles manually."); return; }
 
@@ -1372,6 +1364,56 @@ function LoadForm({ load, onCancel, onSave, saving = false, error, startDirty = 
   };
   useEffect(() => () => { if (debounceRef.current) clearTimeout(debounceRef.current); abortRef.current?.abort(); }, []);
 
+  // ── Is each stop located? ────────────────────────────────────────────────
+  // A stop needs coordinates for the board to show miles to it, so the form says, per
+  // address box, whether it has them: located, being looked up, or not found. `failed`
+  // holds the address TEXTS a lookup found nothing for — keyed by text, so editing the
+  // address clears its "not found" on its own. `locating` holds the rows being looked up.
+  const [failed, setFailed]     = useState<Set<string>>(new Set());
+  const [locating, setLocating] = useState<Set<string>>(new Set());
+  const addrKey = (st: Stop) => joinAddress(st).trim().toLowerCase();
+
+  // Look up every filled stop that has no coordinates yet, one at a time (the geocoder
+  // throttles bursts). Returns the route with whatever was found filled in — the caller
+  // gets the answer directly instead of waiting for React to apply it. Unlike the mileage
+  // calc this never touches the miles, so it is safe to run on a load that's only being opened.
+  const locateMissing = async (): Promise<Stop[]> => {
+    const todo = stopsRef.current.filter((st) => st.city.trim() && (st.lat == null || st.lng == null));
+    if (todo.length === 0) return stopsRef.current;
+    setLocating(new Set(todo.map((st) => st.k!)));
+    const found = new Map<string, LatLng>();
+    const missed: string[] = [];
+    try {
+      for (const st of todo) {
+        const at = await geocodeCity(joinAddress(st)).catch(() => null);
+        if (at) found.set(st.k!, at); else missed.push(addrKey(st));
+      }
+    } finally {
+      setLocating(new Set());
+    }
+    // Only fill a row whose address is still the one that was looked up.
+    const apply = (list: Stop[]) => list.map((st) => {
+      const at = st.k ? found.get(st.k) : undefined;
+      const same = todo.find((t) => t.k === st.k);
+      return at && same && addrKey(same) === addrKey(st) && st.lat == null ? { ...st, lat: at.lat, lng: at.lng } : st;
+    });
+    setStops(apply);
+    if (missed.length) setFailed((prev) => new Set([...prev, ...missed]));
+    return apply(stopsRef.current);
+  };
+
+  // A load opened with stops that were never located — one filled from a rate confirmation,
+  // or saved before this check existed — gets them looked up straight away, so the marks
+  // are true before anyone clicks Save.
+  useEffect(() => { void locateMissing(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const stopState = (st: Stop): "empty" | "located" | "locating" | "notFound" | "unchecked" => {
+    if (!st.city.trim()) return "empty";
+    if (st.lat != null && st.lng != null) return "located";
+    if ((st.k && locating.has(st.k)) || recalcing) return "locating";
+    return failed.has(addrKey(st)) ? "notFound" : "unchecked";
+  };
+
 
   // What the user has entered, as one comparable string. Coordinates are left out: they
   // are filled in by geocoding in the background, which is not an edit.
@@ -1389,13 +1431,28 @@ function LoadForm({ load, onCancel, onSave, saving = false, error, startDirty = 
   const mapPoints: RoutePoint[] = stops.flatMap((st, i) =>
     st.lat != null && st.lng != null ? [{ lat: st.lat, lng: st.lng, label: stopLetter(i), title: cityState(st) }] : []);
 
-  const handleSave = () => {
+  // Stops that still have no location after a save attempt looked them up — what the
+  // "can't save yet" message lists. Cleared as soon as the route changes.
+  const [unlocated, setUnlocated] = useState<{ letter: string; text: string }[]>([]);
+  const [checking, setChecking]   = useState(false);
+  useEffect(() => { setUnlocated([]); }, [routeSig(stops)]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleSave = async () => {
     setSubmitted(true);
-    if (loadIdMissing || routeMissing) return;
+    if (loadIdMissing || routeMissing || checking) return;
+    // Every stop must be located before the load is saved: the board measures the miles
+    // left to a stop from its coordinates, and a stop without them gets none. Anything not
+    // located yet is looked up now; whatever still can't be found stops the save and is named.
+    setChecking(true);
+    let route: Stop[];
+    try { route = await locateMissing(); } finally { setChecking(false); }
+    const missing = route.flatMap((st, i) =>
+      st.city.trim() && (st.lat == null || st.lng == null) ? [{ letter: stopLetter(i), text: joinAddress(st) }] : []);
+    setUnlocated(missing);
+    if (missing.length) return;
     // Send the full route as one stops array (stops[0] = origin … last = destination).
     // Appointments are free text with no ordering/past rules, so there's nothing to check.
-    const filled = stops.filter((s) => s.city.trim());
-    onSave({ ...form, loadId: form.loadId!.trim(), stops: filled } as Load);
+    onSave({ ...form, loadId: form.loadId!.trim(), stops: route.filter((st) => st.city.trim()) } as Load);
   };
 
   const inputStyle: React.CSSProperties = {
@@ -1437,10 +1494,10 @@ function LoadForm({ load, onCancel, onSave, saving = false, error, startDirty = 
       {stopLetter(i)}
     </span>
   );
-  const saveLabel = saving ? "Saving…" : isNew ? "Create load" : "Save changes";
+  const saveLabel = saving ? "Saving…" : checking ? "Checking addresses…" : isNew ? "Create load" : "Save changes";
   const saveBtn = () => (
-    <button onClick={handleSave} disabled={saving}
-      style={{ ...btnBase, border: "none", backgroundColor: "var(--primary)", color: "var(--primary-foreground)", cursor: saving ? "default" : "pointer", opacity: saving ? 0.7 : 1 }}>
+    <button onClick={handleSave} disabled={saving || checking}
+      style={{ ...btnBase, border: "none", backgroundColor: "var(--primary)", color: "var(--primary-foreground)", cursor: saving || checking ? "default" : "pointer", opacity: saving || checking ? 0.7 : 1 }}>
       <Check size={14} /> {saveLabel}
     </button>
   );
@@ -1553,6 +1610,14 @@ function LoadForm({ load, onCancel, onSave, saving = false, error, startDirty = 
                     placeholder="Select dispatcher…"
                     icon={<User size={13} />}
                   />
+                  {/* The dispatcher's pay follows the load: say so when it's being handed over. */}
+                  {!isNew && !!load.dispatcher_id && (form.dispatcher_id ?? "") !== load.dispatcher_id && (
+                    <span style={{ ...hintStyle, color: "#B45309" }}>
+                      {form.dispatcher_id
+                        ? `KPI for this load will go to ${form.dispatcher || "the new dispatcher"}, not ${load.dispatcher || "the previous one"} — it's paid to whoever is the dispatcher when the load is completed.`
+                        : `With no dispatcher, nobody is paid a KPI for this load${load.dispatcher ? ` (it was ${load.dispatcher}'s)` : ""}.`}
+                    </span>
+                  )}
                 </div>
                 {/* Status (hidden on create). A queued/next load has no status — show it
                     blank rather than a fake "reserved", and only send one if the user picks it. */}
@@ -1593,6 +1658,7 @@ function LoadForm({ load, onCancel, onSave, saving = false, error, startDirty = 
                       const isFirst = idx === 0;
                       const isLast  = idx === stops.length - 1;
                       const needed  = submitted && (isFirst || isLast) && !stop.city.trim();
+                      const where   = stopState(stop);
                       // The appointment text, as parts — each field edits its own part.
                       const appt    = parseAppt(stop.appt);
                       const setAppt = (patch: Partial<ApptParts>) => updateAppt(idx, formatApptParts({ ...appt, ...patch, note: "" }));
@@ -1628,15 +1694,29 @@ function LoadForm({ load, onCancel, onSave, saving = false, error, startDirty = 
 
                           {/* Location field */}
                           <div style={{ minWidth: 0 }}>
-                            <AddressAutocomplete
-                              value={stop.text ?? joinAddress(stop)}
-                              placeholder={isFirst ? "Pickup address or City, ST" : isLast ? "Delivery address or City, ST" : "Stop address or City, ST"}
-                              onChange={(v) => updateAddress(idx, v)}
-                              onSelect={(parts, lat, lng) => selectAddress(idx, parts, lat, lng)}
-                              style={{ ...inputStyle, borderColor: needed ? "#EF4444" : "var(--border)" }}
-                              onFocus={focusInput}
-                              onBlur={(e) => { blurInput(e); recalcSoon(); }}
-                            />
+                            {/* The address, with a mark for whether the map knows where it is */}
+                            <div style={{ position: "relative" }}>
+                              <AddressAutocomplete
+                                value={stop.text ?? joinAddress(stop)}
+                                placeholder={isFirst ? "Pickup address or City, ST" : isLast ? "Delivery address or City, ST" : "Stop address or City, ST"}
+                                onChange={(v) => updateAddress(idx, v)}
+                                onSelect={(parts, lat, lng) => selectAddress(idx, parts, lat, lng)}
+                                style={{ ...inputStyle, paddingRight: 32, borderColor: needed ? "#EF4444" : where === "notFound" ? "#D97706" : "var(--border)" }}
+                                onFocus={focusInput}
+                                onBlur={(e) => { blurInput(e); if (where === "notFound") e.currentTarget.style.borderColor = "#D97706"; recalcSoon(); }}
+                              />
+                              <span aria-hidden style={{ position: "absolute", right: 10, top: 18, transform: "translateY(-50%)", display: "flex", pointerEvents: "none" }}>
+                                {where === "located"  && <MapPin size={14} style={{ color: "var(--primary)" }} />}
+                                {where === "locating" && <span style={{ boxSizing: "border-box", width: 14, height: 14, borderRadius: "50%", border: "2px solid var(--border)", borderTopColor: "var(--muted-foreground)", animation: "spin 0.7s linear infinite", display: "block" }} />}
+                                {where === "notFound" && <AlertCircle size={14} style={{ color: "#D97706" }} />}
+                              </span>
+                            </div>
+                            <span role="status" style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)" }}>
+                              {where === "located" ? "Located on the map" : where === "locating" ? "Looking up this address" : where === "notFound" ? "Address not found" : ""}
+                            </span>
+                            {where === "notFound" && (
+                              <div style={{ ...hintStyle, color: "#B45309", marginTop: 4 }}>Can't find this address on the map. Start typing and pick one from the list.</div>
+                            )}
                           </div>
 
                           {/* Appointment day — one day, or a range of days */}
@@ -1685,6 +1765,26 @@ function LoadForm({ load, onCancel, onSave, saving = false, error, startDirty = 
                   </div>
 
                   {submitted && routeMissing && <span style={errStyle}>A load needs a pickup and a delivery.</span>}
+
+              {/* Why the save was stopped: which stops, and what to do about them */}
+              {unlocated.length > 0 && (
+                <div role="alert" style={{ display: "flex", gap: 10, padding: "10px 12px", borderRadius: 8, backgroundColor: "rgba(245,158,11,0.10)", border: "1px solid rgba(245,158,11,0.40)" }}>
+                  <AlertCircle size={15} style={{ color: "#D97706", flexShrink: 0, marginTop: 1 }} />
+                  <div style={{ fontFamily: "var(--font-sans)", fontSize: 12.5, color: "var(--foreground)", lineHeight: 1.5, minWidth: 0 }}>
+                    <div style={{ fontWeight: 600 }}>
+                      Not saved — {unlocated.length === 1 ? "one stop isn't" : `${unlocated.length} stops aren't`} located on the map.
+                    </div>
+                    {unlocated.map((u) => (
+                      <div key={u.letter} style={{ overflowWrap: "anywhere" }}>
+                        Stop {u.letter}: <span style={{ fontFamily: "var(--font-mono)", fontSize: 12 }}>{u.text}</span>
+                      </div>
+                    ))}
+                    <div style={{ color: "var(--muted-foreground)" }}>
+                      Retype each one and pick it from the list of suggestions. Without a location the board can't show the miles left to that stop.
+                    </div>
+                  </div>
+                </div>
+              )}
 
                   <div>
                     <button onClick={addStop} style={{
@@ -2214,6 +2314,8 @@ export function LoadsPage() {
   const [delBusy, setDelBusy]       = useState(false);
   const [delErr, setDelErr]         = useState<string | null>(null);
   const [filterStatus, setFilter]   = useState("All");
+  // Loads created within this period. All time = no date filter.
+  const [created, setCreated]       = useState<Period>(ALL_TIME);
   const [search, setSearch]         = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [page, setPage]             = useState(1);
@@ -2235,23 +2337,34 @@ export function LoadsPage() {
 
   useEffect(() => { setPage(1); }, [filterStatus]);
 
+  // True once the first answer is in. Only that very first wait takes over the page; after
+  // it, changing a filter keeps the toolbar where it is and the table shows the waiting.
+  const [loadedOnce, setLoadedOnce] = useState(false);
+
   useEffect(() => {
+    // Filters can change faster than the server answers — only the latest request may
+    // write to the table, or a slow earlier answer would overwrite a newer one.
+    let cancelled = false;
     setLoading(true);
     api.getList<BackendLoad>("/loads", {
       q: debouncedSearch || undefined,
       status: filterStatus !== "All" ? filterStatus : undefined,
+      from: created.from || undefined,
+      to: created.to || undefined,
       page,
       page_size: pageSize,
     })
       .then(({ items, total: t }) => {
+        if (cancelled) return;
         const mapped = (items ?? []).map((b) => toLoad(b));
         setLoads(mapped);
         setTotal(t);
         setDetail((prev) => prev ? (mapped.find((l) => l.id === prev.id) ?? null) : null);
       })
-      .catch((e) => notify.error(friendlyError(e)))
-      .finally(() => setLoading(false));
-  }, [fetchKey, debouncedSearch, filterStatus, page, pageSize]);
+      .catch((e) => { if (!cancelled) notify.error(friendlyError(e)); })
+      .finally(() => { if (!cancelled) { setLoading(false); setLoadedOnce(true); } });
+    return () => { cancelled = true; };
+  }, [fetchKey, debouncedSearch, filterStatus, created, page, pageSize]);
 
   const patchLoad = async (id: string, fields: Partial<Load>) => {
     const current = loads.find((l) => l.id === id);
@@ -2307,7 +2420,7 @@ export function LoadsPage() {
   const handleSearch = (v: string) => setSearch(v);
   const handleFilter = (v: string) => setFilter(v);
 
-  if (loading && loads.length === 0) return (
+  if (!loadedOnce) return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", backgroundColor: "var(--background)" }}>
       <PageLoader label="loads" />
     </div>
@@ -2326,7 +2439,7 @@ export function LoadsPage() {
 
           {/* Toolbar */}
           <div style={{
-            display: "flex", alignItems: "center", gap: 10,
+            display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
             padding: "12px 16px", borderBottom: "1px solid var(--border)",
             backgroundColor: "var(--card)", flexShrink: 0,
           }}>
@@ -2354,8 +2467,11 @@ export function LoadsPage() {
               value={filterStatus}
               options={STATUS_FILTER_OPTS}
               onChange={handleFilter}
-              width={172}
+              width={150}
             />
+
+            {/* When the load was created — the same period control as Dashboard and Payouts */}
+            <PeriodFilter value={created} onChange={(p) => { setCreated(p); setPage(1); }} weekStartDay={user?.company?.week_start_day ?? 1} />
 
             <div style={{ flex: 1 }} />
 
@@ -2497,10 +2613,10 @@ export function LoadsPage() {
                     </td>
                   </tr>
                 ))}
-                {!loading && loads.length === 0 && (
+                {loads.length === 0 && (
                   <tr>
                     <td colSpan={11} style={{ padding: "40px 20px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
-                      No loads match your filters.
+                      {loading ? "Loading loads…" : "No loads match your filters."}
                     </td>
                   </tr>
                 )}
