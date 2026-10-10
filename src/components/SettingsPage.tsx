@@ -61,6 +61,9 @@ interface User {
   login: string;
   password: string;
   status: UserStatus;
+  // The percent of each completed load's rate this person is paid today; null when they
+  // are not paid one. Read-only here — it is changed in the user form's "Paid per load".
+  kpiPercent: number | null;
 }
 
 // ─── Backend types + mappers ──────────────────────────────────────────────────
@@ -77,6 +80,7 @@ interface BackendUser {
   work_days?: string;
   work_from?: string;
   work_to?: string;
+  kpi_percent?: number | null;
 }
 
 interface BackendRole {
@@ -165,6 +169,7 @@ function toUser(b: BackendUser): User {
     login:    b.email ?? b.login ?? "",
     password: "",
     status:   (b.status === "active" || b.status === "Active") ? "Active" : "Suspended",
+    kpiPercent: b.kpi_percent ?? null,
   };
 }
 
@@ -1098,6 +1103,7 @@ function UsersTab({ roles, teams, reloadTeams, reloadRoles, canCreate, canUpdate
               <TH width={100}>Work Days</TH>
               <TH width={120}>Hours</TH>
               <TH width={110}>Role</TH>
+              <TH width={80}>KPI</TH>
               <TH width={130}>Team</TH>
               <TH width={140}>Login</TH>
               <TH width={90}>Status</TH>
@@ -1106,9 +1112,9 @@ function UsersTab({ roles, teams, reloadTeams, reloadRoles, canCreate, canUpdate
           </thead>
           <tbody>
             {loading && (
-              <tr><td colSpan={9} style={{ padding: 0 }}><PageLoader label="users" /></td></tr>
+              <tr><td colSpan={10} style={{ padding: 0 }}><PageLoader label="users" /></td></tr>
             )}
-            {!loading && loadErr && <LoadErrorRow colSpan={9} message={loadErr} onRetry={() => setFetchKey((k) => k + 1)} />}
+            {!loading && loadErr && <LoadErrorRow colSpan={10} message={loadErr} onRetry={() => setFetchKey((k) => k + 1)} />}
             {!loading && !loadErr && paginated.map((u, i) => {
               const role = roleOf(u);
               // A user's team is derived from the team that lists them (user body has no team field).
@@ -1131,6 +1137,7 @@ function UsersTab({ roles, teams, reloadTeams, reloadRoles, canCreate, canUpdate
                       {role?.name ?? (u.roleName || <Dash />)}
                     </span>
                   </td>
+                  <TD mono>{u.kpiPercent ? `${u.kpiPercent.toLocaleString("en-US", { maximumFractionDigits: 2 })}%` : <Dash />}</TD>
                   <TD><span style={{ color: "var(--muted-foreground)" }}>{team?.name ?? <Dash />}</span></TD>
                   <TD mono>{u.login}</TD>
                   <td style={{ padding: "8px 14px", borderBottom: "1px solid var(--border)", verticalAlign: "middle" }}>
@@ -1156,7 +1163,7 @@ function UsersTab({ roles, teams, reloadTeams, reloadRoles, canCreate, canUpdate
             })}
             {!loading && !loadErr && paginated.length === 0 && (
               <tr>
-                <td colSpan={9} style={{ padding: "32px 24px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)", borderBottom: "1px solid var(--border)" }}>
+                <td colSpan={10} style={{ padding: "32px 24px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)", borderBottom: "1px solid var(--border)" }}>
                   No users found.
                 </td>
               </tr>

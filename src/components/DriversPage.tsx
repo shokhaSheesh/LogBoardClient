@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { Dash } from "./Dash";
 import { fmtDate, fmtDateRange } from "../lib/dates";
+import { weekOf } from "./PeriodFilter";
 import { NumberField } from "./NumberField";
 import { DatePicker } from "./DatePicker";
 
@@ -1046,6 +1047,22 @@ function LoadQueue({ items, hasDeck, readOnly, onChange }: {
 // changes meaning with it: $/mile for RPM (paid on total distance, deadhead included),
 // or a 0–100 share of gross for percent. Clamped to 100 for percent because the backend
 // rejects more (55 mistyped as 5500 would otherwise skew every gross week it touched).
+// Says when a changed weekly target takes effect. Unlike pay there is no start date to pick:
+// the new target counts from the work week it is saved in — the whole week, whichever day
+// that is — and the weeks before keep the one they had. Shown only once the number differs
+// from what the form opened with.
+function TargetNote({ was, now }: { was?: number; now?: number }) {
+  const { user } = useAuth();
+  if ((was ?? 0) === (now ?? 0)) return null;
+  const week = weekOf(new Date(), user?.company?.week_start_day ?? 1);
+  const before = was ? `$${was.toLocaleString("en-US")}` : "no target";
+  return (
+    <span role="note" style={{ fontFamily: "var(--font-sans)", fontSize: 11.5, lineHeight: 1.4, color: "var(--muted-foreground)" }}>
+      Counts from this week ({fmtDateRange(week.from, week.to)}). Earlier weeks keep {before}.
+    </span>
+  );
+}
+
 function PayFields({ driverId, was, payType, payRate, activeFrom, onChange }: {
   driverId?: string;                                  // set when editing — its pay history is shown
   was: { payType: PayType; payRate?: number };        // the pay the form opened with
@@ -1215,6 +1232,7 @@ function SoloModal({ driver, onClose, onSave, canReorderLoads, saving, error, fi
             <FieldLabel>Weekly gross target</FieldLabel>
             <NumberField label="Weekly gross target" prefix="$" placeholder="e.g. 5000" value={form.weeklyGrossTarget}
               onChange={(n) => setForm((f) => ({ ...f, weeklyGrossTarget: n === 0 ? undefined : n }))} />
+            {driver.id && <TargetNote was={driver.weeklyGrossTarget} now={form.weeklyGrossTarget} />}
           </label>
 
           <PayFields
@@ -1361,6 +1379,7 @@ function TeamModal({ driver, onClose, onSave, canReorderLoads, saving, error, fi
             <FieldLabel>Weekly gross target</FieldLabel>
             <NumberField label="Weekly gross target" prefix="$" placeholder="e.g. 7000" value={form.weeklyGrossTarget}
               onChange={(n) => setForm((f) => ({ ...f, weeklyGrossTarget: n === 0 ? undefined : n }))} />
+            {driver.id && <TargetNote was={driver.weeklyGrossTarget} now={form.weeklyGrossTarget} />}
           </label>
 
           <PayFields

@@ -207,27 +207,36 @@ const TYPE_CONFIG: Record<DriverType, { color: string; bg: string }> = {
   "C/D": { color: "#8B5CF6", bg: "rgba(139,92,246,0.14)" },
 };
 
-const LOAD_ID_LEFT   = 0;
-const DRIVER_NM_LEFT = 204; // = Load ID width, so Driver Name sticks right after it
-
-// One thing per column, each at a fixed width, so every value sits at the same x on every
-// row. A team's two people take two lines across Driver and Phone — no taller than a
-// two-stop route.
+// One thing per column, so every value sits at the same x on every row. A team's two people
+// take two lines across Driver and Phone — no taller than a two-stop route.
+//
+// `width` is the least a column needs; the table never goes narrower than their sum (it
+// scrolls sideways instead). On a wider screen the spare room is shared out by `grow`: the
+// columns whose text gets cut off — a broker and load number, a name, a city, an address, a
+// comment — take it, and the ones that hold a chip or a short code stay as they are.
 const COLUMNS = [
-  { label: "Load",         width: 204, sticky: true,  left: LOAD_ID_LEFT   },
-  { label: "Driver",       width: 176, sticky: true,  left: DRIVER_NM_LEFT },
-  { label: "Phone",        width: 140, sticky: false                        },
-  { label: "Unit",         width: 104, sticky: false                        },
-  { label: "Type",         width: 78,  sticky: false                        },
-  { label: "Status",       width: 134, sticky: false                        },
-  { label: "Route",        width: 214, sticky: false                        },
-  { label: "Appointments", width: 232, sticky: false                        },
-  { label: "Location",     width: 244, sticky: false                        },
-  { label: "ETA",          width: 150, sticky: false                        },
-  { label: "Comments",     width: 250, sticky: false                        },
+  { label: "Load",         width: 204, grow: 2, sticky: true  },
+  { label: "Driver",       width: 176, grow: 2, sticky: true  },
+  { label: "Phone",        width: 140, grow: 0, sticky: false },
+  { label: "Unit",         width: 104, grow: 0, sticky: false },
+  { label: "Type",         width: 78,  grow: 0, sticky: false },
+  { label: "Status",       width: 134, grow: 0, sticky: false },
+  { label: "Route",        width: 214, grow: 3, sticky: false },
+  { label: "Appointments", width: 232, grow: 1, sticky: false },
+  { label: "Location",     width: 244, grow: 4, sticky: false },
+  { label: "ETA",          width: 150, grow: 0, sticky: false },
+  { label: "Comments",     width: 250, grow: 4, sticky: false },
 ];
 
 const TABLE_W = COLUMNS.reduce((sum, c) => sum + c.width, 0);
+const GROW_SUM = COLUMNS.reduce((sum, c) => sum + c.grow, 0);
+
+// Each column's width for a board `available` px wide. Whole pixels, so the pinned Driver
+// column sits exactly where the Load column ends.
+function columnWidths(available: number): number[] {
+  const spare = Math.max(0, Math.floor(available) - TABLE_W);
+  return COLUMNS.map((c) => c.width + Math.floor((spare * c.grow) / GROW_SUM));
+}
 
 // A status as a soft chip: a light tint of its colour with the text in a deeper shade,
 // plus the full colour for dots and row edges. Mixed against the theme's own card and
@@ -536,31 +545,23 @@ function ApptText({ value, color, done }: { value: string; color: string; done?:
   );
 }
 
-// Keep the broker short on the board: just its first word, then "…". If that first word
-// is itself long (a run-on name with no spaces), cut it at 10 characters. The full name
-// is always in the tooltip.
-function shortBroker(b: string): string {
-  const t = b.trim();
-  const sp = t.indexOf(" ");
-  if (sp === -1) return t.length > 10 ? t.slice(0, 10) + "…" : t;      // one word
-  const first = t.slice(0, sp);
-  return (first.length > 10 ? first.slice(0, 10) : first) + "…";       // first word of many
-}
-
-// "<broker> - <load id>", broker shortened via shortBroker so the id is never crowded
-// out. Sized by the caller's font styles; used for the current load and each queued one.
-// When onOpen is given, clicking it jumps to that load's edit modal on the Loads page.
+// "<broker> - <load id>". The broker gives way first: it takes whatever room the column has
+// and is cut with "…" only when that runs out, while the load id is never shortened — so a
+// wider board shows more of the name instead of a fixed ten characters. The full text is in
+// the tooltip. Sized by the caller's font styles; used for the current load and each queued
+// one. When onOpen is given, clicking it jumps to that load's edit page.
 function BrokerLoadId({ broker, loadId, color, size, weight, onOpen }: {
   broker?: string; loadId: string; color: string; size: number; weight: number; onOpen?: () => void;
 }) {
   return (
     <span title={broker ? `${broker} - ${loadId}` : loadId}
       onClick={onOpen}
-      style={{ display: "block", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", fontFamily: "var(--font-mono)", fontSize: size, fontWeight: weight, color, cursor: onOpen ? "pointer" : "default", textDecoration: onOpen ? "underline" : "none", textDecorationColor: "transparent", transition: "text-decoration-color 0.12s" }}
+      style={{ display: "flex", alignItems: "baseline", minWidth: 0, whiteSpace: "nowrap", fontFamily: "var(--font-mono)", fontSize: size, fontWeight: weight, color, cursor: onOpen ? "pointer" : "default", textDecoration: onOpen ? "underline" : "none", textDecorationColor: "transparent", transition: "text-decoration-color 0.12s" }}
       onMouseEnter={onOpen ? (e) => { (e.currentTarget as HTMLElement).style.textDecorationColor = "currentColor"; } : undefined}
       onMouseLeave={onOpen ? (e) => { (e.currentTarget as HTMLElement).style.textDecorationColor = "transparent"; } : undefined}>
-      {broker && <span style={{ color: "var(--muted-foreground)", fontWeight: 400 }}>{shortBroker(broker)} - </span>}
-      {loadId}
+      {broker && <span style={{ flex: "0 1 auto", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", color: "var(--muted-foreground)", fontWeight: 400 }}>{broker.trim()}</span>}
+      {broker && <span style={{ flexShrink: 0, whiteSpace: "pre", color: "var(--muted-foreground)", fontWeight: 400 }}> - </span>}
+      <span style={{ flexShrink: 0 }}>{loadId}</span>
     </span>
   );
 }
@@ -998,6 +999,21 @@ export function DispatchTable() {
   // Whether the board is receiving live pushes. "connecting" covers the first handshake;
   // "offline" means the socket is down and we are retrying (and polling meanwhile).
   const [live, setLive] = useState<"connecting" | "live" | "offline">("connecting");
+  // The board area's width, so the columns can use a wide screen (see columnWidths).
+  const boardRef = useRef<HTMLDivElement>(null);
+  const [boardW, setBoardW] = useState(0);
+  useEffect(() => {
+    const el = boardRef.current;
+    if (!el) return;
+    const measure = () => setBoardW(el.clientWidth);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const colW = columnWidths(boardW);
+  const tableW = colW.reduce((a, b) => a + b, 0);
+  const driverLeft = colW[0]; // the Driver column is pinned right after Load
   // Edits the user has made that the server has not confirmed back yet, per driver. While
   // an entry is here its fields win over anything the server pushes — a snapshot computed
   // a moment before the save landed must not paint the old value back over the new one.
@@ -1621,7 +1637,7 @@ export function DispatchTable() {
       </div>
 
       {/* ── Table(s) ── */}
-      <div style={{ flex: 1, overflow: "auto", position: "relative", scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent" }}>
+      <div ref={boardRef} style={{ flex: 1, overflow: "auto", position: "relative", scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent" }}>
         {loading ? (
           <PageLoader label="board" />
         ) : error ? (
@@ -1665,11 +1681,11 @@ export function DispatchTable() {
   // single "All drivers" table, and once per section in the "By team" view.
   function renderBoardTable(driversList: Driver[], emptyMessage: string) {
     return (
-          <table style={{ width: `max(100%, ${TABLE_W}px)`, borderCollapse: "separate", borderSpacing: 0, tableLayout: "fixed" }}>
-            {/* Every column keeps its exact width — the pinned Driver column is placed by the
-                Load column's — and only the last one (Comments) takes up any spare room. */}
+          <table style={{ width: `max(100%, ${tableW}px)`, borderCollapse: "separate", borderSpacing: 0, tableLayout: "fixed" }}>
+            {/* Widths come from columnWidths: the minimum each column needs, plus its share of
+                a wide screen. The last column is left unset so it absorbs rounding. */}
             <colgroup>
-              {COLUMNS.map((c, i) => <col key={c.label} style={i === COLUMNS.length - 1 ? undefined : { width: c.width }} />)}
+              {COLUMNS.map((c, i) => <col key={c.label} style={i === COLUMNS.length - 1 ? undefined : { width: colW[i] }} />)}
             </colgroup>
             <thead>
               <tr style={{ position: "sticky", top: 0, zIndex: 15 }}>
@@ -1680,7 +1696,7 @@ export function DispatchTable() {
                     color: "var(--muted-foreground)", letterSpacing: "0.06em", textTransform: "uppercase",
                     backgroundColor: "var(--card)", borderBottom: "1px solid var(--border)",
                     whiteSpace: "nowrap", userSelect: "none",
-                    ...(col.sticky ? { position: "sticky" as const, left: col.left, zIndex: 16, boxShadow: i === 1 ? "inset -1px 0 0 var(--border)" : undefined } : {}),
+                    ...(col.sticky ? { position: "sticky" as const, left: i === 0 ? 0 : driverLeft, zIndex: 16, boxShadow: i === 1 ? "inset -1px 0 0 var(--border)" : undefined } : {}),
                   }}>
                     {col.label}
                   </th>
@@ -1734,7 +1750,7 @@ export function DispatchTable() {
 
                     {/* Load — sticky, read-only, with the status colour down its left edge.
                         Upcoming queued loads render below, smaller, so they read as "next". */}
-                    <td style={td({ position: "sticky", left: LOAD_ID_LEFT, zIndex: 3, width: 204, minWidth: 204, boxShadow: `inset 3px 0 0 ${softStatus(driver.status).dot}` })}>
+                    <td style={td({ position: "sticky", left: 0, zIndex: 3, width: colW[0], minWidth: colW[0], boxShadow: `inset 3px 0 0 ${softStatus(driver.status).dot}` })}>
                       {driver.loadId && driver.loadId !== "—" ? (
                         <span className="cp-wrap" style={{ ...line, gap: 4 }}>
                           <span style={{ flex: 1, minWidth: 0 }}>
@@ -1773,7 +1789,7 @@ export function DispatchTable() {
 
                     {/* Driver — sticky, read-only. A team shows both people, one per line.
                         Shows a "being edited by X" note when locked. */}
-                    <td style={td({ position: "sticky", left: DRIVER_NM_LEFT, zIndex: 3, width: 176, minWidth: 176, boxShadow: "inset -1px 0 0 var(--border)" })}>
+                    <td style={td({ position: "sticky", left: driverLeft, zIndex: 3, width: colW[1], minWidth: colW[1], boxShadow: "inset -1px 0 0 var(--border)" })}>
                       <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
                         <div style={line}><Copyable value={driver.name} size={13} weight={600} /></div>
                         {driver.team && driver.name2 && <div style={line}><Copyable value={driver.name2} size={13} weight={600} /></div>}
