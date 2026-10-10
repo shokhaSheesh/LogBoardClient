@@ -5,7 +5,7 @@ import {
   Package, Plus, Pencil, Trash2, X, Check, AlertCircle,
   Search, ChevronDown, ChevronLeft, ChevronRight,
   ClipboardList, Sparkles, Upload, FileText,
-  ArrowLeft, ArrowRight, MapPin, Building2, User, DollarSign, Clock, History, CalendarDays, Navigation, GripVertical,
+  ArrowLeft, ArrowRight, MapPin, Building2, User, DollarSign, Clock, History, CalendarDays, Navigation, Truck, Container, GripVertical,
 } from "lucide-react";
 import { Status, STATUS_CONFIG as SHARED_STATUS_CONFIG, ALL_STATUSES as SHARED_ALL_STATUSES } from "../lib/statuses";
 import { api, ApiError, isForbidden } from "../lib/api";
@@ -83,6 +83,10 @@ interface Load {
   deadheadMiles: number;   // empty miles run to reach this load's pickup
   dispatcher: string;
   dispatcher_id: string;
+  // The equipment on the load: the driver's current units while it runs, the ones it was
+  // completed with afterwards (the backend keeps them on the load).
+  truckUnit: string;
+  trailerUnit: string;
 }
 
 interface BackendLoad {
@@ -100,6 +104,8 @@ interface BackendLoad {
   stops?: Stop[];
   dispatcher_id?: string;
   dispatcher?: string;
+  truck_unit?: string;
+  trailer_unit?: string;
 }
 
 // ─── Config ───────────────────────────────────────────────────────────────────
@@ -135,6 +141,8 @@ function toLoad(b: BackendLoad): Load {
       lng: s.location?.lng ?? s.lng,
     })),
     dispatcher: b.dispatcher ?? "",
+    truckUnit:   b.truck_unit   ?? "",
+    trailerUnit: b.trailer_unit ?? "",
     dispatcher_id: b.dispatcher_id ?? "",
   };
 }
@@ -2051,6 +2059,8 @@ function LoadDetail({ load, onBack, onEdit }: { load: Load; onBack: () => void; 
     { icon: <Building2 size={13} />,  label: "Broker",       value: load.broker || <Dash /> },
     { icon: <User size={13} />,       label: "Driver",       value: load.driver || <span style={{ color: "var(--muted-foreground)", fontWeight: 400 }}>Unassigned</span> },
     { icon: <User size={13} />,       label: "Dispatcher",   value: load.dispatcher || <Dash /> },
+    { icon: <Truck size={13} />,      label: "Truck",        value: load.truckUnit ? <span style={mono}>{load.truckUnit}</span> : <Dash /> },
+    { icon: <Container size={13} />,  label: "Trailer",      value: load.trailerUnit ? <span style={mono}>{load.trailerUnit}</span> : <Dash /> },
     { icon: <DollarSign size={13} />, label: "Rate",         value: <span style={mono}>${load.payout.toLocaleString()}</span> },
     { icon: <Navigation size={13} />, label: "Loaded miles", value: <span style={mono}>{load.totalMiles.toLocaleString()} mi</span> },
     { icon: <Navigation size={13} />, label: "Deadhead",     value: <span style={mono}>{load.deadheadMiles.toLocaleString()} mi</span> },

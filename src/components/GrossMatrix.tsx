@@ -28,6 +28,9 @@ interface DriverRow {
   name: string;
   driverType: "O/O" | "C/D";
   unit: string;
+  // Set (YYYY-MM-DD) for a driver who has since been removed. They are still listed for the
+  // weeks they worked, but the row is history: its cells can't be edited.
+  removedOn?: string;
   dateMap: Record<string, DayCell>;
   weeklyTarget?: number;
   companyProfit: number;
@@ -52,6 +55,7 @@ interface BackendDriverRow {
   name2?: string;
   driver_type?: string;
   unit?: string;
+  removed_on?: string;
   weekly_target?: number;
   company_profit?: number;
   week_total?: number; // the row's earnings for the window (load cells only)
@@ -81,6 +85,7 @@ function toDriverRow(b: BackendDriverRow): DriverRow {
     name:          driverDisplayName({ name: b.name, name2: b.name2, team: b.team }),
     driverType:    (b.driver_type as "O/O" | "C/D") ?? "O/O",
     unit:          b.unit          ?? "",
+    removedOn:     b.removed_on || undefined,
     weeklyTarget:  b.weekly_target,
     companyProfit: b.company_profit ?? 0,
     weekTotal:     b.week_total,
@@ -984,13 +989,16 @@ export function GrossMatrix() {
             // Target may be unset (0/undefined) — keep the same layout regardless: $0 / 0% / empty bar.
             const targetPct = driver.weeklyTarget ? Math.min(100, Math.round((total / driver.weeklyTarget) * 100)) : 0;
 
+            // A removed driver's row is history — shown, not editable.
+            const editable = canEdit && !driver.removedOn;
+
             return (
               <tr key={driver.id}>
                 {/* Driver — name, with unit and type on the second line */}
                 <td style={{ width: DRV_W, minWidth: DRV_W, height: 46, padding: "0 14px", verticalAlign: "middle", borderRight: edge, borderBottom: edge, backgroundColor: "var(--card)", position: "sticky", left: 0, zIndex: 10 }}>
-                  <div title={driver.name} style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, color: "var(--foreground)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{driver.name}</div>
+                  <div title={driver.name} style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, color: driver.removedOn ? "var(--muted-foreground)" : "var(--foreground)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{driver.name}</div>
                   <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--muted-foreground)", whiteSpace: "nowrap" }}>
-                    {[driver.unit, driver.driverType].filter(Boolean).join(" · ")}
+                    {[driver.unit, driver.driverType, driver.removedOn && `Removed ${fmtDate(driver.removedOn)}`].filter(Boolean).join(" · ")}
                   </div>
                 </td>
 
@@ -1002,24 +1010,24 @@ export function GrossMatrix() {
                   return (
                     <td
                       key={iso}
-                      tabIndex={canEdit ? 0 : undefined}
-                      aria-label={canEdit ? `Edit ${driver.name}, ${iso}` : undefined}
-                      onClick={canEdit ? (e) => openCellEdit(driver, iso, cell, e.currentTarget) : undefined}
-                      onKeyDown={canEdit ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openCellEdit(driver, iso, cell, e.currentTarget); } } : undefined}
+                      tabIndex={editable ? 0 : undefined}
+                      aria-label={editable ? `Edit ${driver.name}, ${iso}` : undefined}
+                      onClick={editable ? (e) => openCellEdit(driver, iso, cell, e.currentTarget) : undefined}
+                      onKeyDown={editable ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openCellEdit(driver, iso, cell, e.currentTarget); } } : undefined}
                       style={{
                         width: DAY_W, minWidth: DAY_W, height: 46, padding: "0 6px",
                         textAlign: "center", verticalAlign: "middle", overflow: "hidden",
                         borderRight: "1px solid color-mix(in srgb, var(--border) 55%, transparent)",
                         borderBottom: edge,
                         backgroundColor: base,
-                        cursor: canEdit ? "pointer" : "default",
+                        cursor: editable ? "pointer" : "default",
                         outline: isActive ? "2px solid var(--primary)" : "none",
                         outlineOffset: -2,
                       }}
-                      onMouseEnter={canEdit ? (e) => { if (!isActive) e.currentTarget.style.backgroundColor = "var(--muted)"; } : undefined}
-                      onMouseLeave={canEdit ? (e) => { e.currentTarget.style.backgroundColor = base; } : undefined}
-                      onFocus={canEdit ? (e) => { if (!isActive) e.currentTarget.style.outline = "2px solid var(--primary-glow)"; } : undefined}
-                      onBlur={canEdit ? (e) => { if (!isActive) e.currentTarget.style.outline = "none"; } : undefined}
+                      onMouseEnter={editable ? (e) => { if (!isActive) e.currentTarget.style.backgroundColor = "var(--muted)"; } : undefined}
+                      onMouseLeave={editable ? (e) => { e.currentTarget.style.backgroundColor = base; } : undefined}
+                      onFocus={editable ? (e) => { if (!isActive) e.currentTarget.style.outline = "2px solid var(--primary-glow)"; } : undefined}
+                      onBlur={editable ? (e) => { if (!isActive) e.currentTarget.style.outline = "none"; } : undefined}
                     >
                       <DayCellContent cell={cell} dark={dark} />
                     </td>
