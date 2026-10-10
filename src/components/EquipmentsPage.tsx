@@ -1,3 +1,4 @@
+import { humanize } from "../lib/errors";
 import { useState, useRef, useEffect } from "react";
 import { Truck, Container, Plus, Pencil, Trash2, X, Check, Search, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, FileSpreadsheet, Upload, FileText, AlertCircle, User } from "lucide-react";
 import { api, isForbidden } from "../lib/api";
@@ -750,7 +751,7 @@ function ImportModal({ entityLabel, endpoint, onClose, onImported }: {
                 <div style={{ display: "flex", flexDirection: "column", gap: 3, maxHeight: 140, overflowY: "auto" }}>
                   {result.errors.map((er, i) => (
                     <div key={i} style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "#92400E" }}>
-                      <span style={{ fontFamily: "var(--font-mono)", fontWeight: 700 }}>Row {er.row}:</span> {er.message}
+                      <span style={{ fontFamily: "var(--font-mono)", fontWeight: 700 }}>Row {er.row}:</span> {humanize(er.message, 400, "This row could not be imported.")}
                     </div>
                   ))}
                 </div>
@@ -930,7 +931,7 @@ function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
         setTotal(t);
         onCountChange(t);
       })
-      .catch((e) => setError(e.message))
+      .catch((e) => setError(friendlyError(e, "Couldn't load this. Try again.")))
       .finally(() => setLoading(false));
   }, [debouncedQ, page, pageSize, fetchKey]);
 
@@ -1116,7 +1117,7 @@ function TrailersTab({ onCountChange }: { onCountChange: (n: number) => void }) 
         setTotal(t);
         onCountChange(t);
       })
-      .catch((e) => setError(e.message))
+      .catch((e) => setError(friendlyError(e, "Couldn't load this. Try again.")))
       .finally(() => setLoading(false));
   }, [debouncedQ, page, pageSize, fetchKey]);
 

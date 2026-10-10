@@ -3,7 +3,7 @@ import { X, RefreshCw, Link2, Unlink, AlertCircle, Check, Truck, Phone } from "l
 import { api, ApiError } from "../lib/api";
 import { AsyncSearchableSelect } from "./AsyncSelect";
 import { driverDisplayName } from "../lib/driverName";
-import { FormError } from "./feedback";
+import { FormError, friendlyError } from "./feedback";
 
 // One entry from GET /eld/drivers: a driver on the provider's roster, and how (if at all)
 // it maps to a board driver.
@@ -27,7 +27,7 @@ export function eldErrorMessage(e: unknown): string {
     case "unknown_provider":       return "That ELD provider doesn't have an integration yet.";
     case "invalid_eld_credentials":return "The ELD provider rejected the saved key. It needs to be reconnected with a valid one.";
     case "eld_unavailable":        return "The ELD provider is temporarily unavailable. This is on their end — try again shortly.";
-    default:                       return e instanceof Error ? e.message : "Something went wrong talking to the ELD.";
+    default:                       return friendlyError(e, "Something went wrong talking to the ELD.");
   }
 }
 

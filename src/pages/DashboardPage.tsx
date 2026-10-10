@@ -1,3 +1,4 @@
+import { friendlyError } from "../lib/errors";
 import { useState, useEffect } from "react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from "recharts";
 import { Package, CircleDollarSign, Wallet, AlertCircle } from "lucide-react";
@@ -363,7 +364,7 @@ export function DashboardPage() {
           setPeriod(wk);
         }
       })
-      .catch((e) => { if (!stale) setError(e instanceof Error ? e.message : "Failed to load"); })
+      .catch((e) => { if (!stale) setError(friendlyError(e, "Couldn't load the dashboard. Try again.")); })
       .finally(() => { if (!stale) setLoading(false); });
     return () => { stale = true; };
   }, [query]); // eslint-disable-line react-hooks/exhaustive-deps

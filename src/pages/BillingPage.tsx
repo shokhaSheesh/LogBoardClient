@@ -1,3 +1,4 @@
+import { friendlyError } from "../lib/errors";
 import { useState, useEffect } from "react";
 import { CreditCard, Check, Zap, Shield, Building2, AlertCircle, Download } from "lucide-react";
 import { api, getCompanyId } from "../lib/api";
@@ -157,7 +158,7 @@ function InlineError({ text }: { text: string }) {
   );
 }
 
-const errText = (e: unknown, fallback: string) => (e instanceof Error ? e.message : fallback);
+const errText = (e: unknown, fallback: string) => friendlyError(e, fallback);
 
 export function BillingPage() {
   const [plans, setPlans]       = useState<Plan[]>([]);
@@ -209,7 +210,7 @@ export function BillingPage() {
     ]).then(([p, b, inv]) => {
       if (cancelled) return;
       if (b.status === "fulfilled") setBilling(b.value ?? null);
-      else setError(errText(b.reason, "Failed to load billing"));
+      else setError(errText(b.reason, "Couldn't load billing."));
       if (p.status === "fulfilled") setPlans((p.value ?? []).map(toPlan));
       else { setPlans([]); setPlansErr(errText(p.reason, "Couldn't load the plans.")); }
       if (inv.status === "fulfilled") setInvoices((inv.value ?? []).map(toInvoice));

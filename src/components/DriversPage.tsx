@@ -1,3 +1,4 @@
+import { humanize } from "../lib/errors";
 import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { Status, STATUS_CONFIG, ALL_STATUSES } from "../lib/statuses";
@@ -1577,7 +1578,7 @@ function ImportModal({ entityLabel, endpoint, templateEndpoint, templateFile, on
                 <div style={{ display: "flex", flexDirection: "column", gap: 3, maxHeight: 140, overflowY: "auto" }}>
                   {result.errors.map((er, i) => (
                     <div key={i} style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "#F59E0B" }}>
-                      <span style={{ fontFamily: "var(--font-mono)", fontWeight: 700 }}>Row {er.row}:</span> {er.message}
+                      <span style={{ fontFamily: "var(--font-mono)", fontWeight: 700 }}>Row {er.row}:</span> {humanize(er.message, 400, "This row could not be imported.")}
                     </div>
                   ))}
                 </div>
@@ -2470,7 +2471,7 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
         setTotal(t);
         onCountChange(t);
       })
-      .catch((e) => setError(e.message))
+      .catch((e) => setError(friendlyError(e, "Couldn't load this. Try again.")))
       .finally(() => setLoading(false));
   }, [fetchKey, debouncedSearch, statusFilter, page, pageSize]);
 
@@ -2777,7 +2778,7 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
         setTotal(t);
         onCountChange(t);
       })
-      .catch((e) => setError(e.message))
+      .catch((e) => setError(friendlyError(e, "Couldn't load this. Try again.")))
       .finally(() => setLoading(false));
   }, [fetchKey, debouncedSearch, statusFilter, page, pageSize]);
 

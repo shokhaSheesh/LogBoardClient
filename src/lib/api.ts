@@ -1,16 +1,26 @@
+import { humanize } from "./errors";
+
 const BASE = (import.meta.env.VITE_API_BASE ?? "http://localhost:8080") + "/api/v1";
 
-// Carries the backend's machine-readable error code (e.g. "invalid_truck",
-// "truck_assigned") alongside the human message, so callers can map specific
-// errors to specific form fields instead of just showing a toast.
+// One field a request got wrong, as the API lists them on a validation failure.
+export interface FieldProblem { field: string; rule: string; message: string }
+
+// A failed API call. `code` is the machine-readable reason — what callers branch on (e.g.
+// "truck_assigned" marks the truck field). `message` is the server's own sentence, written
+// for the person using the app, and safe to show as it is; `raw` is exactly what was sent.
+// `fields` names the offending form fields when the body failed validation.
 export class ApiError extends Error {
   code?: string;
   status?: number;
-  constructor(message: string, code?: string, status?: number) {
-    super(message);
+  raw: string;
+  fields: FieldProblem[];
+  constructor(message: string, code?: string, status?: number, fields: FieldProblem[] = []) {
+    super(humanize(message, status));
     this.name = "ApiError";
     this.code = code;
     this.status = status;
+    this.raw = message;
+    this.fields = fields;
   }
 }
 
@@ -59,8 +69,9 @@ export function onEntitlementError(fn: EntitlementListener): () => void {
 // helper (request / requestList / requestPayouts / upload) made the call.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function apiError(json: any, status: number): ApiError {
-  const msg = json?.error?.message ?? json?.error ?? `HTTP ${status}`;
-  const err = new ApiError(msg, json?.error?.code, status);
+  const said = json?.error?.message ?? json?.error;
+  const fields = Array.isArray(json?.error?.fields) ? json.error.fields : [];
+  const err = new ApiError(typeof said === "string" ? said : "", json?.error?.code, status, fields);
   const code = entitlementCode(err);
   if (code) entitlementListeners.forEach((fn) => fn(code, err.message));
   return err;
