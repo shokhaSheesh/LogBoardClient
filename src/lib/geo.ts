@@ -1,9 +1,12 @@
-// Geocoding + routing helpers (OpenStreetMap Nominatim + OSRM public demo servers).
+// Geocoding + routing helpers. Address lookup prefers Google (lib/places) and falls back
+// to OpenStreetMap's Nominatim; routing uses the OSRM public demo server.
 //
 // These are public, rate-limited community servers, so every request is given a hard
 // timeout and can be cancelled via an external AbortSignal — a slow or hung request must
 // never leave the UI spinning. Callers should geocode *sequentially* (not in parallel):
 // Nominatim throttles bursts from a single client.
+
+import { locateText } from "./places";
 
 export interface LatLng { lat: number; lng: number }
 
@@ -28,16 +31,33 @@ async function fetchJson(url: string, external?: AbortSignal): Promise<any | nul
   }
 }
 
-// Resolve a free-text "City, ST" string to coordinates. Returns null when nothing matches.
+// Resolve a line of address text — "4750 W Mohave St, Phoenix, AZ" or just "Phoenix, AZ" —
+// to coordinates. Null when nothing matches.
+//
+// Google is asked first when it is configured (it knows street numbers and facility names);
+// OpenStreetMap answers otherwise, and whenever Google can't. Answers are remembered for
+// the session: the same stop is looked up again every time its load is opened, and there
+// is no reason to ask — or, with Google, to pay — twice.
+const located = new Map<string, LatLng>();
+
 export async function geocodeCity(q: string, signal?: AbortSignal): Promise<LatLng | null> {
-  if (!q.trim()) return null;
-  const data: Array<{ lat: string; lon: string }> | null = await fetchJson(
-    "https://nominatim.openstreetmap.org/search?" +
-      new URLSearchParams({ q, format: "json", countrycodes: "us", limit: "1" }),
-    signal
-  );
-  if (!data?.length) return null;
-  return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+  const key = q.trim().toLowerCase();
+  if (!key) return null;
+  const known = located.get(key);
+  if (known) return known;
+
+  let at: LatLng | null = await locateText(q);
+  if (signal?.aborted) return null;
+  if (!at) {
+    const data: Array<{ lat: string; lon: string }> | null = await fetchJson(
+      "https://nominatim.openstreetmap.org/search?" +
+        new URLSearchParams({ q, format: "json", countrycodes: "us", limit: "1" }),
+      signal
+    );
+    if (data?.length) at = { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+  }
+  if (at) located.set(key, at);
+  return at;
 }
 
 // Total driving distance in miles through the given coordinates in order. Null on failure.

@@ -1331,6 +1331,8 @@ function LoadForm({ load, onCancel, onSave, saving = false, error, startDirty = 
   // address clears its "not found" on its own. `locating` holds the rows being looked up.
   const [failed, setFailed]     = useState<Set<string>>(new Set());
   const [locating, setLocating] = useState<Set<string>>(new Set());
+  // The stop whose address field is searching right now (its row key), for the field's spinner.
+  const [searchingKey, setSearchingKey] = useState<string | null>(null);
   const addrKey = (st: Stop) => joinAddress(st).trim().toLowerCase();
 
   // Look up every filled stop that has no coordinates yet, one at a time (the geocoder
@@ -1619,6 +1621,7 @@ function LoadForm({ load, onCancel, onSave, saving = false, error, startDirty = 
                       const isLast  = idx === stops.length - 1;
                       const needed  = submitted && (isFirst || isLast) && !stop.city.trim();
                       const where   = stopState(stop);
+                      const searching = searchingKey === (stop.k ?? String(idx));
                       // The appointment text, as parts — each field edits its own part.
                       const appt    = parseAppt(stop.appt);
                       const setAppt = (patch: Partial<ApptParts>) => updateAppt(idx, formatApptParts({ ...appt, ...patch, note: "" }));
@@ -1661,14 +1664,18 @@ function LoadForm({ load, onCancel, onSave, saving = false, error, startDirty = 
                                 placeholder={isFirst ? "Pickup address or City, ST" : isLast ? "Delivery address or City, ST" : "Stop address or City, ST"}
                                 onChange={(v) => updateAddress(idx, v)}
                                 onSelect={(parts, lat, lng) => selectAddress(idx, parts, lat, lng)}
+                                onBusy={(b) => setSearchingKey((cur) => b ? (stop.k ?? String(idx)) : cur === (stop.k ?? String(idx)) ? null : cur)}
                                 style={{ ...inputStyle, paddingRight: 32, borderColor: needed ? "#EF4444" : where === "notFound" ? "#D97706" : "var(--border)" }}
                                 onFocus={focusInput}
                                 onBlur={(e) => { blurInput(e); if (where === "notFound") e.currentTarget.style.borderColor = "#D97706"; recalcSoon(); }}
                               />
                               <span aria-hidden style={{ position: "absolute", right: 10, top: 18, transform: "translateY(-50%)", display: "flex", pointerEvents: "none" }}>
+                                {/* While the field is searching, the spinner takes the mark's place. */}
+                                {searching ? <span style={{ boxSizing: "border-box", width: 14, height: 14, borderRadius: "50%", border: "2px solid var(--border)", borderTopColor: "var(--muted-foreground)", animation: "spin 0.7s linear infinite", display: "block" }} /> : (<>
                                 {where === "located"  && <MapPin size={14} style={{ color: "var(--primary)" }} />}
                                 {where === "locating" && <span style={{ boxSizing: "border-box", width: 14, height: 14, borderRadius: "50%", border: "2px solid var(--border)", borderTopColor: "var(--muted-foreground)", animation: "spin 0.7s linear infinite", display: "block" }} />}
                                 {where === "notFound" && <AlertCircle size={14} style={{ color: "#D97706" }} />}
+                                </>)}
                               </span>
                             </div>
                             <span role="status" style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)" }}>
