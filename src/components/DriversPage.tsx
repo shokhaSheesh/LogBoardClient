@@ -6,6 +6,7 @@ import { api, ApiError, isForbidden } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { hasPerm } from "../lib/permissions";
 import { driverDisplayName } from "../lib/driverName";
+import { DriverTelegramGroup } from "./TelegramGroup";
 import { menuPosition } from "../lib/menuPosition";
 import { UncompleteConfirm } from "./UncompleteConfirm";
 import { EldModal } from "./EldModal";
@@ -1956,6 +1957,8 @@ function DriverDetail({ driver, onBack }: { driver: SoloDriver; onBack: () => vo
               </div>
             ))}
           </div>
+
+          <DriverTelegramGroup driverId={driver.id} driverName={driver.name} />
         </div>
 
         {/* ── Right: metrics + loads ── */}
@@ -2241,6 +2244,8 @@ function TeamDetail({ team, onBack }: { team: TeamDriver; onBack: () => void }) 
               </div>
             ))}
           </div>
+
+          <DriverTelegramGroup driverId={team.id} driverName={driverDisplayName({ name: team.name1, name2: team.name2, team: true })} />
         </div>
 
         {/* ── Right: metrics + loads ── */}

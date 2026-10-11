@@ -22,7 +22,8 @@ type DriverType = "O/O" | "C/D";
 
 // ADR 0023: a stop's address is street/city/state; `city` is the city alone. The board
 // only DISPLAYS loads (never edits the route), so it shows the short city, state form.
-interface Stop { street?: string; city: string; state?: string; done: boolean; appt?: string; location?: { lat: number; lng: number }; }
+// appt_tz is whose clock the appointment is on ("CT", "ET", …); empty when it wasn't said.
+interface Stop { street?: string; city: string; state?: string; done: boolean; appt?: string; appt_tz?: string; location?: { lat: number; lng: number }; }
 function cityState(s?: { city?: string; state?: string } | null): string {
   if (!s) return "";
   return [s.city, s.state].map((p) => (p ?? "").trim()).filter(Boolean).join(", ");
@@ -117,6 +118,8 @@ interface Driver {
   stops?: Stop[];        // INTERMEDIATE stops only (between origin and destination)
   pickupAppt: string;
   dropAppt: string;
+  pickupTz?: string;     // the time zone of each of those two appointments, when set
+  dropTz?: string;
   location: string;
   etaMiles: number | null;   // miles left to the next stop; null = unknown
   etaApprox: boolean;        // true when that figure is a straight-line estimate
@@ -287,6 +290,8 @@ function fromBoardRow(r: BoardRow): Driver {
     stops:           route.slice(1, -1),
     pickupAppt:  formatAppt(r.pickup_appt)  || "—",
     dropAppt:    formatAppt(r.drop_appt)    || "—",
+    pickupTz:    first?.appt_tz || undefined,
+    dropTz:      last?.appt_tz  || undefined,
     location:    r.location     || "—",
     // Older servers only send eta_km (and always null); newer ones send eta in miles.
     etaMiles:    r.eta?.miles ?? (r.eta_km != null ? r.eta_km / 1.609344 : null),
@@ -539,6 +544,10 @@ function InlineCell({ value, onCommit, mono, fontSize = 12, color = "var(--foreg
 // Inline-editable appointment (free-text, e.g. "07/08 · 08:00"). Read-only when disabled.
 // Read-only appointment display. The route (stops + appts) is edited on the Loads page,
 // not the board — the board only shows it and ticks stops off as done.
+// An appointment with its time zone after it ("17.07.26 · 13:00 CT"). The zone is only its
+// short name, and is left off when it wasn't set or when there is no appointment to qualify.
+const withZone = (appt: string, tz?: string) => (tz && appt && appt !== "—" ? `${appt} ${tz}` : appt);
+
 function ApptText({ value, color, done }: { value: string; color: string; done?: boolean }) {
   return (
     <span style={{ display: "block", height: 20, lineHeight: "20px", fontFamily: "var(--font-mono)", fontSize: 11.5, whiteSpace: "nowrap", color, textDecoration: done ? "line-through" : "none" }}>{value && value !== "—" ? value : <Dash />}</span>
@@ -1866,11 +1875,11 @@ export function DispatchTable() {
                         const destDone   = driver.destinationDone ?? false;
                         return (
                           <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-                            <ApptText value={driver.pickupAppt} color={pickupDone ? "var(--muted-foreground)" : "var(--foreground)"} done={pickupDone && driver.pickupAppt !== "—"} />
+                            <ApptText value={withZone(driver.pickupAppt, driver.pickupTz)} color={pickupDone ? "var(--muted-foreground)" : "var(--foreground)"} done={pickupDone && driver.pickupAppt !== "—"} />
                             {stops.map((stop, idx) => (
-                              <ApptText key={idx} value={formatAppt(stop.appt) || "—"} color={stop.done ? "var(--muted-foreground)" : "var(--foreground)"} done={stop.done && !!stop.appt} />
+                              <ApptText key={idx} value={withZone(formatAppt(stop.appt) || "—", stop.appt_tz)} color={stop.done ? "var(--muted-foreground)" : "var(--foreground)"} done={stop.done && !!stop.appt} />
                             ))}
-                            <ApptText value={driver.dropAppt} color={destDone ? "var(--muted-foreground)" : "var(--foreground)"} done={destDone && driver.dropAppt !== "—"} />
+                            <ApptText value={withZone(driver.dropAppt, driver.dropTz)} color={destDone ? "var(--muted-foreground)" : "var(--foreground)"} done={destDone && driver.dropAppt !== "—"} />
                           </div>
                         );
                       })()}

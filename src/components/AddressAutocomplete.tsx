@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { suggestAddresses, type PlaceAddress } from "../lib/places";
 
-export interface AddressParts { street: string; city: string; state: string }
+export interface AddressParts { street: string; city: string; state: string; zip?: string }
 
 // One row of the list. A Google suggestion is only a line of text until it is picked — its
 // address fields and point are fetched then (`resolve`). An OpenStreetMap one arrives whole.
@@ -87,7 +87,7 @@ export function AddressAutocomplete({ value, onChange, onSelect, onCoords, onBus
     const place = await s.resolve();
     if (seq === searchSeq.current) setBusy(false);
     if (!place) return;  // the text stays as typed; the form's own lookup will locate it
-    if (onSelect) onSelect({ street: place.street, city: place.city, state: place.state }, place.lat, place.lng);
+    if (onSelect) onSelect({ street: place.street, city: place.city, state: place.state, zip: place.zip }, place.lat, place.lng);
     onCoords?.(place.lat, place.lng);
   };
 
@@ -214,7 +214,8 @@ async function searchOpenStreetMap(q: string): Promise<Suggestion[]> {
       const display = joinParts(parts);
       if (seen.has(display)) continue;
       seen.add(display);
-      const place: PlaceAddress = { ...parts, lat: parseFloat(item.lat), lng: parseFloat(item.lon) };
+      // OpenStreetMap gives the postcode beside the address; a place without one gets "".
+      const place: PlaceAddress = { ...parts, zip: String(item.address?.postcode ?? "").trim(), lat: parseFloat(item.lat), lng: parseFloat(item.lon) };
       results.push({ key: display, display, resolve: async () => place });
     }
     return results;

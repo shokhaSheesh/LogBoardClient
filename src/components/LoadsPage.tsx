@@ -5,7 +5,7 @@ import {
   Package, Plus, Pencil, Trash2, X, Check, AlertCircle,
   Search, ChevronDown, ChevronLeft, ChevronRight,
   ClipboardList, Sparkles, Upload, FileText,
-  ArrowLeft, ArrowRight, MapPin, Building2, User, DollarSign, Clock, History, CalendarDays, Navigation, Truck, Container, GripVertical,
+  ArrowLeft, ArrowRight, MapPin, Building2, User, DollarSign, Clock, History, CalendarDays, Navigation, Truck, Container, GripVertical, Hash,
 } from "lucide-react";
 import { Status, STATUS_CONFIG as SHARED_STATUS_CONFIG, ALL_STATUSES as SHARED_ALL_STATUSES } from "../lib/statuses";
 import { api, ApiError, isForbidden } from "../lib/api";
@@ -19,6 +19,7 @@ import { AsyncSearchableSelect, type SelectOpt } from "./AsyncSelect";
 import { PageLoader } from "./PageLoader";
 import { FormError, friendlyError, notify } from "./feedback";
 import { AddressAutocomplete, type AddressParts } from "./AddressAutocomplete";
+import { SendToDriverButton } from "./TelegramGroup";
 import { UncompleteConfirm } from "./UncompleteConfirm";
 import { RouteMap, type RoutePoint } from "./RouteMap";
 import { PeriodFilter, ALL_TIME, type Period } from "./PeriodFilter";
@@ -32,12 +33,32 @@ import { NumberField } from "./NumberField";
 // ADR 0023: an address is three fields. `city` holds ONLY the city now; street and
 // state sit beside it. The API joins them "street, city, state" (empty parts skipped)
 // wherever it renders one line — we mirror that with joinAddress().
+type StopKind = "pickup" | "delivery";
+// Appointment time zones, west to east, then the two outside the lower 48. They name the
+// zone, not the season: "CT" is right all year, where CST and CDT each cover half of it.
+const TIME_ZONES = [
+  { code: "PT", name: "Pacific" }, { code: "MT", name: "Mountain" }, { code: "CT", name: "Central" }, { code: "ET", name: "Eastern" },
+  { code: "AKT", name: "Alaska" }, { code: "HT", name: "Hawaii" },
+];
+// What a stop is: what was chosen for it, otherwise its place in the route decides.
+const kindAt = (s: { kind?: StopKind | "" }, position: number): StopKind => s.kind || (position === 0 ? "pickup" : "delivery");
+// "4750 W Mohave St, Phoenix, AZ 85043" — the address with its zip, for reading.
+function postalAddress(s: { street?: string; city?: string; state?: string; zip?: string }): string {
+  const tail = [s.state, s.zip].map((p) => (p ?? "").trim()).filter(Boolean).join(" ");
+  return [s.street, s.city, tail].map((p) => (p ?? "").trim()).filter(Boolean).join(", ");
+}
+
 interface Stop {
+  facility?: string;     // the name of the place — what the sign over the gate says
   street?: string;
   city: string;
   state?: string;
+  zip?: string;
   done: boolean;
   appt?: string;
+  appt_tz?: string;      // whose clock the appointment is on: ET, CT, MT, PT, AKT, HT, or ""
+  ref?: string;          // the PU # at a pickup, the DEL # at a delivery
+  kind?: StopKind | "";  // "" = by position: the first stop is the pickup, the rest deliveries
   lat?: number;
   lng?: number;
   location?: { lat: number; lng: number }; // backend coord shape (round-tripped)
@@ -78,6 +99,10 @@ interface Load {
   driver_id: string;
   status: Status;
   stops?: Stop[];        // the whole ordered route (stops[0] = pickup, last = delivery)
+  // The load's other numbers besides its ID: the broker's reference, the PO, and one more.
+  refNumber: string;
+  poNumber: string;
+  otherNumber: string;
   payout: number;
   totalMiles: number;      // LOADED miles only — the backend keeps deadhead separate
   deadheadMiles: number;   // empty miles run to reach this load's pickup
@@ -101,6 +126,9 @@ interface BackendLoad {
   miles: number;              // loaded miles
   deadhead_distance?: number; // empty miles to the pickup; total_miles = miles + this
   broker?: string;
+  ref_number?: string;
+  po_number?: string;
+  other_number?: string;
   stops?: Stop[];
   dispatcher_id?: string;
   dispatcher?: string;
@@ -128,6 +156,7 @@ function toLoad(b: BackendLoad): Load {
     driver_id: b.driver_id ?? "",
     driver: driverName,
     broker: b.broker ?? "",
+    refNumber: b.ref_number ?? "", poNumber: b.po_number ?? "", otherNumber: b.other_number ?? "",
     status: b.status as Status,
     payout: b.payout ?? 0,
     totalMiles: b.miles ?? 0,
@@ -135,8 +164,9 @@ function toLoad(b: BackendLoad): Load {
     // Backend keeps coords under `location:{lat,lng}`; flatten to lat/lng for the modal
     // so existing geocoded stops keep their coordinates (drives the miles recalc).
     stops: (b.stops ?? []).map((s) => ({
-      street: s.street ?? "", city: s.city, state: s.state ?? "",
-      done: s.done, appt: formatAppt(s.appt),
+      facility: s.facility ?? "", street: s.street ?? "", city: s.city, state: s.state ?? "", zip: s.zip ?? "",
+      done: s.done, appt: formatAppt(s.appt), appt_tz: s.appt_tz ?? "", ref: s.ref ?? "",
+      kind: s.kind === "pickup" || s.kind === "delivery" ? s.kind : "",
       lat: s.location?.lat ?? s.lat,
       lng: s.location?.lng ?? s.lng,
     })),
@@ -150,6 +180,7 @@ function toLoad(b: BackendLoad): Load {
 function toBackend(l: Partial<Load>, opts: { create?: boolean; omitStatus?: boolean } = {}): Partial<BackendLoad> {
   // The route rides entirely in stops — no origin/destination/*_appt fields.
   // Coords go back as `location:{lat,lng}` (the backend's shape), not flat lat/lng.
+  // PUT replaces the whole load, stops included: a field left out here is erased there.
   return {
     load_id: l.loadId,
     // An unassigned load is "" on create, but null on update — null is what returns a
@@ -158,10 +189,15 @@ function toBackend(l: Partial<Load>, opts: { create?: boolean; omitStatus?: bool
     driver_id: l.driver_id || (opts.create ? "" : null),
     stops: (l.stops ?? []).map((s) => ({
       // Send the three fields separately — no longer cram the whole address into city.
+      facility: (s.facility ?? "").trim(),
       street: (s.street ?? "").trim(),
       city: (s.city ?? "").trim(),
       state: (s.state ?? "").trim(),
+      zip: (s.zip ?? "").trim(),
       appt: s.appt,
+      appt_tz: s.appt_tz ?? "",
+      ref: (s.ref ?? "").trim(),
+      kind: s.kind ?? "",
       done: s.done,
       ...(s.lat != null && s.lng != null ? { location: { lat: s.lat, lng: s.lng } } : {}),
     })),
@@ -178,6 +214,9 @@ function toBackend(l: Partial<Load>, opts: { create?: boolean; omitStatus?: bool
     // total_miles = miles + deadhead_distance, so folding would double-count it.
     deadhead_distance: l.deadheadMiles ?? 0,
     broker: l.broker,
+    ref_number: (l.refNumber ?? "").trim(),
+    po_number: (l.poNumber ?? "").trim(),
+    other_number: (l.otherNumber ?? "").trim(),
     dispatcher_id: l.dispatcher_id || undefined,
   };
 }
@@ -200,14 +239,47 @@ function CustomSelect({
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  // Where the list is drawn. It is placed on the screen itself (not inside the field's
+  // container), so a scrolling or clipping parent can never cut it off; it opens below when
+  // there is room and above when there isn't, and scrolls inside itself when it is long.
+  const [place, setPlace] = useState<React.CSSProperties>({});
 
   useEffect(() => {
-    const h = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    if (!open) return;
+    const position = () => {
+      const r = ref.current?.getBoundingClientRect();
+      if (!r) return;
+      const GAP = 4, EDGE = 8, WANT = 280;
+      const below = window.innerHeight - r.bottom - GAP - EDGE;
+      const above = r.top - GAP - EDGE;
+      const up = dropUp || (below < Math.min(WANT, 160) && above > below);
+      setPlace({
+        left: Math.max(EDGE, r.left), minWidth: r.width,
+        maxHeight: Math.max(120, Math.min(WANT, up ? above : below)),
+        ...(up ? { bottom: window.innerHeight - r.top + GAP } : { top: r.bottom + GAP }),
+      });
     };
-    document.addEventListener("mousedown", h);
-    return () => document.removeEventListener("mousedown", h);
-  }, []);
+    position();
+    const away = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (!ref.current?.contains(t) && !menuRef.current?.contains(t)) setOpen(false);
+    };
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    // The page moving under an open list would leave it hanging in the wrong place, so it
+    // follows; scrolling inside the list itself is its own business.
+    const moved = (e: Event) => { if (!menuRef.current?.contains(e.target as Node)) position(); };
+    document.addEventListener("mousedown", away);
+    document.addEventListener("keydown", esc);
+    window.addEventListener("scroll", moved, true);
+    window.addEventListener("resize", position);
+    return () => {
+      document.removeEventListener("mousedown", away);
+      document.removeEventListener("keydown", esc);
+      window.removeEventListener("scroll", moved, true);
+      window.removeEventListener("resize", position);
+    };
+  }, [open, dropUp]);
 
   const selected = options.find((o) => o.value === value);
   const h = compact ? 30 : plain ? 36 : 34;
@@ -237,13 +309,12 @@ function CustomSelect({
         <ChevronDown size={13} style={{ color: "var(--muted-foreground)", flexShrink: 0, transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s" }} />
       </button>
 
-      {open && (
-        <div style={{
-          position: "absolute",
-          ...(dropUp ? { bottom: "calc(100% + 4px)", top: "auto" } : { top: "calc(100% + 4px)", bottom: "auto" }),
-          left: 0, minWidth: "100%", width: "max-content",
+      {open && createPortal(
+        <div ref={menuRef} role="listbox" style={{
+          position: "fixed", ...place, width: "max-content",
           backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 8,
-          boxShadow: "0 8px 24px rgba(0,0,0,0.10)", zIndex: 200, overflow: "hidden",
+          boxShadow: "0 8px 24px rgba(0,0,0,0.10)", zIndex: 1000,
+          overflowY: "auto", overscrollBehavior: "contain", scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent",
         }}>
           {options.map((opt) => {
             const isActive = opt.value === value;
@@ -270,7 +341,8 @@ function CustomSelect({
               </button>
             );
           })}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );
@@ -785,7 +857,7 @@ interface ExtractDraft {
   payout?: number;
   miles?: number;
   deadhead_distance?: number; // extractor returns 0 unless the rate con states it
-  stops?: { street?: string; city?: string; state?: string; appt?: string }[];
+  stops?: { facility?: string; street?: string; city?: string; state?: string; zip?: string; appt?: string }[];
 }
 
 // ─── Deadhead anchor ──────────────────────────────────────────────────────────
@@ -838,6 +910,9 @@ async function resolveDeadheadAnchor(driverId: string, signal?: AbortSignal): Pr
 function draftToLoad(d: ExtractDraft): Partial<Load> {
   const stops: Stop[] = (d.stops ?? []).map((s) => ({
     // The extractor splits the address into three fields now — take them as given.
+    // The document nearly always prints the place's name and its zip; both are kept.
+    facility: s.facility ?? "",
+    zip: s.zip ?? "",
     street: s.street ?? "",
     city: s.city ?? "",
     state: s.state ?? "",
@@ -1138,7 +1213,6 @@ let stopKeySeq = 0;
 const newStopKey = () => `stop-${++stopKeySeq}`;
 // The stop row: handle, letter, address, date, time, remove. Shared by the rows and the
 // heading above them so the columns line up.
-const STOP_COLS = "16px 22px minmax(200px, 1.4fr) minmax(170px, 1fr) minmax(200px, 1fr) 30px";
 // A, B, C … — the letter a stop carries in the form, in the summary and on the map.
 const stopLetter = (i: number) => String.fromCharCode(65 + (i % 26));
 
@@ -1236,10 +1310,14 @@ function LoadForm({ load, onCancel, onSave, saving = false, error, startDirty = 
   // A picked suggestion gives the fields already split AND precise coords — take both
   // (no need to wait for blur to re-geocode). The display text becomes the clean join.
   const selectAddress = (idx: number, parts: AddressParts, lat: number, lng: number) => {
-    setStops((prev) => prev.map((s, i) => i === idx ? { ...s, ...parts, text: joinAddress(parts), lat, lng } : s));
+    // A picked address knows its zip; a bare city doesn't, and what was typed is kept.
+    const { zip, ...address } = parts;
+    setStops((prev) => prev.map((s, i) => i === idx ? { ...s, ...address, ...(zip ? { zip } : {}), text: joinAddress(parts), lat, lng } : s));
     recalcSoon();
   };
   const updateAppt = (idx: number, val: string) => setStops((p) => p.map((s, i) => i === idx ? { ...s, appt: val } : s));
+  // The stop's details that sit beside its address: name, zip, number, kind, time zone.
+  const updateStop = (idx: number, patch: Partial<Stop>) => setStops((p) => p.map((s, i) => i === idx ? { ...s, ...patch } : s));
 
   // Latest stops, so the debounced calc always reads fresh values (no stale closure).
   const stopsRef = useRef(stops);
@@ -1379,7 +1457,7 @@ function LoadForm({ load, onCancel, onSave, saving = false, error, startDirty = 
 
   // What the user has entered, as one comparable string. Coordinates are left out: they
   // are filled in by geocoding in the background, which is not an edit.
-  const snapshot = JSON.stringify([form, stops.map((s) => [s.street ?? "", s.city, s.state ?? "", s.appt ?? ""])]);
+  const snapshot = JSON.stringify([form, stops.map((s) => [s.street ?? "", s.city, s.state ?? "", s.appt ?? "", s.facility ?? "", s.zip ?? "", s.ref ?? "", s.kind ?? "", s.appt_tz ?? ""])]);
   const initialSnapshot = useRef(snapshot);
   const dirty = startDirty || snapshot !== initialSnapshot.current;
   useEffect(() => { onDirtyChange?.(dirty); }, [dirty]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -1531,6 +1609,20 @@ function LoadForm({ load, onCancel, onSave, saving = false, error, startDirty = 
                   <span style={capStyle}>Rate</span>
                   <NumberField label="Rate" prefix="$" value={form.payout} onChange={(n) => set("payout", n)} />
                 </div>
+                {/* The load's other numbers. A driver is asked for these at the gate, and
+                    they go into the message sent to the driver's Telegram group. */}
+                <label style={labelStyle}>
+                  <span style={capStyle}>Ref #</span>
+                  <input value={form.refNumber ?? ""} onChange={(e) => set("refNumber", e.target.value)} maxLength={64} {...NO_AUTOFILL} style={inputStyle} onFocus={focusInput} onBlur={blurInput} />
+                </label>
+                <label style={labelStyle}>
+                  <span style={capStyle}>PO #</span>
+                  <input value={form.poNumber ?? ""} onChange={(e) => set("poNumber", e.target.value)} maxLength={64} {...NO_AUTOFILL} style={inputStyle} onFocus={focusInput} onBlur={blurInput} />
+                </label>
+                <label style={labelStyle}>
+                  <span style={capStyle}>Other #</span>
+                  <input value={form.otherNumber ?? ""} onChange={(e) => set("otherNumber", e.target.value)} maxLength={64} {...NO_AUTOFILL} style={inputStyle} onFocus={focusInput} onBlur={blurInput} />
+                </label>
                 {/* Driver + Dispatcher — backend-paginated, infinite-scroll */}
                 <div style={labelStyle}>
                   <span style={capStyle}>Driver</span>
@@ -1602,19 +1694,11 @@ function LoadForm({ load, onCancel, onSave, saving = false, error, startDirty = 
             <div style={cardStyle}>
               <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10 }}>
                 <span style={secTitle}>Route</span>
-                <span style={hintStyle}>Drag the handle to reorder · pick a second day for a date range · fill in "To" for a time window</span>
+                <span style={hintStyle}>Drag a stop by its handle to reorder</span>
               </div>
 
               <div style={{ overflowX: "auto" }}>
-                <div style={{ display: "flex", flexDirection: "column", gap: 10, minWidth: 700 }}>
-                  {/* One heading per column, instead of a label over every box */}
-                  <div style={{ display: "grid", gridTemplateColumns: STOP_COLS, gap: 8, ...capStyle }}>
-                    <span /><span />
-                    <span>Address <span style={{ color: "#EF4444" }}>*</span></span>
-                    <span>Date</span>
-                    <span>Time</span>
-                    <span />
-                  </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 10, minWidth: 760 }}>
                   <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                     {stops.map((stop, idx) => {
                       const isFirst = idx === 0;
@@ -1635,14 +1719,16 @@ function LoadForm({ load, onCancel, onSave, saving = false, error, startDirty = 
                           onDragOver={(e) => { if (dragIdx !== null) { e.preventDefault(); setOverIdx(idx); } }}
                           onDrop={(e) => { e.preventDefault(); if (dragIdx !== null) moveStop(dragIdx, idx); resetDrag(); }}
                           style={{
-                            display: "grid", gridTemplateColumns: STOP_COLS, alignItems: "start", gap: 8, borderRadius: 8,
+                            display: "flex", flexDirection: "column", gap: 12, padding: "12px 14px", borderRadius: 10,
+                            border: "1px solid var(--border)", backgroundColor: "var(--background)",
                             opacity: dragIdx === idx ? 0.4 : 1,
                             outline: overIdx === idx && dragIdx !== null && dragIdx !== idx ? "2px dashed var(--primary)" : "none",
                             outlineOffset: 3,
                             transition: "opacity 0.12s",
                           }}
                         >
-                          {/* Drag handle */}
+                          {/* Head: grab to reorder, which stop this is, what kind, and remove */}
+                          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                           <div
                             onMouseDown={() => setGrabIdx(idx)}
                             onMouseUp={() => setGrabIdx(null)}
@@ -1651,12 +1737,49 @@ function LoadForm({ load, onCancel, onSave, saving = false, error, startDirty = 
                           >
                             <GripVertical size={14} />
                           </div>
-
-                          {/* Letter — the same one this stop carries on the map */}
                           <div style={{ display: "flex", alignItems: "center", height: 36 }}>{letterBadge(idx)}</div>
+                            {/* Pickup or delivery. It follows the stop's place in the route and is
+                                stored only when it is set to something else. */}
+                            <div role="group" aria-label={`Type of stop ${stopLetter(idx)}`} style={{ display: "inline-flex", padding: 2, borderRadius: 8, backgroundColor: "var(--muted)" }}>
+                              {(["pickup", "delivery"] as const).map((k) => {
+                                const on = kindAt(stop, idx) === k;
+                                return (
+                                  <button key={k} type="button" aria-pressed={on} onClick={() => updateStop(idx, { kind: k === kindAt({}, idx) ? "" : k })}
+                                    style={{ height: 28, padding: "0 12px", borderRadius: 6, border: "none", cursor: "pointer", fontFamily: "var(--font-sans)", fontSize: 12.5, fontWeight: 600,
+                                      backgroundColor: on ? "var(--card)" : "transparent", color: on ? "var(--foreground)" : "var(--muted-foreground)", boxShadow: on ? "0 1px 2px rgba(0,0,0,0.12)" : "none" }}>
+                                    {k === "pickup" ? "Pickup" : "Delivery"}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                            <div style={{ flex: 1 }} />
+                          <button
+                            onClick={() => removeStop(idx)}
+                            disabled={stops.length <= 2}
+                            aria-label={`Remove stop ${stopLetter(idx)}`}
+                            title={stops.length <= 2 ? "A load needs at least two stops" : "Remove this stop"}
+                            style={{
+                              width: 30, height: 36, borderRadius: 7, border: "none", backgroundColor: "transparent",
+                              color: "var(--muted-foreground)", cursor: stops.length <= 2 ? "default" : "pointer",
+                              display: "flex", alignItems: "center", justifyContent: "center",
+                              opacity: stops.length <= 2 ? 0.3 : 1,
+                            }}
+                            onMouseEnter={(e) => { if (stops.length > 2) { e.currentTarget.style.backgroundColor = "rgba(239,68,68,0.12)"; e.currentTarget.style.color = "#EF4444"; } }}
+                            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = "var(--muted-foreground)"; }}
+                          >
+                            <X size={14} />
+                          </button>
+                          </div>
 
-                          {/* Location field */}
-                          <div style={{ minWidth: 0 }}>
+                          {/* Where: the place's name, its address, its zip */}
+                          <div style={{ display: "grid", gridTemplateColumns: "minmax(150px, 1fr) minmax(240px, 1.8fr) 104px", gap: 12, alignItems: "start" }}>
+                            <label style={labelStyle}>
+                              <span style={capStyle}>Stop name</span>
+                              <input value={stop.facility ?? ""} onChange={(e) => updateStop(idx, { facility: e.target.value })} placeholder="e.g. Kroger Distribution Center" maxLength={120} {...NO_AUTOFILL} style={inputStyle} onFocus={focusInput} onBlur={blurInput} />
+                            </label>
+                            <div style={{ ...labelStyle, minWidth: 0 }}>
+                              <span style={capStyle}>Address <span style={{ color: "#EF4444" }}>*</span></span>
+                              <div style={{ minWidth: 0 }}>
                             {/* The address, with a mark for whether the map knows where it is */}
                             <div style={{ position: "relative" }}>
                               <AddressAutocomplete
@@ -1684,10 +1807,19 @@ function LoadForm({ load, onCancel, onSave, saving = false, error, startDirty = 
                             {where === "notFound" && (
                               <div style={{ ...hintStyle, color: "#B45309", marginTop: 4 }}>Can't find this address on the map. Start typing and pick one from the list.</div>
                             )}
+                              </div>
+                            </div>
+                            <label style={labelStyle}>
+                              <span style={capStyle}>Zip</span>
+                              <input value={stop.zip ?? ""} onChange={(e) => updateStop(idx, { zip: e.target.value.replace(/[^0-9-]/g, "").slice(0, 10) })} placeholder="00000" inputMode="numeric" {...NO_AUTOFILL} style={inputStyle} onFocus={focusInput} onBlur={blurInput} />
+                            </label>
                           </div>
 
-                          {/* Appointment day — one day, or a range of days */}
-                          <div style={{ minWidth: 0 }}>
+                          {/* When, on whose clock, and the number the driver is asked for */}
+                          <div style={{ display: "grid", gridTemplateColumns: "minmax(170px, 1fr) minmax(210px, 1.1fr) 150px minmax(130px, 1fr)", gap: 12, alignItems: "start" }}>
+                            <div style={{ ...labelStyle, minWidth: 0 }}>
+                              <span style={capStyle}>Date</span>
+                              <div style={{ minWidth: 0 }}>
                             <DateRangeField label={`Appointment date for stop ${stopLetter(idx)}`} p={appt} onDates={setAppt} />
                             {appt.note && (
                               <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4, ...hintStyle }}>
@@ -1698,34 +1830,28 @@ function LoadForm({ load, onCancel, onSave, saving = false, error, startDirty = 
                                 </button>
                               </div>
                             )}
-                          </div>
-
-                          {/* Appointment time — one time, or a window when "To" is filled in */}
-                          <div style={{ minWidth: 0 }}>
+                              </div>
+                            </div>
+                            <div style={{ ...labelStyle, minWidth: 0 }}>
+                              <span style={capStyle}>Time</span>
+                              <div style={{ minWidth: 0 }}>
                             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                               <TimeField wide value={appt.from} onChange={(from) => setAppt({ from })} placeholder="From" label={`Appointment time for stop ${stopLetter(idx)}, or the start of a window`} />
                               <span style={{ color: "var(--muted-foreground)", fontFamily: "var(--font-sans)", fontSize: 13 }}>–</span>
                               <TimeField wide value={appt.to} onChange={(to) => setAppt({ to })} placeholder="To" label={`End of the appointment window for stop ${stopLetter(idx)} (optional)`} />
                             </div>
+                              </div>
+                            </div>
+                            <div style={labelStyle}>
+                              <span style={capStyle}>Time zone</span>
+                              <CustomSelect plain value={stop.appt_tz ?? ""} options={[{ value: "", label: "Not set" }, ...TIME_ZONES.map((z) => ({ value: z.code, label: `${z.code} · ${z.name}` }))]}
+                                onChange={(v) => updateStop(idx, { appt_tz: v })} />
+                            </div>
+                            <label style={labelStyle}>
+                              <span style={capStyle}>{kindAt(stop, idx) === "pickup" ? "PU #" : "DEL #"}</span>
+                              <input value={stop.ref ?? ""} onChange={(e) => updateStop(idx, { ref: e.target.value })} placeholder="Optional" maxLength={64} {...NO_AUTOFILL} style={inputStyle} onFocus={focusInput} onBlur={blurInput} />
+                            </label>
                           </div>
-
-                          {/* Remove */}
-                          <button
-                            onClick={() => removeStop(idx)}
-                            disabled={stops.length <= 2}
-                            aria-label={`Remove stop ${stopLetter(idx)}`}
-                            title={stops.length <= 2 ? "A load needs at least two stops" : "Remove this stop"}
-                            style={{
-                              width: 30, height: 36, borderRadius: 7, border: "none", backgroundColor: "transparent",
-                              color: "var(--muted-foreground)", cursor: stops.length <= 2 ? "default" : "pointer",
-                              display: "flex", alignItems: "center", justifyContent: "center",
-                              opacity: stops.length <= 2 ? 0.3 : 1,
-                            }}
-                            onMouseEnter={(e) => { if (stops.length > 2) { e.currentTarget.style.backgroundColor = "rgba(239,68,68,0.12)"; e.currentTarget.style.color = "#EF4444"; } }}
-                            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = "var(--muted-foreground)"; }}
-                          >
-                            <X size={14} />
-                          </button>
                         </div>
                       );
                     })}
@@ -2072,6 +2198,10 @@ function LoadDetail({ load, onBack, onEdit }: { load: Load; onBack: () => void; 
     { icon: <Navigation size={13} />, label: "Loaded miles", value: <span style={mono}>{load.totalMiles.toLocaleString()} mi</span> },
     { icon: <Navigation size={13} />, label: "Deadhead",     value: <span style={mono}>{load.deadheadMiles.toLocaleString()} mi</span> },
     { icon: <DollarSign size={13} />, label: "Rate per mile", value: <span style={mono}>${perMile.toFixed(2)}</span> },
+    // The load's other numbers, listed only when the load has them.
+    ...(load.refNumber   ? [{ icon: <Hash size={13} />, label: "Ref #",   value: <span style={mono}>{load.refNumber}</span> }]   : []),
+    ...(load.poNumber    ? [{ icon: <Hash size={13} />, label: "PO #",    value: <span style={mono}>{load.poNumber}</span> }]    : []),
+    ...(load.otherNumber ? [{ icon: <Hash size={13} />, label: "Other #", value: <span style={mono}>{load.otherNumber}</span> }] : []),
   ];
 
   const tabs = [
@@ -2107,14 +2237,18 @@ function LoadDetail({ load, onBack, onEdit }: { load: Load; onBack: () => void; 
           </span>
           <StatusBadge status={load.status} />
         </div>
-        {onEdit && (
-          <button onClick={onEdit}
-            style={{ display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 500, height: 34, padding: "0 14px", borderRadius: 8, border: "1px solid var(--border)", backgroundColor: "var(--card)", color: "var(--foreground)", cursor: "pointer" }}
-            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--muted)"; }}
-            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "var(--card)"; }}>
-            <Pencil size={13} /> Edit load
-          </button>
-        )}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+          {/* Post the trip to the driver's Telegram group — only a load with a driver has one */}
+          {load.driver_id && <SendToDriverButton variant="button" loadId={load.id} loadLabel={load.loadId} driverName={load.driver} />}
+          {onEdit && (
+            <button onClick={onEdit}
+              style={{ display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 500, height: 34, padding: "0 14px", borderRadius: 8, border: "1px solid var(--border)", backgroundColor: "var(--card)", color: "var(--foreground)", cursor: "pointer" }}
+              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--muted)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "var(--card)"; }}>
+              <Pencil size={13} /> Edit load
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Tabs, on their own row */}
@@ -2200,10 +2334,12 @@ function LoadDetail({ load, onBack, onEdit }: { load: Load; onBack: () => void; 
                             {current && <span style={{ fontSize: 11, fontWeight: 600, color: "var(--primary)", backgroundColor: "var(--primary-soft)", borderRadius: 4, padding: "0 6px" }}>Next</span>}
                           </div>
                           <div style={{ fontFamily: "var(--font-sans)", fontSize: 14, fontWeight: 600, color: s.done ? "var(--muted-foreground)" : "var(--foreground)", overflowWrap: "anywhere" }}>
-                            {joinAddress(s) || <Dash />}
+                            {s.facility && <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--muted-foreground)" }}>{s.facility}</div>}
+                            {postalAddress(s) || <Dash />}
                           </div>
                           <div style={{ display: "inline-flex", alignItems: "center", gap: 6, marginTop: 3, fontFamily: "var(--font-mono)", fontSize: 12.5, color: "var(--muted-foreground)", whiteSpace: "nowrap" }}>
-                            <CalendarDays size={12} /> {s.appt || <span style={{ fontFamily: "var(--font-sans)" }}>No appointment</span>}
+                            <CalendarDays size={12} /> {s.appt ? [s.appt, s.appt_tz].filter(Boolean).join(" ") : <span style={{ fontFamily: "var(--font-sans)" }}>No appointment</span>}
+                            {s.ref && <span style={{ marginLeft: 8 }}>{kindAt(s, i) === "pickup" ? "PU" : "DEL"} # {s.ref}</span>}
                           </div>
                         </div>
                       </div>
@@ -2462,7 +2598,7 @@ export function LoadsPage() {
                   <TH width={100} align="right">Miles</TH>
                   <TH width={100} align="right">Rate</TH>
                   <TH width={120}>Dispatcher</TH>
-                  <TH width={90} align="center" pinned>Actions</TH>
+                  <TH width={118} align="center" pinned>Actions</TH>
                 </tr>
               </thead>
               <tbody>
@@ -2537,7 +2673,7 @@ export function LoadsPage() {
                             <div key={si} style={{ display: "flex", alignItems: "center", gap: 5 }}>
                               <span style={{ fontFamily: "var(--font-mono)", fontSize: 9, fontWeight: 700, color: "var(--muted-foreground)", flexShrink: 0, width: 30 }}>#{si + 1}</span>
                               <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, whiteSpace: "nowrap", color: isDone ? "var(--muted-foreground)" : isCurrent ? "var(--primary)" : "var(--foreground)", textDecoration: isDone ? "line-through" : "none" }}>
-                                {stop.appt || <Dash />}
+                                {stop.appt ? [stop.appt, stop.appt_tz].filter(Boolean).join(" ") : <Dash />}
                               </span>
                             </div>
                           );
@@ -2575,6 +2711,7 @@ export function LoadsPage() {
                         columns scrolling underneath never show through. */}
                     <td style={{ padding: "8px 10px", borderBottom: "1px solid var(--border)", verticalAlign: "middle", textAlign: "center", position: "sticky", right: 0, backgroundColor: "var(--card)", boxShadow: "inset 1px 0 0 var(--border)" }}>
                       <div style={{ display: "inline-flex", gap: 2 }}>
+                        {l.driver_id && <SendToDriverButton variant="icon" loadId={l.id} loadLabel={l.loadId} driverName={l.driver} />}
                         {canUpdate && <ActionBtn label={`Edit ${l.loadId || "load"}`} tone="edit" icon={<Pencil size={14} />} onClick={() => openEdit(l)} />}
                         {canDelete && <ActionBtn label={`Delete ${l.loadId || "load"}`} tone="delete" icon={<Trash2 size={14} />} onClick={() => setDeleting(l)} />}
                         {!canUpdate && !canDelete && <Dash />}
