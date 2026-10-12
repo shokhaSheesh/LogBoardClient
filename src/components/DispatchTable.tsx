@@ -151,6 +151,7 @@ interface HistoryEvent {
   entity_type: string;
   entity_id: string;
   entity_ref: string;
+  load_ref?: string; // the load the change also landed on, when the row changed was its driver
   action: "create" | "update" | "delete";
   changes: HistoryChange[] | null;
   created_at: string;
@@ -829,6 +830,10 @@ function HistoryPanel({ events, loading, onClose, onRevert }: {
                     <span style={{ fontWeight: 600, color: "var(--foreground)" }}>{ev.actor_name || "Unknown"}</span>
                     <span>{act.verb}</span>
                     <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 600, color: act.color, backgroundColor: act.bg, borderRadius: 5, padding: "1px 7px", whiteSpace: "nowrap" }}>{ev.entity_ref || ev.entity_type}</span>
+                    {/* A change made on a driver's row that also landed on the load they were running. */}
+                    {ev.load_ref && (
+                      <span title="The load this change was made on" style={{ fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 600, color: "var(--foreground)", backgroundColor: "var(--muted)", borderRadius: 5, padding: "1px 7px", whiteSpace: "nowrap" }}>Load {ev.load_ref}</span>
+                    )}
                     {ev.revert_of && tag("Undo", "#B45309", "rgba(245,158,11,0.16)")}
                     {undone && tag("Undone", "var(--muted-foreground)", "var(--muted)")}
                     <span title={fmtDateTime(ev.created_at)} style={{ marginLeft: "auto", fontFamily: "var(--font-mono)", fontSize: 11.5, whiteSpace: "nowrap" }}>{clock(ev.created_at)}</span>
@@ -1344,19 +1349,23 @@ export function DispatchTable() {
     // leaves the assignment untouched (tri-state).
     const cached = driverCache.current[driverId] ?? {};
     const merged = { ...driver, ...fields };
-    const body = {
+    // The board draws an empty cell as "—". That is a drawing, not a value: sent back, it
+    // would be stored as the driver's location or phone.
+    const real = (v: unknown) => (v === "—" ? "" : v);
+    const body: Record<string, unknown> = {
       name:                cached.name   ?? merged.name,
-      phone:               cached.phone  ?? merged.phone,
+      phone:               real(cached.phone  ?? merged.phone),
       type:                cached.type   ?? merged.type,
       team:                (cached.team   ?? merged.team) ?? false,
       name2:               (cached.name2  ?? merged.name2)  ?? "",
       phone2:              (cached.phone2 ?? merged.phone2) ?? "",
       status:              merged.status,
-      location:            merged.location,
+      location:            real(merged.location),
       comment:             merged.comments,           // API field is "comment"
-      weekly_gross_target: cached.weekly_gross_target ?? 0,
       next_load_id:        cached.next_load_id        ?? null,
     };
+    // The board row does not carry the driver's pay or weekly target. They are left out, and
+    // the API keeps what the driver has; sending a guess (0) here used to erase them.
 
     try {
       await api.put(`/drivers/${driverId}`, body);
