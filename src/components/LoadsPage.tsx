@@ -599,7 +599,7 @@ function extractErrorMessage(e: unknown): string {
 
 function ExtractModal({ onClose, onExtracted }: {
   onClose: () => void;
-  onExtracted: (draft: ExtractDraft) => void;
+  onExtracted: (draft: ExtractDraft, review: ExtractReview) => void;
 }) {
   const [file, setFile]       = useState<File | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -628,9 +628,9 @@ function ExtractModal({ onClose, onExtracted }: {
     try {
       // Extraction reads the document with a reasoning model — a few seconds is normal,
       // longer for a many-page PDF. fetch has no default timeout, so just wait.
-      const res = await api.upload<{ draft: ExtractDraft }>("/loads/extract", file);
+      const res = await api.upload<Extraction>("/loads/extract", file);
       if (closedRef.current) return; // user cancelled while it ran — discard the draft
-      onExtracted(res?.draft ?? {});
+      onExtracted(res?.draft ?? {}, reviewOf(res));
     } catch (e) {
       if (!closedRef.current) setError(extractErrorMessage(e));
     } finally {
@@ -858,6 +858,68 @@ interface ExtractDraft {
   miles?: number;
   deadhead_distance?: number; // extractor returns 0 unless the rate con states it
   stops?: { facility?: string; street?: string; city?: string; state?: string; zip?: string; appt?: string }[];
+}
+
+// ─── What to double-check on an extracted draft ──────────────────────────────
+//
+// Beside the draft, the extractor says where the four values a mistake costs money on were
+// read from (the passage, the page, and whether the server found the value in the
+// document's text), and lists what a person should look at before saving. Nothing here
+// blocks a save: a draft is a suggestion, and these are the places to look first.
+
+interface FieldEvidence { quote: string; page: number; status: "verified" | "unverified" | "not_found" }
+interface ExtractWarning { code: string; field: string; message: string }
+interface ExtractReview { evidence?: Partial<Record<ReviewField, FieldEvidence>>; warnings: ExtractWarning[] }
+// The draft fields a warning can name.
+type ReviewField = "load_id" | "broker" | "payout" | "miles" | "stops";
+interface Extraction { draft?: ExtractDraft; evidence?: ExtractReview["evidence"]; warnings?: ExtractWarning[] }
+
+const reviewOf = (res: Extraction | null | undefined): ExtractReview => ({ evidence: res?.evidence, warnings: res?.warnings ?? [] });
+
+// A photo or a scan has no text to check a value against, so nothing could be verified.
+const KEY_FIELDS: ReviewField[] = ["load_id", "broker", "payout", "miles"];
+const uncheckable = (r: ExtractReview) => !!r.evidence && KEY_FIELDS.every((f) => (r.evidence?.[f]?.status ?? "unverified") === "unverified");
+
+const WARN = { ink: "var(--caution)", soft: "var(--caution-soft)", line: "var(--caution-line)" };
+
+// The mark beside a flagged field's label. Clicking it shows what is wrong and the passage
+// the value was read from, so it can be judged without reopening the document.
+function ReviewMark({ warnings, evidence }: { warnings: ExtractWarning[]; evidence?: FieldEvidence }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", away);
+    document.addEventListener("keydown", esc);
+    return () => { document.removeEventListener("mousedown", away); document.removeEventListener("keydown", esc); };
+  }, [open]);
+  if (warnings.length === 0) return null;
+  return (
+    <span ref={ref} style={{ position: "relative", display: "inline-flex" }}>
+      {/* preventDefault: inside a <label>, a click would otherwise also focus the field. */}
+      <button type="button" aria-label="Check this value — see where it was read from" aria-expanded={open}
+        onClick={(e) => { e.preventDefault(); setOpen((o) => !o); }}
+        style={{ width: 18, height: 18, borderRadius: "50%", border: "none", padding: 0, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", backgroundColor: WARN.soft, color: WARN.ink }}>
+        <AlertCircle size={12} strokeWidth={2.6} />
+      </button>
+      {open && (
+        <span role="dialog" aria-label="Why this value is flagged"
+          style={{ position: "absolute", zIndex: 30, top: "calc(100% + 6px)", left: 0, width: 300, maxWidth: "80vw", backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 10, boxShadow: "0 10px 30px rgba(0,0,0,0.18)", padding: "11px 12px", display: "flex", flexDirection: "column", gap: 7, fontFamily: "var(--font-sans)", fontSize: 12.5, fontWeight: 400, color: "var(--foreground)", cursor: "default" }}>
+          {warnings.map((w) => <span key={w.code}>{w.message}</span>)}
+          {evidence?.quote ? (
+            <>
+              <span style={{ backgroundColor: "var(--muted)", borderLeft: `3px solid ${WARN.ink}`, borderRadius: "0 6px 6px 0", padding: "6px 9px", fontFamily: "var(--font-mono)", fontSize: 12, overflowWrap: "anywhere" }}>{evidence.quote}</span>
+              {evidence.page > 0 && <span style={{ color: "var(--muted-foreground)" }}>Read from page {evidence.page}</span>}
+            </>
+          ) : (
+            <span style={{ color: "var(--muted-foreground)" }}>No passage was given for this value.</span>
+          )}
+        </span>
+      )}
+    </span>
+  );
 }
 
 // ─── Deadhead anchor ──────────────────────────────────────────────────────────
@@ -1216,7 +1278,7 @@ const newStopKey = () => `stop-${++stopKeySeq}`;
 // A, B, C … — the letter a stop carries in the form, in the summary and on the map.
 const stopLetter = (i: number) => String.fromCharCode(65 + (i % 26));
 
-function LoadForm({ load, onCancel, onSave, saving = false, error, startDirty = false, onDirtyChange, onExtract }: {
+function LoadForm({ load, onCancel, onSave, saving = false, error, startDirty = false, onDirtyChange, onExtract, review }: {
   load: Partial<Load>;
   onCancel: () => void;
   onSave: (l: Load) => void;
@@ -1225,9 +1287,26 @@ function LoadForm({ load, onCancel, onSave, saving = false, error, startDirty = 
   startDirty?: boolean;                     // the form opens holding unsaved work (an extracted draft)
   onDirtyChange?: (dirty: boolean) => void; // lets the page guard against leaving with changes
   onExtract?: () => void;                   // offer "fill from a rate confirmation" (create only)
+  review?: ExtractReview;                   // what the extractor said to double-check on this draft
 }) {
   const [form, setForm] = useState<Partial<Load>>(load);
-  const set = <K extends keyof Load>(k: K, v: Load[K]) => setForm((f) => ({ ...f, [k]: v }));
+  // A flag is about the value the extractor wrote. Once the dispatcher changes that value
+  // it is theirs, and the flag no longer describes it.
+  const [settled, setSettled] = useState<ReviewField[]>([]);
+  const settle = (f: ReviewField) => setSettled((s) => (s.includes(f) ? s : [...s, f]));
+  const FLAGGED_BY: Partial<Record<keyof Load, ReviewField>> = { loadId: "load_id", broker: "broker", payout: "payout", totalMiles: "miles" };
+  const set = <K extends keyof Load>(k: K, v: Load[K]) => {
+    const flagged = FLAGGED_BY[k];
+    if (flagged && review) settle(flagged);
+    setForm((f) => ({ ...f, [k]: v }));
+  };
+  const flagsOn = (f: ReviewField) => (review && !settled.includes(f) ? review.warnings.filter((w) => w.field === f) : []);
+  // The amber ring around a flagged control, and its message underneath.
+  const ring = (f: ReviewField): React.CSSProperties => (flagsOn(f).length ? { borderRadius: 8, boxShadow: `0 0 0 3px ${WARN.soft}`, outline: `1px solid ${WARN.line}`, outlineOffset: -1 } : {});
+  const flagNote = (f: ReviewField) => flagsOn(f).map((w) => (
+    <span key={w.code} style={{ fontFamily: "var(--font-sans)", fontSize: 11.5, lineHeight: 1.4, color: WARN.ink }}>{w.message}</span>
+  ));
+  const capRow: React.CSSProperties = { display: "flex", alignItems: "center", gap: 6 };
   const isNew = !load.id;
 
   // All locations in one unified array: [stop1 (origin), stop2, ..., stopN (destination)].
@@ -1298,13 +1377,16 @@ function LoadForm({ load, onCancel, onSave, saving = false, error, startDirty = 
     recalcSoon(); // route order changed → recompute miles
   };
 
-  const addStop    = () => setStops((p) => [...p, { city: "", done: false, appt: "", k: newStopKey() }]);
-  const removeStop = (idx: number) => { setStops((p) => p.filter((_, i) => i !== idx)); recalcSoon(); };
+  // Adding, removing or re-addressing a stop makes the route the dispatcher's own, so a
+  // flag raised on the extractor's route is settled by it.
+  const addStop    = () => { settle("stops"); setStops((p) => [...p, { city: "", done: false, appt: "", k: newStopKey() }]); };
+  const removeStop = (idx: number) => { settle("stops"); setStops((p) => p.filter((_, i) => i !== idx)); recalcSoon(); };
   // Free typing: keep the raw text for the input (so ", " survives mid-typing), and
   // split it into street/city/state underneath. Drop the cached coords — the address
   // just changed and they may no longer match.
   const updateAddress = (idx: number, text: string) => {
     const p = parseAddress(text);
+    settle("stops");
     setStops((prev) => prev.map((s, i) => i === idx ? { ...s, ...p, text, lat: undefined, lng: undefined } : s));
   };
   // A picked suggestion gives the fields already split AND precise coords — take both
@@ -1312,6 +1394,7 @@ function LoadForm({ load, onCancel, onSave, saving = false, error, startDirty = 
   const selectAddress = (idx: number, parts: AddressParts, lat: number, lng: number) => {
     // A picked address knows its zip; a bare city doesn't, and what was typed is kept.
     const { zip, ...address } = parts;
+    settle("stops");
     setStops((prev) => prev.map((s, i) => i === idx ? { ...s, ...address, ...(zip ? { zip } : {}), text: joinAddress(parts), lat, lng } : s));
     recalcSoon();
   };
@@ -1339,10 +1422,13 @@ function LoadForm({ load, onCancel, onSave, saving = false, error, startDirty = 
   // Geocode any filled stop missing coords (sequentially — Nominatim throttles bursts),
   // then route them for the miles total. Fully guarded: always clears the spinner, never
   // lets a stale run clobber a newer result, and times out instead of hanging.
-  const computeMiles = async () => {
+  //
+  // `force` measures a route that has not changed since the form opened — a draft read from
+  // a document that states no miles has a route and nothing measured for it yet.
+  const computeMiles = async (force = false) => {
     const filled = stopsRef.current.filter((s) => s.city.trim());
     const sig = routeSig(stopsRef.current);
-    if (sig === lastSigRef.current) return;           // route unchanged — nothing to do
+    if (sig === lastSigRef.current && !force) return; // route unchanged — nothing to do
     lastSigRef.current = sig;
 
     // The route changed, so any run still in flight is now stale — cancel it and claim the turn.
@@ -1445,7 +1531,18 @@ function LoadForm({ load, onCancel, onSave, saving = false, error, startDirty = 
   // A load opened with stops that were never located — one filled from a rate confirmation,
   // or saved before this check existed — gets them looked up straight away, so the marks
   // are true before anyone clicks Save.
-  useEffect(() => { void locateMissing(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  //
+  // A draft whose document stated no miles is then measured along its route, rather than
+  // left at 0 for the dispatcher to notice. Miles the document did state are the broker's
+  // figure and are kept as they are.
+  useEffect(() => {
+    void (async () => {
+      await locateMissing();
+      if (!isNew || !startDirty || (load.totalMiles ?? 0) > 0) return;
+      await new Promise((r) => setTimeout(r)); // let the located stops reach the form first
+      await computeMiles(true);
+    })();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const stopState = (st: Stop): "empty" | "located" | "locating" | "notFound" | "unchecked" => {
     if (!st.city.trim()) return "empty";
@@ -1572,6 +1669,27 @@ function LoadForm({ load, onCancel, onSave, saving = false, error, startDirty = 
       <div style={{ flex: 1, overflowY: "auto", padding: "16px 24px 28px", scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent" }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 14, maxWidth: 1280, margin: "0 auto", minWidth: 0 }}>
 
+          {/* A draft with problems is flagged on the fields themselves. These two notices are
+              for the drafts that have none to show: one that checked out, and one that
+              could not be checked at all. */}
+          {review && uncheckable(review) ? (
+            <div role="status" style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "11px 14px", border: "1px solid var(--border)", borderRadius: 10, backgroundColor: "var(--muted)" }}>
+              <AlertCircle size={16} style={{ color: "var(--muted-foreground)", flexShrink: 0, marginTop: 1 }} />
+              <div>
+                <div style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, color: "var(--foreground)" }}>This was read from a photo or a scan</div>
+                <div style={hintStyle}>The values could not be checked against the document's text. Compare them with the document before saving.</div>
+              </div>
+            </div>
+          ) : review && review.warnings.length === 0 ? (
+            <div role="status" style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "11px 14px", border: "1px solid var(--border)", borderRadius: 10, backgroundColor: "var(--primary-soft)" }}>
+              <Check size={16} style={{ color: "var(--primary)", flexShrink: 0, marginTop: 1 }} />
+              <div>
+                <div style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, color: "var(--foreground)" }}>Nothing to flag</div>
+                <div style={hintStyle}>The load number, broker, rate and miles were all found in the document. You still check it before saving.</div>
+              </div>
+            </div>
+          ) : null}
+
           {isNew && onExtract && (
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px 14px", flexWrap: "wrap", padding: "12px 14px", border: "1px dashed var(--switch-background)", borderRadius: 10, backgroundColor: "var(--card)" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
@@ -1595,19 +1713,28 @@ function LoadForm({ load, onCancel, onSave, saving = false, error, startDirty = 
               <div style={secTitle}>Load</div>
               <div className="grid grid-cols-1 sm:grid-cols-3" style={{ gap: "12px 14px" }}>
                 <label style={labelStyle}>
-                  <span style={capStyle}>Load ID <span style={{ color: "#EF4444" }}>*</span></span>
-                  <input value={form.loadId ?? ""} onChange={(e) => set("loadId", e.target.value)} placeholder="LD-00000" autoFocus={isNew} {...NO_AUTOFILL}
-                    style={{ ...inputStyle, fontFamily: "var(--font-mono)", borderColor: submitted && loadIdMissing ? "#EF4444" : "var(--border)" }}
-                    onFocus={focusInput} onBlur={(e) => { blurInput(e); if (submitted && loadIdMissing) e.currentTarget.style.borderColor = "#EF4444"; }} />
+                  <span style={{ ...capStyle, ...capRow }}><span>Load ID <span style={{ color: "#EF4444" }}>*</span></span><ReviewMark warnings={flagsOn("load_id")} evidence={review?.evidence?.load_id} /></span>
+                  <span style={ring("load_id")}>
+                    <input value={form.loadId ?? ""} onChange={(e) => set("loadId", e.target.value)} placeholder="LD-00000" autoFocus={isNew} {...NO_AUTOFILL}
+                      style={{ ...inputStyle, fontFamily: "var(--font-mono)", borderColor: submitted && loadIdMissing ? "#EF4444" : "var(--border)" }}
+                      onFocus={focusInput} onBlur={(e) => { blurInput(e); if (submitted && loadIdMissing) e.currentTarget.style.borderColor = "#EF4444"; }} />
+                  </span>
                   {submitted && loadIdMissing && <span style={errStyle}>Load ID is required.</span>}
+                  {flagNote("load_id")}
                 </label>
                 <label style={labelStyle}>
-                  <span style={capStyle}>Broker</span>
-                  <input value={form.broker ?? ""} onChange={(e) => set("broker", e.target.value)} {...NO_AUTOFILL} style={inputStyle} onFocus={focusInput} onBlur={blurInput} />
+                  <span style={{ ...capStyle, ...capRow }}>Broker<ReviewMark warnings={flagsOn("broker")} evidence={review?.evidence?.broker} /></span>
+                  <span style={ring("broker")}>
+                    <input value={form.broker ?? ""} onChange={(e) => set("broker", e.target.value)} {...NO_AUTOFILL} style={inputStyle} onFocus={focusInput} onBlur={blurInput} />
+                  </span>
+                  {flagNote("broker")}
                 </label>
                 <div style={labelStyle}>
-                  <span style={capStyle}>Rate</span>
-                  <NumberField label="Rate" prefix="$" value={form.payout} onChange={(n) => set("payout", n)} />
+                  <span style={{ ...capStyle, ...capRow }}>Rate<ReviewMark warnings={flagsOn("payout")} evidence={review?.evidence?.payout} /></span>
+                  <span style={ring("payout")}>
+                    <NumberField label="Rate" prefix="$" value={form.payout} onChange={(n) => set("payout", n)} />
+                  </span>
+                  {flagNote("payout")}
                 </div>
                 {/* The load's other numbers. A driver is asked for these at the gate, and
                     they go into the message sent to the driver's Telegram group. */}
@@ -1693,9 +1820,10 @@ function LoadForm({ load, onCancel, onSave, saving = false, error, startDirty = 
             {/* Route — unified stop list */}
             <div style={cardStyle}>
               <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10 }}>
-                <span style={secTitle}>Route</span>
+                <span style={{ ...secTitle, ...capRow }}>Route<ReviewMark warnings={flagsOn("stops")} /></span>
                 <span style={hintStyle}>Drag a stop by its handle to reorder</span>
               </div>
+              {flagNote("stops")}
 
               <div style={{ overflowX: "auto" }}>
                 <div style={{ display: "flex", flexDirection: "column", gap: 10, minWidth: 760 }}>
@@ -1902,8 +2030,11 @@ function LoadForm({ load, onCancel, onSave, saving = false, error, startDirty = 
               <div style={secTitle}>Distance</div>
               <div style={fieldGrid}>
                 <div style={labelStyle}>
-                  <span style={capStyle}>Loaded miles</span>
-                  <NumberField label="Loaded miles" suffix="mi" decimals={0} busy={recalcing} value={form.totalMiles} onChange={(n) => set("totalMiles", n)} />
+                  <span style={{ ...capStyle, ...capRow }}>Loaded miles<ReviewMark warnings={flagsOn("miles")} evidence={review?.evidence?.miles} /></span>
+                  <span style={ring("miles")}>
+                    <NumberField label="Loaded miles" suffix="mi" decimals={0} busy={recalcing} value={form.totalMiles} onChange={(n) => set("totalMiles", n)} />
+                  </span>
+                  {flagNote("miles")}
                   <span style={hintStyle}>{milesNote ?? "Worked out from the route when it changes. You can type over it."}</span>
                 </div>
 
@@ -1977,7 +2108,10 @@ export function LoadFormPage() {
   const allowed = hasPerm(user, "loads", isNew ? "create" : "update");
 
   // A draft handed over by the list's "AI Smart Extract" arrives in the navigation state.
-  const handedDraft = (location.state as { draft?: ExtractDraft } | null)?.draft;
+  const handed = location.state as { draft?: ExtractDraft; review?: ExtractReview } | null;
+  const handedDraft = handed?.draft;
+  // What the extractor said to double-check; it belongs to the draft the form is showing.
+  const [review, setReview] = useState<ExtractReview | undefined>(handedDraft ? handed?.review : undefined);
   const [initial, setInitial]   = useState<Partial<Load> | null>(isNew ? (handedDraft ? draftToLoad(handedDraft) : {}) : null);
   // An extracted draft is unsaved work from the first moment — leaving must ask.
   const [fromDraft, setFromDraft] = useState(!!handedDraft);
@@ -2076,15 +2210,17 @@ export function LoadFormPage() {
         error={saveErr}
         onDirtyChange={setDirty}
         onExtract={() => setExtracting(true)}
+        review={review}
       />
 
       {extracting && (
         <ExtractModal
           onClose={() => setExtracting(false)}
-          onExtracted={(d) => {
+          onExtracted={(d, r) => {
             // The draft replaces whatever is in the form — rebuild it around the new values.
             setExtracting(false);
             setInitial(draftToLoad(d));
+            setReview(r);
             setFromDraft(true);
             setFormKey((k) => k + 1);
           }}
@@ -2500,9 +2636,9 @@ export function LoadsPage() {
 
   // The draft is never persisted by the extractor — hand it to the create page so a human
   // reviews it, assigns driver/dispatcher, and saves via POST /loads.
-  const openFromDraft = (draft: ExtractDraft) => {
+  const openFromDraft = (draft: ExtractDraft, review: ExtractReview) => {
     setExtracting(false);
-    navigate("/workspace/loads/new", { state: { draft } });
+    navigate("/workspace/loads/new", { state: { draft, review } });
   };
 
   const del = async () => {

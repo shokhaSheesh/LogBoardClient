@@ -23,6 +23,10 @@
   --accent: #DDF1E5;
   --accent-foreground: #115E35;
   --destructive: #EF4444;
+  /* "Check this": a value that is probably fine but should be looked at. */
+  --caution: #B45309;
+  --caution-soft: rgba(245, 158, 11, 0.16);
+  --caution-line: rgba(245, 158, 11, 0.55);
   --destructive-foreground: #ffffff;
   --border: #E5E7EB;
   --input: transparent;
@@ -72,6 +76,7 @@
   --accent: #153524;
   --accent-foreground: #BFE8CF;
   --destructive: #EF4444;
+  --caution: #FBBF24;
   --destructive-foreground: #ffffff;
   --border: #1F2937;
   --input: transparent;
