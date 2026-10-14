@@ -4,7 +4,7 @@ import { createPortal } from "react-dom";
 import {
   Package, Plus, Pencil, Trash2, X, Check, AlertCircle,
   Search, ChevronDown, ChevronLeft, ChevronRight,
-  ClipboardList, Sparkles, Upload, FileText,
+  ClipboardList, Sparkles, Upload, FileText, Zap,
   ArrowLeft, ArrowRight, MapPin, Building2, User, DollarSign, Clock, History, CalendarDays, Navigation, Truck, Container, GripVertical, Hash,
 } from "lucide-react";
 import { Status, STATUS_CONFIG as SHARED_STATUS_CONFIG, ALL_STATUSES as SHARED_ALL_STATUSES } from "../lib/statuses";
@@ -875,12 +875,16 @@ interface ExtractDraft {
 
 interface FieldEvidence { quote: string; page: number; status: "verified" | "unverified" | "not_found" }
 interface ExtractWarning { code: string; field: string; message: string }
-interface ExtractReview { evidence?: Partial<Record<ReviewField, FieldEvidence>>; warnings: ExtractWarning[] }
+// meta.provider is who read the document: a model, or "template" — a broker layout the server
+// learned from this company's earlier documents, read instantly and without a model.
+interface ExtractMeta { provider?: string; model?: string; template_id?: string }
+interface ExtractReview { evidence?: Partial<Record<ReviewField, FieldEvidence>>; warnings: ExtractWarning[]; meta?: ExtractMeta }
 // The draft fields a warning can name.
 type ReviewField = "load_id" | "broker" | "payout" | "miles" | "stops";
-interface Extraction { draft?: ExtractDraft; evidence?: ExtractReview["evidence"]; warnings?: ExtractWarning[] }
+interface Extraction { draft?: ExtractDraft; evidence?: ExtractReview["evidence"]; warnings?: ExtractWarning[]; meta?: ExtractMeta }
 
-const reviewOf = (res: Extraction | null | undefined): ExtractReview => ({ evidence: res?.evidence, warnings: res?.warnings ?? [] });
+const reviewOf = (res: Extraction | null | undefined): ExtractReview => ({ evidence: res?.evidence, warnings: res?.warnings ?? [], meta: res?.meta });
+const fromTemplate = (r?: ExtractReview) => r?.meta?.provider === "template";
 
 // A photo or a scan has no text to check a value against, so nothing could be verified.
 const KEY_FIELDS: ReviewField[] = ["load_id", "broker", "payout", "miles"];
@@ -1697,7 +1701,17 @@ function LoadForm({ load, onCancel, onSave, saving = false, error, startDirty = 
             <div role="status" style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "11px 14px", border: "1px solid var(--border)", borderRadius: 10, backgroundColor: "var(--primary-soft)" }}>
               <Check size={16} style={{ color: "var(--primary)", flexShrink: 0, marginTop: 1 }} />
               <div>
-                <div style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, color: "var(--foreground)" }}>Nothing to flag</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, color: "var(--foreground)" }}>
+                  Nothing to flag
+                  {/* Read instantly from what the server learned of this broker's layout, so the
+                      speed doesn't look like nothing happened. */}
+                  {fromTemplate(review) && (
+                    <span title="This broker's layout was learned from earlier documents, so it was read without AI"
+                      style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11.5, fontWeight: 600, color: "var(--primary)", backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 999, padding: "1px 8px" }}>
+                      <Zap size={11} /> Read from a saved template
+                    </span>
+                  )}
+                </div>
                 <div style={hintStyle}>The load number, broker, rate and miles were all found in the document. You still check it before saving.</div>
               </div>
             </div>
