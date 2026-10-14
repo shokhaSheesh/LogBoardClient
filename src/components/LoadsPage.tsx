@@ -857,7 +857,13 @@ interface ExtractDraft {
   payout?: number;
   miles?: number;
   deadhead_distance?: number; // extractor returns 0 unless the rate con states it
-  stops?: { facility?: string; street?: string; city?: string; state?: string; zip?: string; appt?: string }[];
+  // The load's other numbers, "" when the document doesn't print them.
+  ref_number?: string;
+  po_number?: string;
+  other_number?: string;
+  // Per stop: the PU # or DEL #, "pickup"/"delivery" from the stop's own label ("" when
+  // unlabelled), and the appointment's zone (ET, CT, MT, PT, AKT, HT) when it is printed.
+  stops?: { facility?: string; street?: string; city?: string; state?: string; zip?: string; appt?: string; ref?: string; kind?: string; appt_tz?: string }[];
 }
 
 // ─── What to double-check on an extracted draft ──────────────────────────────
@@ -983,6 +989,10 @@ function draftToLoad(d: ExtractDraft): Partial<Load> {
     // section HEADING ("Appointment", "TBD", …) as the value, which then renders on the
     // board as if it meant something. Empty is honest; a human fills it in.
     appt: formatAppt(s.appt),
+    // Taken only when they are values the form knows; anything else is left for a person.
+    appt_tz: TIME_ZONES.some((z) => z.code === s.appt_tz) ? s.appt_tz : "",
+    ref: (s.ref ?? "").trim(),
+    kind: s.kind === "pickup" || s.kind === "delivery" ? s.kind : "",
     done: false,
   }));
   // The modal expects at least an origin and a destination row.
@@ -993,6 +1003,9 @@ function draftToLoad(d: ExtractDraft): Partial<Load> {
     payout:     d.payout  ?? 0,
     totalMiles: d.miles   ?? 0,
     deadheadMiles: d.deadhead_distance ?? 0,
+    refNumber:   (d.ref_number ?? "").trim(),
+    poNumber:    (d.po_number ?? "").trim(),
+    otherNumber: (d.other_number ?? "").trim(),
     stops,
   };
 }
