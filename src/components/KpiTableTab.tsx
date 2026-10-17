@@ -9,11 +9,11 @@ import { Dash } from "./Dash";
 import { FormError, formErrorInModal, friendlyError, notify } from "./feedback";
 
 // Settings → KPI Table: the company's one table of rules for dispatchers paid by it. Each rule
-// is "a week whose gross and RPM fall in these ranges pays this percent"; a week no rule fits
-// pays the "below the table" percent. Every change counts from the current work week on —
+// is "a week whose gross and RPM fall in these ranges pays this percent", plus an optional
+// bonus paid once for the week; a week no rule fits pays the "below the table" percent. Every change counts from the current work week on —
 // earlier weeks keep the table they had (the server files each change under its week).
 
-interface Rule { id: string; gross_from: number; gross_to: number | null; rpm_from: number; rpm_to: number | null; percent: number }
+interface Rule { id: string; gross_from: number; gross_to: number | null; rpm_from: number; rpm_to: number | null; percent: number; bonus?: number }
 interface Table { active_from: string; fallback_percent: number; rules: Rule[] }
 interface View { current: Table | null; week_start: string; week_end: string; history: string[] }
 
@@ -121,6 +121,7 @@ export function KpiTableTab({ canEdit }: { canEdit: boolean }) {
               <TH>Weekly gross</TH>
               <TH>RPM</TH>
               <TH align="right">Percent</TH>
+              <TH align="right">Bonus</TH>
               <TH width={92} align="center">Actions</TH>
             </tr>
           </thead>
@@ -130,6 +131,7 @@ export function KpiTableTab({ canEdit }: { canEdit: boolean }) {
                 <td style={td}>{span(r.gross_from, r.gross_to, whole)}</td>
                 <td style={td}>{span(r.rpm_from, r.rpm_to, rpm)}</td>
                 <td style={{ ...td, textAlign: "right", fontWeight: 700 }}>{r.percent}%</td>
+                <td style={{ ...td, textAlign: "right", fontWeight: 600, color: r.bonus ? "var(--primary)" : "var(--muted-foreground)" }}>{r.bonus ? `+${whole(r.bonus)}` : <Dash />}</td>
                 <td style={{ ...td, textAlign: "center", padding: "6px 10px" }}>
                   {canEdit ? (
                     <div style={{ display: "inline-flex", gap: 2 }}>
@@ -142,7 +144,7 @@ export function KpiTableTab({ canEdit }: { canEdit: boolean }) {
             ))}
             {rules.length === 0 && (
               <tr>
-                <td colSpan={4} style={{ padding: "48px 20px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
+                <td colSpan={5} style={{ padding: "48px 20px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
                   No rules yet. Until there are, everyone paid by the table gets {fallback}%.
                 </td>
               </tr>
@@ -172,6 +174,7 @@ function RuleModal({ rule, week, onClose, onSaved }: { rule: Rule | null; week: 
   const [rpmFrom, setRpmFrom] = useState<number | undefined>(rule?.rpm_from);
   const [rpmTo, setRpmTo] = useState<number | undefined>(rule?.rpm_to ?? undefined);
   const [percent, setPercent] = useState<number | undefined>(rule?.percent);
+  const [bonus, setBonus] = useState<number | undefined>(rule?.bonus || undefined);
   const [tried, setTried] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -187,7 +190,7 @@ function RuleModal({ rule, week, onClose, onSaved }: { rule: Rule | null; week: 
     setTried(true);
     if (grossErr || rpmErr || pctErr) return;
     setSaving(true); setError(null);
-    const body = { gross_from: grossFrom, gross_to: toOrNull(grossTo), rpm_from: rpmFrom, rpm_to: toOrNull(rpmTo), percent };
+    const body = { gross_from: grossFrom, gross_to: toOrNull(grossTo), rpm_from: rpmFrom, rpm_to: toOrNull(rpmTo), percent, bonus: bonus ?? 0 };
     try {
       const v = isNew ? await api.post<View>("/kpi/table/rules", body) : await api.put<View>(`/kpi/table/rules/${rule.id}`, body);
       notify.success(isNew ? "Rule added" : "Rule updated");
@@ -222,14 +225,18 @@ function RuleModal({ rule, week, onClose, onSaved }: { rule: Rule | null; week: 
         <div style={{ padding: "16px 20px", display: "grid", gridTemplateColumns: "1fr", gap: 14 }}>
           {pair("Weekly gross", grossFrom, setGrossFrom, grossTo, setGrossTo, { prefix: "$", decimals: 0, fromPh: "8000", toPh: "and up" }, grossErr)}
           {pair("RPM", rpmFrom, setRpmFrom, rpmTo, setRpmTo, { prefix: "$", decimals: 2, fromPh: "2.00", toPh: "and up" }, rpmErr)}
-          <div style={{ display: "flex", flexDirection: "column", gap: 5, maxWidth: 200 }}>
-            <FieldLabel required error={tried && !!pctErr}>Percent</FieldLabel>
-            <NumberField label="Percent" value={percent} suffix="%" max={100} decimals={3} placeholder="1" onChange={setPercent} invalid={tried && !!pctErr} />
-            {hint(pctErr)}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+              <FieldLabel required error={tried && !!pctErr}>Percent</FieldLabel>
+              <NumberField label="Percent" value={percent} suffix="%" max={100} decimals={3} placeholder="1" onChange={setPercent} invalid={tried && !!pctErr} />
+              {hint(pctErr)}
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+              <FieldLabel>Bonus</FieldLabel>
+              <NumberField label="Bonus" value={bonus} prefix="$" decimals={2} max={100000} placeholder="0" onChange={(n) => setBonus(n || undefined)} />
+              <span style={{ fontFamily: "var(--font-sans)", fontSize: 11.5, color: "var(--muted-foreground)" }}>Once per week, on top of the percent.</span>
+            </div>
           </div>
-          <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)", lineHeight: 1.45 }}>
-            Leave "to" empty for "and up". A week counts in a range from its "from" up to, not including, its "to". Counts from this week ({week}).
-          </span>
         </div>
         <FormError message={error} style={formErrorInModal} />
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, padding: "12px 20px", borderTop: "1px solid var(--border)" }}>
