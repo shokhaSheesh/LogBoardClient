@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { Search, Check, ChevronDown, X } from "lucide-react";
 import { isForbidden } from "../lib/api";
+import { useLayer } from "../lib/layers";
 
 // A single option in any of the app's selects.
 export interface SelectOpt { value: string; label: string; dot?: string }
@@ -26,6 +27,7 @@ export function AsyncSearchableSelect({ value, valueLabel, fetchPage, onChange, 
   const inputRef = useRef<HTMLInputElement>(null);
   const reqId    = useRef(0);
   const [open,  setOpen]  = useState(false);
+  useLayer(open, { onEscape: () => setOpen(false) });
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [items, setItems] = useState<SelectOpt[]>([]);

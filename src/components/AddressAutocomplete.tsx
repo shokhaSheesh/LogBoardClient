@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { suggestAddresses, type PlaceAddress } from "../lib/places";
+import { useLayer } from "../lib/layers";
 
 export interface AddressParts { street: string; city: string; state: string; zip?: string }
 
@@ -41,6 +42,7 @@ export function AddressAutocomplete({ value, onChange, onSelect, onCoords, onBus
   const inputRef                      = useRef<HTMLInputElement>(null);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [open, setOpen]               = useState(false);
+  useLayer(open, { onEscape: () => setOpen(false) });
   const [activeIdx, setActiveIdx]     = useState(-1);
   const [dropPos, setDropPos]         = useState<React.CSSProperties>({});
   const debounceRef                   = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -127,7 +129,8 @@ export function AddressAutocomplete({ value, onChange, onSelect, onCoords, onBus
     if (e.key === "ArrowDown") { e.preventDefault(); setActiveIdx((i) => Math.min(i + 1, suggestions.length - 1)); }
     if (e.key === "ArrowUp")   { e.preventDefault(); setActiveIdx((i) => Math.max(i - 1, -1)); }
     if (e.key === "Enter" && activeIdx >= 0) { e.preventDefault(); pick(suggestions[activeIdx]); }
-    if (e.key === "Escape")    { setOpen(false); }
+    // Handled here, so the dialog around the field stays open.
+    if (e.key === "Escape")    { e.preventDefault(); setOpen(false); }
   };
 
   useEffect(() => () => { clearTimeout(debounceRef.current!); onBusyRef.current?.(false); }, []);

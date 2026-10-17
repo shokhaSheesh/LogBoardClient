@@ -9,6 +9,7 @@ import { Dash } from "../components/Dash";
 import { Kpi } from "../components/Kpi";
 import { PeriodFilter, ALL_TIME, type Period, type PeriodMode } from "../components/PeriodFilter";
 import { ScrollPane } from "../components/ScrollX";
+import { useLayer } from "../lib/layers";
 
 // ─── Dispatcher KPI (/workspace/payouts/kpi) ──────────────────────────────────
 //
@@ -86,6 +87,10 @@ export function KpiPage() {
   const [weeks, setWeeks]           = useState<WeekRow[] | null>(null);
   const [weeksError, setWeeksError] = useState(false);
   const [week, setWeek]             = useState<WeekRow | null>(null);
+  // Esc goes back one level: from a week's loads to the weeks, and from the page to Payouts.
+  // The page's layer goes on first, so an open week sits above it.
+  useLayer(true, { onEscape: () => navigate("/workspace/payouts") });
+  useLayer(!!week, { onEscape: () => setWeek(null) });
   useEffect(() => {
     setWeek(null);
     if (!picked) { setWeeks(null); return; }

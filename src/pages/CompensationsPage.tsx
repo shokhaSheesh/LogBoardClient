@@ -13,6 +13,7 @@ import {
 } from "../lib/compensations";
 import { ActionBtn, CustomSelect, DeleteConfirm, Pagination, TH } from "../components/LoadsPage";
 import { FieldLabel, useEscape } from "../components/DriversPage";
+import { useLayer } from "../lib/layers";
 import { AsyncSearchableSelect } from "../components/AsyncSelect";
 import { DatePicker } from "../components/DatePicker";
 import { NumberField } from "../components/NumberField";
@@ -238,6 +239,7 @@ function StatusPill({ status, chevron }: { status: CompStatus; chevron?: boolean
 
 function StatusPicker({ value, onChange, readOnly }: { value: CompStatus; onChange: (s: CompStatus) => void; readOnly?: boolean }) {
   const [rect, setRect] = useState<DOMRect | null>(null);
+  useLayer(!!rect, { onEscape: () => setRect(null) });
   const anchor = useRef<HTMLButtonElement>(null);
   const menu = useRef<HTMLDivElement>(null);
 
@@ -292,7 +294,9 @@ function CompensationModal({ value, onClose, onSaved }: { value: Compensation | 
   // Brokers of the loads the picker has shown, so picking one fills the broker in.
   const brokers = useRef(new Map<string, { ref: string; broker: string }>());
   const set = (patch: Partial<CompInput>) => setForm((f) => ({ ...f, ...patch }));
-  useEscape(onClose, saving);
+  // Esc asks before throwing away what was typed; Enter saves.
+  const [opened] = useState(() => JSON.stringify(form));
+  const requestClose = useEscape(onClose, saving, { onSave: () => { void save(); }, dirty: JSON.stringify(form) !== opened });
 
   const missingLoad = !form.loadRef;
   const save = async () => {
@@ -319,7 +323,7 @@ function CompensationModal({ value, onClose, onSaved }: { value: Compensation | 
           <span style={{ fontFamily: "var(--font-sans)", fontSize: 15, fontWeight: 700, color: "var(--foreground)", letterSpacing: "-0.01em" }}>
             {isNew ? "New compensation request" : "Edit compensation request"}
           </span>
-          <button onClick={onClose} aria-label="Close" style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted-foreground)", display: "flex" }}><X size={16} /></button>
+          <button onClick={requestClose} aria-label="Close" style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted-foreground)", display: "flex" }}><X size={16} /></button>
         </div>
 
         <div style={{ padding: "16px 20px", display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "12px 14px" }}>

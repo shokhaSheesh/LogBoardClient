@@ -4,6 +4,7 @@ import { api } from "../lib/api";
 import { fmtDate } from "../lib/dates";
 import { ActionBtn, DeleteConfirm, TH } from "./LoadsPage";
 import { FieldLabel, useEscape } from "./DriversPage";
+import { useLayer } from "../lib/layers";
 import { NumberField } from "./NumberField";
 import { Dash } from "./Dash";
 import { FormError, formErrorInModal, friendlyError, notify } from "./feedback";
@@ -32,6 +33,8 @@ export function KpiTableTab({ canEdit }: { canEdit: boolean }) {
   const [delErr, setDelErr] = useState<string | null>(null);
   const [fallbackEdit, setFallbackEdit] = useState<number | undefined>(undefined);
   const [fallbackOpen, setFallbackOpen] = useState(false);
+  // The inline "below the table" edit: Esc cancels it, Enter saves it.
+  useLayer(fallbackOpen, { onEscape: () => setFallbackOpen(false), onSubmit: () => { void saveFallback(); } });
   const [fallbackBusy, setFallbackBusy] = useState(false);
 
   useEffect(() => {
@@ -178,7 +181,10 @@ function RuleModal({ rule, week, onClose, onSaved }: { rule: Rule | null; week: 
   const [tried, setTried] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  useEscape(onClose, saving);
+  // Esc asks before throwing away what was typed; Enter saves.
+  const values = JSON.stringify([grossFrom, grossTo, rpmFrom, rpmTo, percent, bonus]);
+  const [opened] = useState(values);
+  const requestClose = useEscape(onClose, saving, { onSave: () => { void save(); }, dirty: values !== opened });
 
   // NumberField reports a cleared field as 0; a "to" of 0 can't be above any "from", so read it as empty.
   const toOrNull = (n: number | undefined) => (n == null || n === 0 ? null : n);
@@ -220,7 +226,7 @@ function RuleModal({ rule, week, onClose, onSaved }: { rule: Rule | null; week: 
       <div style={{ backgroundColor: "var(--card)", borderRadius: 12, width: 480, maxWidth: "calc(100vw - 32px)", boxShadow: "0 20px 60px rgba(0,0,0,0.22)" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "13px 20px", borderBottom: "1px solid var(--border)" }}>
           <span style={{ fontFamily: "var(--font-sans)", fontSize: 15, fontWeight: 700, color: "var(--foreground)", letterSpacing: "-0.01em" }}>{isNew ? "New KPI rule" : "Edit KPI rule"}</span>
-          <button onClick={onClose} aria-label="Close" style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted-foreground)", display: "flex" }}><X size={16} /></button>
+          <button onClick={requestClose} aria-label="Close" style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted-foreground)", display: "flex" }}><X size={16} /></button>
         </div>
         <div style={{ padding: "16px 20px", display: "grid", gridTemplateColumns: "1fr", gap: 14 }}>
           {pair("Weekly gross", grossFrom, setGrossFrom, grossTo, setGrossTo, { prefix: "$", decimals: 0, fromPh: "8000", toPh: "and up" }, grossErr)}

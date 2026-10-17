@@ -4,6 +4,7 @@ import { Calendar, Check, ChevronDown, ChevronLeft, ChevronRight } from "lucide-
 import { fmtDateRange } from "../lib/dates";
 import { CAL, calHover } from "./calendar";
 import { DateRangePicker } from "./DateRangePicker";
+import { useLayer } from "../lib/layers";
 
 // ─── Period filter ────────────────────────────────────────────────────────────
 //
@@ -63,6 +64,7 @@ function Menu({ label, children }: { label: string; children: (close: () => void
   const btnRef   = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
+  useLayer(open, { onEscape: () => setOpen(false) });
   const [pos, setPos]   = useState<{ top: number; left: number }>({ top: 0, left: 0 });
 
   const place = () => {
@@ -75,14 +77,11 @@ function Menu({ label, children }: { label: string; children: (close: () => void
       const t = e.target as Node;
       if (!btnRef.current?.contains(t) && !panelRef.current?.contains(t)) setOpen(false);
     };
-    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
     document.addEventListener("mousedown", away);
-    document.addEventListener("keydown", esc);
     window.addEventListener("resize", place);
     window.addEventListener("scroll", place, true);
     return () => {
       document.removeEventListener("mousedown", away);
-      document.removeEventListener("keydown", esc);
       window.removeEventListener("resize", place);
       window.removeEventListener("scroll", place, true);
     };

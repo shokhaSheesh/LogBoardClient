@@ -5,6 +5,7 @@ import { AuthProvider } from "./lib/auth";
 import { ThemeProvider } from "./lib/theme";
 import { EntitlementProvider } from "./lib/entitlement";
 import { AppToaster } from "./components/feedback";
+import { DiscardHost } from "./lib/layers";
 import "./styles/index.css";
 
 createRoot(document.getElementById("root")!).render(
@@ -13,6 +14,7 @@ createRoot(document.getElementById("root")!).render(
       <EntitlementProvider>
         <RouterProvider router={router} />
         <AppToaster />
+        <DiscardHost />
       </EntitlementProvider>
     </AuthProvider>
   </ThemeProvider>

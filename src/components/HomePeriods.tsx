@@ -5,6 +5,7 @@ import { useAuth } from "../lib/auth";
 import { hasPerm } from "../lib/permissions";
 import { fmtDate, fmtDateRange } from "../lib/dates";
 import { DatePicker } from "./DatePicker";
+import { useLayer } from "../lib/layers";
 import { friendlyError, notify } from "./feedback";
 
 // A driver's home time: the stretches they spend at home, from one day to another, kept as a
@@ -63,6 +64,10 @@ export function DriverHomePeriods({ driverId }: { driverId: string }) {
   const [periods, setPeriods] = useState<HomePeriod[] | null>(null);
   const [editing, setEditing] = useState<{ id: string; from: string; until: string } | null>(null);
   const [removing, setRemoving] = useState<string | null>(null);
+  // The inline add/change form and the remove question sit above the page: Esc cancels them
+  // (before it would leave the driver), and Enter saves the dates.
+  useLayer(!!editing, { onEscape: () => { setEditing(null); setError(""); }, onSubmit: () => { void save(); } });
+  useLayer(!!removing, { onEscape: () => setRemoving(null) });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [loadError, setLoadError] = useState("");

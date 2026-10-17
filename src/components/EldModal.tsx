@@ -4,6 +4,7 @@ import { api, ApiError } from "../lib/api";
 import { AsyncSearchableSelect } from "./AsyncSelect";
 import { driverDisplayName } from "../lib/driverName";
 import { FormError, friendlyError } from "./feedback";
+import { useLayer } from "../lib/layers";
 
 // One entry from GET /eld/drivers: a driver on the provider's roster, and how (if at all)
 // it maps to a board driver.
@@ -112,11 +113,7 @@ export function EldModal({ onClose, onLinked, canManage = true }: { onClose: () 
   const linkedCount = roster.filter((e) => e.driver_id).length;
 
   // Escape closes the dialog, unless a link or a sync is in flight.
-  useEffect(() => {
-    const h = (e: KeyboardEvent) => { if (e.key === "Escape" && !syncing && !busyId) onClose(); };
-    document.addEventListener("keydown", h);
-    return () => document.removeEventListener("keydown", h);
-  }, [onClose, syncing, busyId]);
+  useLayer(true, { onEscape: () => { if (!syncing && !busyId) onClose(); } });
 
   return (
     <div role="dialog" aria-modal="true" aria-label="ELD drivers" style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }}>

@@ -6,6 +6,7 @@ import { useAuth } from "../lib/auth";
 import { hasPerm } from "../lib/permissions";
 import { fmtDate, fmtDateTime } from "../lib/dates";
 import { friendlyError, notify } from "./feedback";
+import { useLayer } from "../lib/layers";
 
 // A driver's Telegram group, and posting a load to it. The bot does the posting; these two
 // are the app's side: the group card on a driver, and the send button on a load.
@@ -150,11 +151,8 @@ function SendDialog({ loadId, loadLabel, driverName, onClose }: { loadId: string
     return () => { gone = true; };
   }, [loadId]);
 
-  useEffect(() => {
-    const esc = (e: KeyboardEvent) => { if (e.key === "Escape" && !busy) onClose(); };
-    document.addEventListener("keydown", esc);
-    return () => document.removeEventListener("keydown", esc);
-  }, [busy, onClose]);
+  // Esc closes it. Enter does not send: a message in a group can't be taken back, so it takes a click.
+  useLayer(true, { onEscape: () => { if (!busy) onClose(); } });
 
   const send = async () => {
     setBusy(true); setProblem("");

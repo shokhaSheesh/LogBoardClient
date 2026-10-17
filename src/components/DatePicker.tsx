@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { Calendar } from "lucide-react";
 import { fmtDate } from "../lib/dates";
 import { CAL, calHover } from "./calendar";
+import { useLayer } from "../lib/layers";
 
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 const DAYS   = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
@@ -21,6 +22,7 @@ export function DatePicker({ value, onChange, min, label, invalid = false }: {
   const btnRef   = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
+  useLayer(open, { onEscape: () => setOpen(false) });
   const [pos, setPos]   = useState<React.CSSProperties>({});
   const base = value || min || iso(new Date().getFullYear(), new Date().getMonth(), new Date().getDate());
   const [vy, setVy]   = useState(Number(base.slice(0, 4)));
@@ -43,15 +45,11 @@ export function DatePicker({ value, onChange, min, label, invalid = false }: {
       const t = e.target as Node;
       if (!btnRef.current?.contains(t) && !panelRef.current?.contains(t)) setOpen(false);
     };
-    // Escape closes the calendar only — not the dialog it sits in.
-    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); setOpen(false); } };
     document.addEventListener("mousedown", away);
-    document.addEventListener("keydown", esc, true);
     window.addEventListener("resize", place);
     window.addEventListener("scroll", place, true);
     return () => {
       document.removeEventListener("mousedown", away);
-      document.removeEventListener("keydown", esc, true);
       window.removeEventListener("resize", place);
       window.removeEventListener("scroll", place, true);
     };

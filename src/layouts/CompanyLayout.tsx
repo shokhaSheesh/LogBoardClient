@@ -31,6 +31,7 @@ import { hasPerm, isOwnerPlanePage, canAccessPage } from "../lib/permissions";
 import { api, setCompanyId, getCompanyId } from "../lib/api";
 import { useBoardPresence } from "../lib/useBoardPresence";
 import { useEntitlement, type EntitlementCopy } from "../lib/entitlement";
+import { useLayer } from "../lib/layers";
 
 // ─── Account types ──────────────────────────────────────────────────────────
 
@@ -66,6 +67,7 @@ function AccountSwitcher({
   const menuItems = USER_MENU_ITEMS.filter((m) =>
     m.path.endsWith("/billing") ? isOwner : canAccessPage(user, "settings"));
   const [open, setOpen] = useState(false);
+  useLayer(open, { onEscape: () => setOpen(false) });
   const [rect, setRect] = useState<DOMRect | null>(null);
   const anchorRef = useRef<HTMLButtonElement>(null);
   const dropRef   = useRef<HTMLDivElement>(null);
@@ -493,6 +495,7 @@ function ActiveUsers({ companyId }: { companyId: string }) {
   const { count, users } = useBoardPresence(companyId);
   const [hovered, setHovered] = useState<string | null>(null);
   const [open, setOpen]       = useState(false);
+  useLayer(open, { onEscape: () => setOpen(false) });
   const [panelPos, setPanelPos] = useState({ top: 0, right: 0 });
   const wrapRef  = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -647,6 +650,7 @@ interface NotifResponse { items: NotifItem[]; unread_count: number; }
 
 function NotificationBell() {
   const [open, setOpen]             = useState(false);
+  useLayer(open, { onEscape: () => setOpen(false) });
   const [items, setItems]           = useState<NotifItem[]>([]);
   const [unread, setUnread]         = useState(0);
   const [loading, setLoading]       = useState(false);

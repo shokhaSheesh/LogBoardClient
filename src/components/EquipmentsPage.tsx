@@ -9,6 +9,7 @@ import { PageLoader } from "./PageLoader";
 import { FormError, formErrorInModal, friendlyError, notify } from "./feedback";
 import { Dash } from "./Dash";
 import { ScrollPane } from "./ScrollX";
+import { useDialogKeys, useLayer } from "../lib/layers";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -53,6 +54,7 @@ function CustomSelect({
   searchable?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  useLayer(open, { onEscape: () => setOpen(false) });
   const [query, setQuery] = useState("");
   const ref = useRef<HTMLDivElement>(null);
 
@@ -173,6 +175,7 @@ function AsyncSearchableSelect({ value, valueLabel, fetchPage, onChange, placeho
   const inputRef = useRef<HTMLInputElement>(null);
   const reqId    = useRef(0);
   const [open,  setOpen]  = useState(false);
+  useLayer(open, { onEscape: () => setOpen(false) });
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [items, setItems] = useState<SelectOpt[]>([]);
@@ -461,13 +464,10 @@ function ActionBtn({ icon, tone, onClick, label }: { icon: React.ReactNode; tone
   );
 }
 
-// Closes a dialog on Escape, unless it is busy saving.
-function useEscape(onClose: () => void, busy = false) {
-  useEffect(() => {
-    const h = (e: KeyboardEvent) => { if (e.key === "Escape" && !busy) onClose(); };
-    document.addEventListener("keydown", h);
-    return () => document.removeEventListener("keydown", h);
-  }, [onClose, busy]);
+// A dialog's keys (lib/layers): Esc closes it — asking first when it holds unsaved changes —
+// and, given onSave, Enter saves it. Nothing while it is busy.
+function useEscape(onClose: () => void, busy = false, opts: { onSave?: () => void; dirty?: boolean } = {}) {
+  return useDialogKeys({ onClose, busy, ...opts });
 }
 
 // ─── Modal ────────────────────────────────────────────────────────────────────
@@ -488,7 +488,8 @@ function EquipModal({ title, row, onClose, onSave, saving = false, error, equipK
   const set = (k: keyof EquipRow, v: string) => setForm((f) => ({ ...f, [k]: v }));
   const touch = (k: keyof EquipRow) => setTouched((t) => ({ ...t, [k]: true }));
   const isNew = !row.id;
-  useEscape(onClose, saving);
+  const [opened] = useState(() => JSON.stringify(row));
+  const requestClose = useEscape(onClose, saving, { onSave: () => handleSave(), dirty: JSON.stringify(form) !== opened });
 
   const handleSave = () => {
     setTouched({ unit: true });
@@ -501,7 +502,7 @@ function EquipModal({ title, row, onClose, onSave, saving = false, error, equipK
       <div style={{ backgroundColor: "var(--card)", borderRadius: 12, width: 720, maxWidth: "calc(100vw - 32px)", boxShadow: "0 20px 60px rgba(0,0,0,0.25)", overflow: "visible" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderBottom: "1px solid var(--border)" }}>
           <span style={{ fontFamily: "var(--font-sans)", fontSize: 15, fontWeight: 700, color: "var(--foreground)", letterSpacing: "-0.01em" }}>{title}</span>
-          <button onClick={onClose} aria-label="Close" style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted-foreground)" }}><X size={16} /></button>
+          <button onClick={requestClose} aria-label="Close" style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted-foreground)" }}><X size={16} /></button>
         </div>
         <div style={{ padding: "16px 20px", display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: "12px 14px" }}>
           {/* Unit # and Driver side by side */}
@@ -627,7 +628,8 @@ function ImportModal({ entityLabel, endpoint, onClose, onImported }: {
   const [error, setError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
-  useEscape(onClose, submitting);
+  // Esc closes; Enter imports the picked file.
+  useEscape(onClose, submitting, { onSave: () => { if (file && !result) void submit(); } });
 
   // Trucks and trailers share one template — identical columns.
   const downloadTemplate = async () => {
@@ -796,6 +798,7 @@ function AddMenu({ entityLabel, onManual, onImport }: {
   onImport: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  useLayer(open, { onEscape: () => setOpen(false) });
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {

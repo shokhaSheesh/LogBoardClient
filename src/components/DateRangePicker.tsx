@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { Calendar, ChevronDown, X } from "lucide-react";
 import { fmtDateRange } from "../lib/dates";
 import { CAL, calHover } from "./calendar";
+import { useLayer } from "../lib/layers";
 
 // ─── Date range picker ────────────────────────────────────────────────────────
 
@@ -35,6 +36,7 @@ interface DateRangePickerProps {
 
 export function DateRangePicker({ from, to, onChange, placeholder = "Select range", onClear }: DateRangePickerProps) {
   const [open, setOpen]           = useState(false);
+  useLayer(open, { onEscape: () => setOpen(false) });
   const [view, setView]           = useState<CalView>("days");
   const [dispYear, setDispYear]   = useState(() => from ? Number(from.slice(0, 4)) : new Date().getFullYear());
   const [dispMonth, setDispMonth] = useState(() => from ? Number(from.slice(5, 7)) - 1 : new Date().getMonth());

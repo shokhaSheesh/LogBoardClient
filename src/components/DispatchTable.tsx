@@ -16,6 +16,7 @@ import { UncompleteConfirm } from "./UncompleteConfirm";
 import { Dash } from "./Dash";
 import { fmtDate, fmtDateTime } from "../lib/dates";
 import { ScrollPane, ScrollX } from "./ScrollX";
+import { useLayer } from "../lib/layers";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -357,6 +358,7 @@ function eldFreshColor(reportedAt: string | null): string {
 
 function useDropdown() {
   const [open, setOpen] = useState(false);
+  useLayer(open, { onEscape: () => setOpen(false) });
   const [rect, setRect] = useState<DOMRect | null>(null);
   const anchorRef = useRef<HTMLDivElement>(null);
   const dropRef   = useRef<HTMLDivElement>(null);
@@ -377,14 +379,11 @@ function useDropdown() {
     // the cell moves and the menu would be left floating over some other row — so any
     // scroll outside the menu closes it. Escape closes it too.
     const onScroll = (e: Event) => { if (!dropRef.current?.contains(e.target as Node)) setOpen(false); };
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
     document.addEventListener("mousedown", h);
-    document.addEventListener("keydown", onKey);
     window.addEventListener("scroll", onScroll, true);
     window.addEventListener("resize", onScroll);
     return () => {
       document.removeEventListener("mousedown", h);
-      document.removeEventListener("keydown", onKey);
       window.removeEventListener("scroll", onScroll, true);
       window.removeEventListener("resize", onScroll);
     };
@@ -762,14 +761,7 @@ function HistoryPanel({ events, loading, onClose, onRevert }: {
   };
 
   // Escape closes the panel — or just the confirm, when that's what's open.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape" || reverting) return;
-      if (confirm) setConfirm(null); else onClose();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [confirm, reverting, onClose]);
+  useLayer(true, { onEscape: () => { if (reverting) return; if (confirm) setConfirm(null); else onClose(); } });
 
   // Events are listed newest first under the day they happened on.
   const dayLabel = (iso: string) => {
@@ -1042,6 +1034,7 @@ export function DispatchTable() {
   const filterPanelRef = useRef<HTMLDivElement>(null);
   const teamPanelRef   = useRef<HTMLDivElement>(null);
   const [filterRect, setFilterRect] = useState<DOMRect | null>(null);
+  useLayer(!!filterRect, { onEscape: () => setFilterRect(null) });
   const [teamRect,   setTeamRect]   = useState<DOMRect | null>(null);
   // Cache of full driver records (for PUT body construction)
   const driverCache   = useRef<Record<string, Record<string, unknown>>>({});

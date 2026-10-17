@@ -24,6 +24,7 @@ import { DatePicker } from "./DatePicker";
 import { NumberField } from "./NumberField";
 import { ScrollPane } from "./ScrollX";
 import { KpiTableTab } from "./KpiTableTab";
+import { closeAsking, useDialogKeys, useLayer } from "../lib/layers";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -282,6 +283,7 @@ function CustomSelect({
   clearable?: boolean; // show an × to reset back to "" when a value is selected
 }) {
   const [open, setOpen] = useState(false);
+  useLayer(open, { onEscape: () => setOpen(false) });
   const [fixedPos, setFixedPos] = useState<{ top: number; left: number; width: number } | null>(null);
   const ref = useRef<HTMLDivElement>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
@@ -534,10 +536,12 @@ const fieldStyle: React.CSSProperties = { display: "flex", flexDirection: "colum
 const FOCUSABLE = 'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])';
 
 // The backdrop every Settings dialog sits in. It announces itself as a modal dialog,
-// keeps Tab inside it, closes on Escape or a click outside, and hands focus back to
-// whatever opened it. `busy` blocks closing while a save or delete is in flight.
-function ModalShell({ label, onClose, busy = false, children }: { label: string; onClose: () => void; busy?: boolean; children: React.ReactNode }) {
+// keeps Tab inside it, closes on Escape or a click outside — asking first when `dirty` —
+// saves on Enter when given `onSave`, and hands focus back to whatever opened it. `busy`
+// blocks closing while a save or delete is in flight.
+function ModalShell({ label, onClose, busy = false, onSave, dirty = false, children }: { label: string; onClose: () => void; busy?: boolean; onSave?: () => void; dirty?: boolean; children: React.ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
+  const requestClose = useDialogKeys({ onClose, busy, onSave, dirty });
 
   useEffect(() => {
     const opener = document.activeElement as HTMLElement | null;
@@ -548,7 +552,6 @@ function ModalShell({ label, onClose, busy = false, children }: { label: string;
   }, []);
 
   const onKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Escape") { if (!busy) onClose(); return; }
     if (e.key !== "Tab" || !ref.current) return;
     const items = [...ref.current.querySelectorAll<HTMLElement>(FOCUSABLE)];
     if (items.length === 0) return;
@@ -560,7 +563,7 @@ function ModalShell({ label, onClose, busy = false, children }: { label: string;
   return (
     <div ref={ref} role="dialog" aria-modal="true" aria-label={label} onKeyDown={onKeyDown}
       // A press that starts on the backdrop itself (not a drag out of a field) closes it.
-      onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) onClose(); }}
+      onMouseDown={(e) => { if (e.target === e.currentTarget) requestClose(); }}
       style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
       {children}
     </div>
@@ -738,6 +741,9 @@ function UserModal({ user, roles, teams, saving, error, onClose, onSave, canSetP
     return { mode: "fixed", percent: pct, activeFrom };
   };
 
+  // Unsaved: the form or the work days differ from what it opened with, or the pay would change.
+  const [opened] = useState(() => JSON.stringify([user, parsedDays]));
+  const dirty = JSON.stringify([form, [dayFrom, dayTo]]) !== opened || kpiChange() !== null;
   const handleSave = () => {
     setSubmitted(true);
     // A role is present if we resolved a company role OR carry a coarse role marker.
@@ -754,12 +760,12 @@ function UserModal({ user, roles, teams, saving, error, onClose, onSave, canSetP
   };
 
   return (
-    <ModalShell label={isNew ? "Add user" : "Edit user"} onClose={onClose} busy={!!saving}>
+    <ModalShell label={isNew ? "Add user" : "Edit user"} onClose={onClose} busy={!!saving} onSave={handleSave} dirty={dirty}>
       <div style={{ backgroundColor: "var(--card)", borderRadius: 12, width: 800, maxWidth: "calc(100vw - 32px)", boxShadow: "0 20px 60px rgba(0,0,0,0.25)", maxHeight: "90vh", display: "flex", flexDirection: "column" }}>
         {/* Header */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "13px 20px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
           <span style={{ fontFamily: "var(--font-sans)", fontSize: 15, fontWeight: 700, color: "var(--foreground)", letterSpacing: "-0.01em" }}>{isNew ? "Add user" : "Edit user"}</span>
-          <button onClick={onClose} aria-label="Close" style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted-foreground)" }}><X size={16} /></button>
+          <button onClick={() => { if (!saving) closeAsking(dirty, onClose); }} aria-label="Close" style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted-foreground)" }}><X size={16} /></button>
         </div>
 
         {/* Body */}
@@ -1254,6 +1260,7 @@ function AsyncMultiSelect({
   const inputRef = useRef<HTMLInputElement>(null);
   const reqId = useRef(0);
   const [open, setOpen] = useState(false);
+  useLayer(open, { onEscape: () => setOpen(false) });
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [items, setItems] = useState<AsyncOpt[]>([]);
@@ -1400,6 +1407,8 @@ function TeamModal({ team, users, driverLabels, saving, error, onClose, onSave }
   saving?: boolean; error?: string | null; onClose: () => void; onSave: (t: Team) => void;
 }) {
   const [form, setForm] = useState<Partial<Team>>(team);
+  const [opened] = useState(() => JSON.stringify(team));
+  const dirty = JSON.stringify(form) !== opened;
   const [submitted, setSubmitted] = useState(false);
   const isNew = !team.id;
   const nameMissing = !form.name?.trim();
@@ -1425,11 +1434,11 @@ function TeamModal({ team, users, driverLabels, saving, error, onClose, onSave }
   });
 
   return (
-    <ModalShell label={isNew ? "Create team" : "Edit team"} onClose={onClose} busy={!!saving}>
+    <ModalShell label={isNew ? "Create team" : "Edit team"} onClose={onClose} busy={!!saving} onSave={handleSave} dirty={dirty}>
       <div style={{ backgroundColor: "var(--card)", borderRadius: 12, width: 540, boxShadow: "0 20px 60px rgba(0,0,0,0.25)", maxHeight: "90vh", display: "flex", flexDirection: "column" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "13px 20px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
           <span style={{ fontFamily: "var(--font-sans)", fontSize: 15, fontWeight: 700, color: "var(--foreground)", letterSpacing: "-0.01em" }}>{isNew ? "Create team" : "Edit team"}</span>
-          <button onClick={onClose} aria-label="Close" style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted-foreground)" }}><X size={16} /></button>
+          <button onClick={() => { if (!saving) closeAsking(dirty, onClose); }} aria-label="Close" style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted-foreground)" }}><X size={16} /></button>
         </div>
         <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 16, overflowY: "auto" }}>
           <label style={fieldStyle}>
@@ -1717,6 +1726,8 @@ function RoleModal({ role, entries: catalogEntries, saving, error, onClose, onSa
   };
 
   const [form, setForm] = useState<Partial<Role>>({ ...role, permissions: initPerms() });
+  const [opened] = useState(() => JSON.stringify(form));
+  const dirty = JSON.stringify(form) !== opened;
   const [submitted, setSubmitted] = useState(false);
   const isNew = !role.id;
   const nameMissing = !form.name?.trim();
@@ -1746,11 +1757,11 @@ function RoleModal({ role, entries: catalogEntries, saving, error, onClose, onSa
   };
 
   return (
-    <ModalShell label={isNew ? "Create role" : "Edit role"} onClose={onClose} busy={!!saving}>
+    <ModalShell label={isNew ? "Create role" : "Edit role"} onClose={onClose} busy={!!saving} onSave={handleSave} dirty={dirty}>
       <div style={{ backgroundColor: "var(--card)", borderRadius: 12, width: 700, boxShadow: "0 20px 60px rgba(0,0,0,0.25)", overflow: "hidden", maxHeight: "92vh", display: "flex", flexDirection: "column" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "13px 20px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
           <span style={{ fontFamily: "var(--font-sans)", fontSize: 15, fontWeight: 700, color: "var(--foreground)", letterSpacing: "-0.01em" }}>{isNew ? "Create role" : `Edit role: ${role.name}`}</span>
-          <button onClick={onClose} aria-label="Close" style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted-foreground)" }}><X size={16} /></button>
+          <button onClick={() => { if (!saving) closeAsking(dirty, onClose); }} aria-label="Close" style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted-foreground)" }}><X size={16} /></button>
         </div>
         <div style={{ padding: 20, overflowY: "auto", display: "flex", flexDirection: "column", gap: 18 }}>
           <label style={fieldStyle}>

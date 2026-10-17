@@ -28,6 +28,7 @@ import { Dash } from "./Dash";
 import { fmtDateTime } from "../lib/dates";
 import { NumberField } from "./NumberField";
 import { ScrollPane, ScrollX } from "./ScrollX";
+import { useLayer } from "../lib/layers";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -239,6 +240,7 @@ export function CustomSelect({
   plain?: boolean; // white bordered field (the page form) instead of the grey-filled one
 }) {
   const [open, setOpen] = useState(false);
+  useLayer(open, { onEscape: () => setOpen(false) });
   const ref = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   // Where the list is drawn. It is placed on the screen itself (not inside the field's
@@ -266,17 +268,14 @@ export function CustomSelect({
       const t = e.target as Node;
       if (!ref.current?.contains(t) && !menuRef.current?.contains(t)) setOpen(false);
     };
-    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
     // The page moving under an open list would leave it hanging in the wrong place, so it
     // follows; scrolling inside the list itself is its own business.
     const moved = (e: Event) => { if (!menuRef.current?.contains(e.target as Node)) position(); };
     document.addEventListener("mousedown", away);
-    document.addEventListener("keydown", esc);
     window.addEventListener("scroll", moved, true);
     window.addEventListener("resize", position);
     return () => {
       document.removeEventListener("mousedown", away);
-      document.removeEventListener("keydown", esc);
       window.removeEventListener("scroll", moved, true);
       window.removeEventListener("resize", position);
     };
@@ -460,6 +459,7 @@ function StatusBadge({ status }: { status: Status }) {
 
 function StatusDropdown({ value, onChange, readOnly = false }: { value: Status; onChange: (s: Status) => void | Promise<void>; readOnly?: boolean }) {
   const [open, setOpen] = useState(false);
+  useLayer(open, { onEscape: () => setOpen(false) });
   const [rect, setRect] = useState<DOMRect | null>(null);
   const [busy, setBusy] = useState(false);
   const anchorRef = useRef<HTMLDivElement>(null);
@@ -612,6 +612,7 @@ function ExtractModal({ onClose, onExtracted }: {
   // just means ignoring the result when (if) it lands.
   const closedRef = useRef(false);
   const close = () => { closedRef.current = true; onClose(); };
+  useLayer(true, { onEscape: () => { if (!busy) close(); } });
 
   const pickFile = (f: File | undefined | null) => {
     if (!f) return;
@@ -742,6 +743,7 @@ function ExtractModal({ onClose, onExtracted }: {
 
 function AddLoadMenu({ onManual, onExtract }: { onManual: () => void; onExtract: () => void }) {
   const [open, setOpen] = useState(false);
+  useLayer(open, { onEscape: () => setOpen(false) });
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -897,14 +899,13 @@ const WARN = { ink: "var(--caution)", soft: "var(--caution-soft)", line: "var(--
 // the value was read from, so it can be judged without reopening the document.
 function ReviewMark({ warnings, evidence }: { warnings: ExtractWarning[]; evidence?: FieldEvidence }) {
   const [open, setOpen] = useState(false);
+  useLayer(open, { onEscape: () => setOpen(false) });
   const ref = useRef<HTMLSpanElement>(null);
   useEffect(() => {
     if (!open) return;
     const away = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
-    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
     document.addEventListener("mousedown", away);
-    document.addEventListener("keydown", esc);
-    return () => { document.removeEventListener("mousedown", away); document.removeEventListener("keydown", esc); };
+    return () => { document.removeEventListener("mousedown", away); };
   }, [open]);
   if (warnings.length === 0) return null;
   return (
@@ -1078,6 +1079,7 @@ function DateRangeField({ p, onDates, label }: { p: ApptParts; onDates: (patch: 
   const now = new Date();
   const thisYear = now.getFullYear();
   const [open, setOpen] = useState(false);
+  useLayer(open, { onEscape: () => setOpen(false) });
   const [pos, setPos]   = useState<React.CSSProperties>({});
   const [vy,  setVy]    = useState(p.y ?? thisYear);
   const [vmo, setVmo]   = useState(p.mo ?? now.getMonth());
@@ -1109,15 +1111,12 @@ function DateRangeField({ p, onDates, label }: { p: ApptParts; onDates: (patch: 
       const t = e.target as Node;
       if (!btnRef.current?.contains(t) && !popRef.current?.contains(t)) close();
     };
-    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") close(); };
     document.addEventListener("mousedown", away);
-    document.addEventListener("keydown", esc);
     // Follow the field if the page scrolls or the window changes size under the panel.
     window.addEventListener("scroll", place, true);
     window.addEventListener("resize", place);
     return () => {
       document.removeEventListener("mousedown", away);
-      document.removeEventListener("keydown", esc);
       window.removeEventListener("scroll", place, true);
       window.removeEventListener("resize", place);
     };
@@ -1609,6 +1608,14 @@ function LoadForm({ load, onCancel, onSave, saving = false, error, startDirty = 
     // Appointments are free text with no ordering/past rules, so there's nothing to check.
     onSave({ ...form, loadId: form.loadId!.trim(), stops: route.filter((st) => st.city.trim()) } as Load);
   };
+  // ⌘/Ctrl + S (or + Enter) saves; Esc goes back to the list — which asks first when there are
+  // unsaved changes (the page's "Leave without saving?"). Plain Enter doesn't save: on a form
+  // this long it's too easy to press while typing an address.
+  useLayer(true, {
+    onEscape: onCancel,
+    onSubmit: () => { if (!saving && !checking) void handleSave(); },
+    enterSubmits: false,
+  });
 
   const inputStyle: React.CSSProperties = {
     fontFamily: "var(--font-sans)", fontSize: 13, padding: "7px 10px",
@@ -2165,6 +2172,8 @@ export function LoadFormPage() {
   // first, and closing or reloading the tab triggers the browser's own prompt.
   const blocker = useBlocker(({ currentLocation, nextLocation }) =>
     dirty && !savedRef.current && currentLocation.pathname !== nextLocation.pathname);
+  // Over the form: Esc keeps editing.
+  useLayer(blocker.state === "blocked", { onEscape: () => blocker.reset?.() });
   useEffect(() => {
     if (!dirty) return;
     const h = (e: BeforeUnloadEvent) => { e.preventDefault(); };
@@ -2275,6 +2284,8 @@ export function LoadFormPage() {
 
 // `title` and `body` default to a load's wording; other pages pass their own.
 export function DeleteConfirm({ label, onClose, onConfirm, busy = false, error, title = "Delete load?", body }: { label: string; onClose: () => void; onConfirm: () => void; busy?: boolean; error?: string | null; title?: string; body?: React.ReactNode }) {
+  // Esc cancels. Enter never deletes: it takes a click (or tabbing to Delete).
+  useLayer(true, { onEscape: () => { if (!busy) onClose(); } });
   return (
     <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div style={{ backgroundColor: "var(--card)", borderRadius: 12, width: 360, padding: 24, boxShadow: "0 20px 60px rgba(0,0,0,0.25)", textAlign: "center" }}>
@@ -2307,6 +2318,8 @@ interface HistoryEvent {
 }
 
 function LoadDetail({ load, onBack, onEdit }: { load: Load; onBack: () => void; onEdit?: () => void }) {
+  // Esc goes back to the list, once nothing is open on top.
+  useLayer(true, { onEscape: onBack });
   const [tab, setTab] = useState<"info" | "log">("info");
   const [log, setLog]         = useState<HistoryEvent[]>([]);
   const [logLoading, setLogLoading] = useState(false);

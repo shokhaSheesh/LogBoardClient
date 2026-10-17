@@ -17,6 +17,7 @@ import { useNavigate } from "react-router";
 import { fmtDate, fmtDateRange } from "../lib/dates";
 import { NumberField } from "../components/NumberField";
 import { ScrollPane } from "../components/ScrollX";
+import { useDialogKeys, useLayer } from "../lib/layers";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -91,11 +92,10 @@ function AdjustModal({ payout, onSave, onClose, saving, error }: {
   const previewNet = payout.rate + (Number(added) || 0) - (Number(deducted) || 0);
   const negative = Number(added) < 0 || Number(deducted) < 0;
 
-  useEffect(() => {
-    const h = (e: KeyboardEvent) => { if (e.key === "Escape" && !saving) onClose(); };
-    document.addEventListener("keydown", h);
-    return () => document.removeEventListener("keydown", h);
-  }, [saving, onClose]);
+  // Esc asks before throwing away what was typed; Enter saves.
+  const dirty = added !== String(payout.added) || deducted !== String(payout.deducted) || notes !== payout.notes;
+  const requestClose = useDialogKeys({ onClose, busy: saving, dirty,
+    onSave: () => { if (!negative) onSave(Number(added) || 0, Number(deducted) || 0, notes.trim()); } });
 
   const inputStyle = {
     padding: "7px 10px", borderRadius: 8, height: 36, border: "1px solid var(--border)",
@@ -118,7 +118,7 @@ function AdjustModal({ payout, onSave, onClose, saving, error }: {
             <div style={{ fontFamily: "var(--font-sans)", fontSize: 15, fontWeight: 700, color: "var(--foreground)", letterSpacing: "-0.01em" }}>Adjust payout</div>
             <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--muted-foreground)" }}>{payout.loadRef} · {payout.driverName}</div>
           </div>
-          <button onClick={onClose} aria-label="Close" style={{ width: 30, height: 30, display: "flex", alignItems: "center", justifyContent: "center", border: "none", borderRadius: 7, backgroundColor: "transparent", cursor: "pointer", color: "var(--muted-foreground)" }}
+          <button onClick={requestClose} aria-label="Close" style={{ width: 30, height: 30, display: "flex", alignItems: "center", justifyContent: "center", border: "none", borderRadius: 7, backgroundColor: "transparent", cursor: "pointer", color: "var(--muted-foreground)" }}
             onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--muted)"; }}
             onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = "transparent"; }}>
             <X size={16} />
@@ -219,6 +219,7 @@ function TH({ children, width, align = "left", pinned = false }: { children: Rea
 
 function CompactSelect({ value, options, onChange }: { value: number; options: number[]; onChange: (v: number) => void }) {
   const [open, setOpen] = useState(false);
+  useLayer(open, { onEscape: () => setOpen(false) });
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const h = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
@@ -330,6 +331,7 @@ export function PayoutsPage() {
   const [dispatchers, setDispatchers]   = useState<DispatcherOpt[]>([]);
   const [dispFilter, setDispFilter]     = useState<DispatcherOpt | null>(null);
   const [filterOpen, setFilterOpen]     = useState(false);
+  useLayer(filterOpen, { onEscape: () => setFilterOpen(false) });
   // Which stretch of completion dates to list. All time = no date filter.
   const [period, setPeriod]             = useState<Period>(ALL_TIME);
   const navigate = useNavigate();

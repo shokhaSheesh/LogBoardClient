@@ -1,6 +1,7 @@
 import { createPortal } from "react-dom";
 import { RotateCcw, AlertTriangle } from "lucide-react";
 import { STATUS_CONFIG, type Status } from "../lib/statuses";
+import { useLayer } from "../lib/layers";
 
 // Moving a load out of `completed` is the one destructive action on the board that
 // happens from a plain dropdown: the backend deletes the load's payout row and clears
@@ -18,6 +19,8 @@ export function UncompleteConfirm({ to, label, busy, onCancel, onConfirm }: {
   onConfirm: () => void;
 }) {
   const toLabel = STATUS_CONFIG[to]?.label ?? to;
+  // Esc cancels. Enter never confirms: it takes a click (or tabbing to the button).
+  useLayer(true, { onEscape: () => { if (!busy) onCancel(); } });
 
   return createPortal(
     <div

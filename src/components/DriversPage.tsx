@@ -26,6 +26,7 @@ import { weekOf } from "./PeriodFilter";
 import { NumberField } from "./NumberField";
 import { DatePicker } from "./DatePicker";
 import { ScrollPane, ScrollX } from "./ScrollX";
+import { useDialogKeys, useLayer } from "../lib/layers";
 
 type DriverStatus = Status;
 type DriverType   = "O/O" | "C/D";
@@ -257,6 +258,7 @@ function CustomSelect({
   error?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  useLayer(open, { onEscape: () => setOpen(false) });
   const [query, setQuery] = useState("");
   const ref = useRef<HTMLDivElement>(null);
 
@@ -399,6 +401,7 @@ function UnitSelect({ value, label, endpoint, onChange, error = false, disabled 
   disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  useLayer(open, { onEscape: () => setOpen(false) });
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [items, setItems] = useState<SelectOpt[]>([]);
@@ -736,6 +739,7 @@ function StatusBadge({ status }: { status: DriverStatus }) {
 
 function StatusDropdown({ value, onChange }: { value: Status; onChange: (s: Status) => void | Promise<void> }) {
   const [open, setOpen] = useState(false);
+  useLayer(open, { onEscape: () => setOpen(false) });
   const [rect, setRect] = useState<DOMRect | null>(null);
   const [busy, setBusy] = useState(false);
   const anchorRef = useRef<HTMLDivElement>(null);
@@ -850,13 +854,11 @@ function ActionBtn({ icon, tone, onClick, label }: { icon: React.ReactNode; tone
   );
 }
 
-// Closes a dialog on Escape, unless it is busy saving.
-export function useEscape(onClose: () => void, busy = false) {
-  useEffect(() => {
-    const h = (e: KeyboardEvent) => { if (e.key === "Escape" && !busy) onClose(); };
-    document.addEventListener("keydown", h);
-    return () => document.removeEventListener("keydown", h);
-  }, [onClose, busy]);
+// A dialog's keys (lib/layers): Esc closes it — asking first when it holds unsaved changes —
+// and, given onSave, Enter saves it. Nothing while it is busy. Returns the same "close, asking
+// first" for the dialog's ✕.
+export function useEscape(onClose: () => void, busy = false, opts: { onSave?: () => void; dirty?: boolean } = {}) {
+  return useDialogKeys({ onClose, busy, ...opts });
 }
 
 // ─── Shared select option sets ────────────────────────────────────────────────
@@ -1194,7 +1196,9 @@ function SoloModal({ driver, onClose, onSave, canReorderLoads, saving, error, fi
     });
   };
 
-  useEscape(onClose, saving);
+  // Unsaved changes are anything that differs from what the form opened with.
+  const [opened] = useState(() => JSON.stringify(driver));
+  const requestClose = useEscape(onClose, saving, { onSave: handleSave, dirty: JSON.stringify(form) !== opened });
   return (
     <div role="dialog" aria-modal="true" style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div style={{ backgroundColor: "var(--card)", borderRadius: 12, width: 780, maxWidth: "calc(100vw - 32px)", boxShadow: "0 20px 60px rgba(0,0,0,0.22)", overflow: "visible" }}>
@@ -1203,7 +1207,7 @@ function SoloModal({ driver, onClose, onSave, canReorderLoads, saving, error, fi
           <span style={{ fontFamily: "var(--font-sans)", fontSize: 15, fontWeight: 700, color: "var(--foreground)", letterSpacing: "-0.01em" }}>
             {isNew ? "Add solo driver" : "Edit solo driver"}
           </span>
-          <button onClick={onClose} aria-label="Close" style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted-foreground)", display: "flex", alignItems: "center" }}>
+          <button onClick={requestClose} aria-label="Close" style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted-foreground)", display: "flex", alignItems: "center" }}>
             <X size={16} />
           </button>
         </div>
@@ -1339,7 +1343,9 @@ function TeamModal({ driver, onClose, onSave, canReorderLoads, saving, error, fi
     });
   };
 
-  useEscape(onClose, saving);
+  // Unsaved changes are anything that differs from what the form opened with.
+  const [opened] = useState(() => JSON.stringify(driver));
+  const requestClose = useEscape(onClose, saving, { onSave: handleSave, dirty: JSON.stringify(form) !== opened });
   return (
     <div role="dialog" aria-modal="true" style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div style={{ backgroundColor: "var(--card)", borderRadius: 12, width: 960, maxWidth: "calc(100vw - 32px)", boxShadow: "0 20px 60px rgba(0,0,0,0.22)", overflow: "visible" }}>
@@ -1347,7 +1353,7 @@ function TeamModal({ driver, onClose, onSave, canReorderLoads, saving, error, fi
           <span style={{ fontFamily: "var(--font-sans)", fontSize: 15, fontWeight: 700, color: "var(--foreground)", letterSpacing: "-0.01em" }}>
             {isNew ? "Add team" : "Edit team"}
           </span>
-          <button onClick={onClose} aria-label="Close" style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted-foreground)", display: "flex", alignItems: "center" }}>
+          <button onClick={requestClose} aria-label="Close" style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted-foreground)", display: "flex", alignItems: "center" }}>
             <X size={16} />
           </button>
         </div>
@@ -1525,7 +1531,7 @@ function ImportModal({ entityLabel, endpoint, templateEndpoint, templateFile, on
   const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => pickFile(e.target.files?.[0]);
 
   const submit = async () => {
-    if (!file) return;
+    if (!file || result) return;
     setSubmitting(true); setError(null);
     try {
       const res = await api.upload<ImportResult>(endpoint, file);
@@ -1537,6 +1543,8 @@ function ImportModal({ entityLabel, endpoint, templateEndpoint, templateFile, on
       setSubmitting(false);
     }
   };
+  // Esc closes; Enter imports the picked file.
+  useEscape(onClose, submitting, { onSave: submit });
 
   return (
     <div role="dialog" aria-modal="true" style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -1677,6 +1685,7 @@ function AddMenu({ entityLabel, onManual, onImport, onEld, canEld = true }: {
   canEld?: boolean; // hide the ELD entry from users without the eld.read key
 }) {
   const [open, setOpen] = useState(false);
+  useLayer(open, { onEscape: () => setOpen(false) });
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -1896,6 +1905,8 @@ function useDriverWeek(driverId: string) {
 }
 
 function DriverDetail({ driver, onBack }: { driver: SoloDriver; onBack: () => void }) {
+  // Esc goes back to the list, once nothing is open on top.
+  useLayer(true, { onEscape: onBack });
   const { weekOffset, setWeekOffset, data, loading: loadingLoads, error } = useDriverWeek(driver.id);
   const [tab, setTab] = useState<DetailTab>("loads");
   const summary = data?.summary;
@@ -2173,6 +2184,8 @@ function DriverDetail({ driver, onBack }: { driver: SoloDriver; onBack: () => vo
 // ─── Team Detail ─────────────────────────────────────────────────────────────
 
 function TeamDetail({ team, onBack }: { team: TeamDriver; onBack: () => void }) {
+  // Esc goes back to the list, once nothing is open on top.
+  useLayer(true, { onEscape: onBack });
   // A team is a driver row, so it uses the same recap endpoint.
   const { weekOffset, setWeekOffset, data, loading: loadingLoads, error } = useDriverWeek(team.id);
   const [tab, setTab] = useState<DetailTab>("loads");
