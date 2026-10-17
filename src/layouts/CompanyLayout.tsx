@@ -10,6 +10,7 @@ import {
   IdCard,
   Truck,
   HandCoins,
+  Receipt,
   CreditCard,
   Settings,
   ChevronRight,
@@ -311,6 +312,7 @@ const navSections: NavSection[] = [
     items: [
       { icon: ChartColumnIncreasing, label: "Gross",   path: "gross",   module: "gross"   },
       { icon: HandCoins,             label: "Payouts", path: "payouts", module: "payouts" },
+      { icon: Receipt,               label: "Compensations", path: "compensations", module: "compensations" },
     ],
   },
 ];

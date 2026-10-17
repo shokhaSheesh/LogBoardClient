@@ -25,6 +25,7 @@ export const PAGE_PERMS: PagePerm[] = [
   { path: "drivers",    module: "drivers"    },
   { path: "equipments", module: "equipments" },
   { path: "payouts",    module: "payouts"    },
+  { path: "compensations", module: "compensations" },
   { path: "billing",    module: "billing",  ownerOnly: true },
   // Runs on /company/* now, gated on permission keys — not owner-only anymore.
   { path: "settings",   module: "settings", anyModule: SETTINGS_MODULES },

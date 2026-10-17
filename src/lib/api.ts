@@ -153,7 +153,7 @@ function buildUrl(path: string, params?: Record<string, string | number | undefi
 async function requestList<T>(
   path: string,
   params?: Record<string, string | number | undefined>
-): Promise<{ items: T[]; total: number }> {
+): Promise<{ items: T[]; total: number; stats?: unknown }> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   const token = getToken();
   if (token) headers["Authorization"] = `Bearer ${token}`;
@@ -171,7 +171,8 @@ async function requestList<T>(
   const data = json.data ?? json;
   const items = Array.isArray(data) ? data : [];
   const total = json.meta?.total ?? json.total ?? items.length;
-  return { items, total };
+  // Lists with summary cards send them beside the page as `stats`.
+  return { items, total, stats: json.stats };
 }
 
 async function requestPayouts<T>(

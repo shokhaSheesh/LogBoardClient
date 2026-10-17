@@ -2,14 +2,15 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Calendar } from "lucide-react";
 import { fmtDate } from "../lib/dates";
-import { CAL } from "./calendar";
+import { CAL, calHover } from "./calendar";
 
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 const DAYS   = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 const iso = (y: number, m: number, d: number) => `${y}-${String(m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
 
-// One day, picked from the app's calendar (the shared CAL look). `min` greys out and blocks
-// every day before it — for a date that may not be in the past.
+// One day, picked from the app's calendar — the same look and steps as the load form's: today
+// marked, and the title steps out from days to months to years. `min` greys out and blocks
+// every day (and month, and year) before it — for a date that may not be in the past.
 export function DatePicker({ value, onChange, min, label, invalid = false }: {
   value: string;                 // YYYY-MM-DD, or ""
   onChange: (day: string) => void;
@@ -24,6 +25,8 @@ export function DatePicker({ value, onChange, min, label, invalid = false }: {
   const base = value || min || iso(new Date().getFullYear(), new Date().getMonth(), new Date().getDate());
   const [vy, setVy]   = useState(Number(base.slice(0, 4)));
   const [vmo, setVmo] = useState(Number(base.slice(5, 7)) - 1);
+  const [view, setView] = useState<"day" | "month" | "year">("day");
+  const [yPage, setYPage] = useState(Math.floor(Number(base.slice(0, 4)) / 12) * 12);
 
   // Below the field when there's room, above it when there isn't.
   const place = () => {
@@ -56,6 +59,7 @@ export function DatePicker({ value, onChange, min, label, invalid = false }: {
 
   const show = () => {
     setVy(Number(base.slice(0, 4))); setVmo(Number(base.slice(5, 7)) - 1);
+    setView("day"); setYPage(Math.floor(Number(base.slice(0, 4)) / 12) * 12);
     place(); setOpen(true);
   };
   const shift = (by: number) => { const n = new Date(vy, vmo + by, 1); setVy(n.getFullYear()); setVmo(n.getMonth()); };
@@ -65,6 +69,15 @@ export function DatePicker({ value, onChange, min, label, invalid = false }: {
   const cells: (number | null)[] = [...Array(firstDow).fill(null), ...Array.from({ length: days }, (_, i) => i + 1)];
   // The month before the earliest allowed day has nothing to pick, so ‹ stops there.
   const prevBlocked = !!min && iso(vy, vmo, 1) <= min;
+  const now = new Date();
+  const today = iso(now.getFullYear(), now.getMonth(), now.getDate());
+  const minY = min ? Number(min.slice(0, 4)) : -Infinity;
+  const minMo = min ? Number(min.slice(5, 7)) - 1 : 0;
+  const hdrBtn: React.CSSProperties = { ...CAL.title, cursor: "pointer" };
+  const hdrHover = {
+    onMouseEnter: (e: React.MouseEvent<HTMLElement>) => { e.currentTarget.style.backgroundColor = "var(--muted)"; },
+    onMouseLeave: (e: React.MouseEvent<HTMLElement>) => { e.currentTarget.style.backgroundColor = "transparent"; },
+  };
 
   return (
     <>
@@ -76,30 +89,66 @@ export function DatePicker({ value, onChange, min, label, invalid = false }: {
       {open && createPortal(
         <div ref={panelRef} role="dialog" aria-label={label} onMouseDown={(e) => e.stopPropagation()}
           style={{ position: "fixed", ...pos, zIndex: 10000, width: CAL.width, ...CAL.panel }}>
-          <div style={CAL.header}>
-            <button type="button" aria-label="Previous month" disabled={prevBlocked} onClick={() => shift(-1)} style={{ ...CAL.nav, cursor: prevBlocked ? "not-allowed" : "pointer", opacity: prevBlocked ? 0.35 : 1 }}>‹</button>
-            <span style={CAL.title}>{MONTHS[vmo]} {vy}</span>
-            <button type="button" aria-label="Next month" onClick={() => shift(1)} style={CAL.nav}>›</button>
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)" }}>
-            {DAYS.map((d) => <div key={d} style={CAL.weekday}>{d}</div>)}
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", rowGap: 2 }}>
-            {cells.map((d, i) => {
-              if (!d) return <span key={i} />;
-              const day = iso(vy, vmo, d);
-              const active = day === value;
-              const blocked = !!min && day < min;
-              return (
-                <button key={i} type="button" disabled={blocked} onClick={() => { onChange(day); setOpen(false); }}
-                  style={{ height: 30, border: "none", padding: 0, borderRadius: 6, ...CAL.dayText, fontWeight: active ? 600 : 400, cursor: blocked ? "not-allowed" : "pointer", opacity: blocked ? 0.3 : 1, backgroundColor: active ? "var(--primary)" : "transparent", color: active ? "#fff" : "var(--foreground)" }}
-                  onMouseEnter={(e) => { if (!active && !blocked) e.currentTarget.style.backgroundColor = "var(--muted)"; }}
-                  onMouseLeave={(e) => { if (!active) e.currentTarget.style.backgroundColor = "transparent"; }}>
-                  {d}
-                </button>
-              );
-            })}
-          </div>
+          {view === "day" && (<>
+            <div style={CAL.header}>
+              <button type="button" aria-label="Previous month" disabled={prevBlocked} onClick={() => shift(-1)} style={{ ...CAL.nav, cursor: prevBlocked ? "not-allowed" : "pointer", opacity: prevBlocked ? 0.35 : 1 }}>‹</button>
+              <button type="button" aria-label="Pick a month" style={hdrBtn} onClick={() => setView("month")} {...hdrHover}>{MONTHS[vmo]} {vy}</button>
+              <button type="button" aria-label="Next month" onClick={() => shift(1)} style={CAL.nav}>›</button>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)" }}>
+              {DAYS.map((d) => <div key={d} style={CAL.weekday}>{d}</div>)}
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", rowGap: 2 }}>
+              {cells.map((d, i) => {
+                if (!d) return <span key={i} />;
+                const day = iso(vy, vmo, d);
+                const active = day === value;
+                const blocked = !!min && day < min;
+                const isToday = day === today;
+                return (
+                  <button key={i} type="button" disabled={blocked} aria-current={isToday ? "date" : undefined} onClick={() => { onChange(day); setOpen(false); }}
+                    style={{ height: 30, border: "none", padding: 0, borderRadius: 6, ...CAL.dayText, fontWeight: active || isToday ? 600 : 400, cursor: blocked ? "not-allowed" : "pointer", opacity: blocked ? 0.3 : 1, backgroundColor: active ? "var(--primary)" : "transparent", color: active ? "#fff" : isToday ? "var(--primary)" : "var(--foreground)" }}
+                    {...calHover(active, blocked)}>
+                    {d}
+                  </button>
+                );
+              })}
+            </div>
+          </>)}
+
+          {view === "month" && (<>
+            <div style={CAL.header}>
+              <button type="button" aria-label="Previous year" disabled={vy <= minY} onClick={() => setVy((y) => y - 1)} style={{ ...CAL.nav, opacity: vy <= minY ? 0.35 : 1 }}>‹</button>
+              <button type="button" aria-label="Pick a year" style={hdrBtn} onClick={() => { setYPage(Math.floor(vy / 12) * 12); setView("year"); }} {...hdrHover}>{vy}</button>
+              <button type="button" aria-label="Next year" onClick={() => setVy((y) => y + 1)} style={CAL.nav}>›</button>
+            </div>
+            <div style={CAL.grid}>
+              {MONTHS.map((m, mi) => {
+                const active = mi === vmo;
+                const blocked = vy < minY || (vy === minY && mi < minMo);
+                return (
+                  <button key={m} type="button" disabled={blocked} onClick={() => { setVmo(mi); setView("day"); }} style={CAL.option(active, blocked)} {...calHover(active, blocked)}>{m.slice(0, 3)}</button>
+                );
+              })}
+            </div>
+          </>)}
+
+          {view === "year" && (<>
+            <div style={CAL.header}>
+              <button type="button" aria-label="Earlier years" disabled={yPage <= minY} onClick={() => setYPage((y) => y - 12)} style={{ ...CAL.nav, opacity: yPage <= minY ? 0.35 : 1 }}>‹</button>
+              <span style={CAL.title}>{yPage}–{yPage + 11}</span>
+              <button type="button" aria-label="Later years" onClick={() => setYPage((y) => y + 12)} style={CAL.nav}>›</button>
+            </div>
+            <div style={CAL.grid}>
+              {Array.from({ length: 12 }, (_, i) => yPage + i).map((y) => {
+                const active = y === vy;
+                const blocked = y < minY;
+                return (
+                  <button key={y} type="button" disabled={blocked} onClick={() => { setVy(y); setView("month"); }} style={CAL.option(active, blocked)} {...calHover(active, blocked)}>{y}</button>
+                );
+              })}
+            </div>
+          </>)}
         </div>,
         document.body
       )}

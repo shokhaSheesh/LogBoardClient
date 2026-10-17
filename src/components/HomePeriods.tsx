@@ -41,7 +41,7 @@ export function HomeCell({ home }: { home?: HomePeriod }) {
   const now = isNow(home);
   return (
     <span style={pill(now)} title={now ? "At home now" : "Going home"}>
-      <Home size={11} /> {fmtDateRange(home.startDate, home.endDate)}
+      {fmtDateRange(home.startDate, home.endDate)}
     </span>
   );
 }
