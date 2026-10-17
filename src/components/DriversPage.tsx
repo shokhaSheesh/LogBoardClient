@@ -7,6 +7,7 @@ import { useAuth } from "../lib/auth";
 import { hasPerm } from "../lib/permissions";
 import { driverDisplayName } from "../lib/driverName";
 import { DriverTelegramGroup } from "./TelegramGroup";
+import { DriverHomePeriods, HOME_CHANGED, HomeCell, NewHomePeriod, saveHomeFromForm, toHome, type HomePeriod } from "./HomePeriods";
 import { menuPosition } from "../lib/menuPosition";
 import { UncompleteConfirm } from "./UncompleteConfirm";
 import { EldModal } from "./EldModal";
@@ -17,7 +18,7 @@ import {
   X, Check, Search, ChevronDown, ChevronLeft, ChevronRight,
   ClipboardList, FileSpreadsheet, Radio, Upload, FileText,
   ArrowLeft, Phone, Truck, DollarSign, Route, Package, TrendingUp,
-  AlertCircle, GripVertical, ExternalLink,
+  AlertCircle, GripVertical, ExternalLink, Home,
 } from "lucide-react";
 import { Dash } from "./Dash";
 import { fmtDate, fmtDateRange } from "../lib/dates";
@@ -60,6 +61,9 @@ interface SoloDriver {
   nextLoad?: string;
   nextLoadId?: string;
   nextLoads?: QueueLoad[];
+  home?: HomePeriod;   // the home period on today, or the next one (read-only)
+  homeFrom?: string;   // form-only: the home days typed into the form, saved after the driver
+  homeUntil?: string;
 }
 
 interface TeamDriver {
@@ -78,6 +82,9 @@ interface TeamDriver {
   nextLoad?: string;
   nextLoadId?: string;
   nextLoads?: QueueLoad[];
+  home?: HomePeriod;   // the home period on today, or the next one (read-only)
+  homeFrom?: string;   // form-only: the home days typed into the form, saved after the driver
+  homeUntil?: string;
 }
 
 // ─── API ↔ local shape mappers ───────────────────────────────────────────────
@@ -107,6 +114,7 @@ function toSolo(d: any): SoloDriver {
     nextLoad:      d.next_load       || undefined,
     nextLoadId:    d.next_load_id    || undefined,
     nextLoads:     (d.next_loads ?? []).map((l: any) => ({ id: l.id, loadId: l.load_id ?? l.id })),
+    home:          toHome(d.home),
   };
 }
 
@@ -137,6 +145,7 @@ function toTeam(d: any): TeamDriver {
     nextLoad:      d.next_load       || undefined,
     nextLoadId:    d.next_load_id    || undefined,
     nextLoads:     (d.next_loads ?? []).map((l: any) => ({ id: l.id, loadId: l.load_id ?? l.id })),
+    home:          toHome(d.home),
   };
 }
 
@@ -842,7 +851,7 @@ function ActionBtn({ icon, tone, onClick, label }: { icon: React.ReactNode; tone
 }
 
 // Closes a dialog on Escape, unless it is busy saving.
-function useEscape(onClose: () => void, busy = false) {
+export function useEscape(onClose: () => void, busy = false) {
   useEffect(() => {
     const h = (e: KeyboardEvent) => { if (e.key === "Escape" && !busy) onClose(); };
     document.addEventListener("keydown", h);
@@ -858,6 +867,12 @@ const STATUS_OPTS: SelectOpt[] = [
 ];
 
 const STATUS_MODAL_OPTS: SelectOpt[] = STATUS_OPTS.slice(1);
+// Owner-operators or company drivers; "All" is both.
+const TYPE_FILTER_OPTS: SelectOpt[] = [
+  { value: "All", label: "All types" },
+  { value: "O/O", label: "O/O" },
+  { value: "C/D", label: "C/D" },
+];
 
 const TYPE_OPTS: SelectOpt[] = [
   { value: "O/O", label: "O/O — Owner Operator" },
@@ -872,7 +887,7 @@ const PendingBadge = () => (
   </span>
 );
 
-const FieldLabel = ({ children, required, pending, error }: { children: React.ReactNode; required?: boolean; pending?: boolean; error?: boolean }) => (
+export const FieldLabel = ({ children, required, pending, error }: { children: React.ReactNode; required?: boolean; pending?: boolean; error?: boolean }) => (
   <span style={{
     display: "flex", alignItems: "center",
     fontFamily: "var(--font-sans)", fontSize: 12.5, fontWeight: 600,
@@ -1264,6 +1279,14 @@ function SoloModal({ driver, onClose, onSave, canReorderLoads, saving, error, fi
             <FieldLabel>Comment</FieldLabel>
             <FieldInput value={form.comment ?? ""} onChange={(v) => set("comment", v)} />
           </label>
+
+          {/* Home time: the days the driver is going home, saved with the rest of the form. It
+              opens on the current or next period; the whole history is on the driver's page. */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 5, gridColumn: "1 / -1" }}>
+            <FieldLabel>Home time</FieldLabel>
+            <NewHomePeriod from={form.homeFrom ?? ""} until={form.homeUntil ?? ""}
+              onChange={(homeFrom, homeUntil) => setForm((f) => ({ ...f, homeFrom, homeUntil }))} />
+          </div>
         </div>
 
         {/* Footer */}
@@ -1411,6 +1434,14 @@ function TeamModal({ driver, onClose, onSave, canReorderLoads, saving, error, fi
             <FieldLabel>Comment</FieldLabel>
             <FieldInput value={form.comment ?? ""} onChange={(v) => set("comment", v)} />
           </label>
+
+          {/* Home time: the days the driver is going home, saved with the rest of the form. It
+              opens on the current or next period; the whole history is on the driver's page. */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 5, gridColumn: "1 / -1" }}>
+            <FieldLabel>Home time</FieldLabel>
+            <NewHomePeriod from={form.homeFrom ?? ""} until={form.homeUntil ?? ""}
+              onChange={(homeFrom, homeUntil) => setForm((f) => ({ ...f, homeFrom, homeUntil }))} />
+          </div>
         </div>
 
         <FormError message={error} style={formErrorInModal} />
@@ -1770,6 +1801,36 @@ function AddMenu({ entityLabel, onManual, onImport, onEld, canEld = true }: {
 
 // ─── Driver Detail ────────────────────────────────────────────────────────────
 
+// A driver's page shows either their loads or their home time history.
+type DetailTab = "loads" | "home";
+
+function DetailTabs({ tab, onTab }: { tab: DetailTab; onTab: (t: DetailTab) => void }) {
+  const tabs: { id: DetailTab; label: string; icon: React.ReactNode }[] = [
+    { id: "loads", label: "Loads", icon: <Package size={15} /> },
+    { id: "home", label: "Home periods", icon: <Home size={15} /> },
+  ];
+  return (
+    <div role="tablist" aria-label="Driver details" style={{ display: "flex", alignItems: "flex-end", gap: 2, borderBottom: "1px solid var(--border)" }}>
+      {tabs.map((t) => {
+        const active = tab === t.id;
+        return (
+          <button key={t.id} role="tab" aria-selected={active} onClick={() => onTab(t.id)}
+            style={{
+              display: "inline-flex", alignItems: "center", gap: 8, padding: "10px 14px",
+              fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: active ? 600 : 500,
+              color: active ? "var(--primary)" : "var(--muted-foreground)", backgroundColor: "transparent",
+              border: "none", borderBottom: active ? "2px solid var(--primary)" : "2px solid transparent",
+              cursor: "pointer", transition: "color 0.15s, border-color 0.15s", marginBottom: -1,
+            }}>
+            <span style={{ display: "flex", opacity: active ? 1 : 0.7 }}>{t.icon}</span>
+            {t.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 // ─── Weekly recap (GET /drivers/:id/detail) ───────────────────────────────────
 
 interface WeekSummary {
@@ -1836,6 +1897,7 @@ function useDriverWeek(driverId: string) {
 
 function DriverDetail({ driver, onBack }: { driver: SoloDriver; onBack: () => void }) {
   const { weekOffset, setWeekOffset, data, loading: loadingLoads, error } = useDriverWeek(driver.id);
+  const [tab, setTab] = useState<DetailTab>("loads");
   const summary = data?.summary;
   const loads   = data?.loads ?? [];
   const targetPct = summary?.target_pct ?? null;
@@ -1962,8 +2024,11 @@ function DriverDetail({ driver, onBack }: { driver: SoloDriver; onBack: () => vo
           <DriverTelegramGroup driverId={driver.id} driverName={driver.name} />
         </div>
 
-        {/* ── Right: metrics + loads ── */}
+        {/* ── Right: loads, or the home time history ── */}
         <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 16 }}>
+          <DetailTabs tab={tab} onTab={setTab} />
+          {tab === "home" && <DriverHomePeriods driverId={driver.id} />}
+          <div style={{ display: tab === "loads" ? "flex" : "none", flexDirection: "column", gap: 16 }}>
 
           {/* Week label + nav */}
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -2098,6 +2163,7 @@ function DriverDetail({ driver, onBack }: { driver: SoloDriver; onBack: () => vo
               </ScrollX>
             )}
           </div>
+          </div>
         </div>
       </div>
     </div>
@@ -2109,6 +2175,7 @@ function DriverDetail({ driver, onBack }: { driver: SoloDriver; onBack: () => vo
 function TeamDetail({ team, onBack }: { team: TeamDriver; onBack: () => void }) {
   // A team is a driver row, so it uses the same recap endpoint.
   const { weekOffset, setWeekOffset, data, loading: loadingLoads, error } = useDriverWeek(team.id);
+  const [tab, setTab] = useState<DetailTab>("loads");
   const summary = data?.summary;
   const loads   = data?.loads ?? [];
   const targetPct = summary?.target_pct ?? null;
@@ -2249,8 +2316,11 @@ function TeamDetail({ team, onBack }: { team: TeamDriver; onBack: () => void }) 
           <DriverTelegramGroup driverId={team.id} driverName={driverDisplayName({ name: team.name1, name2: team.name2, team: true })} />
         </div>
 
-        {/* ── Right: metrics + loads ── */}
+        {/* ── Right: loads, or the home time history ── */}
         <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 16 }}>
+          <DetailTabs tab={tab} onTab={setTab} />
+          {tab === "home" && <DriverHomePeriods driverId={team.id} />}
+          <div style={{ display: tab === "loads" ? "flex" : "none", flexDirection: "column", gap: 16 }}>
 
           {/* Week label + nav */}
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -2383,6 +2453,7 @@ function TeamDetail({ team, onBack }: { team: TeamDriver; onBack: () => void }) 
               </ScrollX>
             )}
           </div>
+          </div>
         </div>
       </div>
     </div>
@@ -2392,11 +2463,12 @@ function TeamDetail({ team, onBack }: { team: TeamDriver; onBack: () => void }) 
 // ─── Toolbar ─────────────────────────────────────────────────────────────────
 
 function Toolbar({
-  search, onSearch, statusFilter, onStatus,
+  search, onSearch, statusFilter, onStatus, typeFilter, onType,
   entityLabel, onManual, onImport, onEld, placeholder, canCreate = true, canEld = true,
 }: {
   search: string; onSearch: (v: string) => void;
   statusFilter: string; onStatus: (v: string) => void;
+  typeFilter: string; onType: (v: string) => void;
   entityLabel: string; onManual: () => void; onImport: () => void; onEld: () => void;
   placeholder: string; canCreate?: boolean; canEld?: boolean;
 }) {
@@ -2438,6 +2510,13 @@ function Toolbar({
         width={168}
       />
 
+      <CustomSelect
+        value={typeFilter}
+        options={TYPE_FILTER_OPTS}
+        onChange={onType}
+        width={130}
+      />
+
       <div style={{ flex: 1 }} />
 
       {canCreate && <AddMenu entityLabel={entityLabel} onManual={onManual} onImport={onImport} onEld={onEld} canEld={canEld} />}
@@ -2468,6 +2547,7 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
   const [search, setSearch]                   = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [statusFilter, setStatus]             = useState("All");
+  const [typeFilter, setTypeFilter]           = useState("All");
   const [page, setPage]                       = useState(1);
   const [pageSize, setPageSize]               = useState(20);
   const [importing, setImporting]             = useState(false);
@@ -2480,13 +2560,20 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
     return () => clearTimeout(t);
   }, [search]);
 
-  useEffect(() => { setPage(1); }, [statusFilter]);
+  useEffect(() => { setPage(1); }, [statusFilter, typeFilter]);
+  // Home time changed on a driver (in the open form): the Home column reads it again.
+  useEffect(() => {
+    const again = () => setFetchKey((k) => k + 1);
+    window.addEventListener(HOME_CHANGED, again);
+    return () => window.removeEventListener(HOME_CHANGED, again);
+  }, []);
 
   useEffect(() => {
     setLoading(true);
     api.getList<any>("/drivers", {
       q: debouncedSearch || undefined,
       status: statusFilter !== "All" ? statusFilter : undefined,
+      type: typeFilter !== "All" ? typeFilter : undefined,
       team: "false",
       page,
       page_size: pageSize,
@@ -2498,7 +2585,7 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
       })
       .catch((e) => setError(friendlyError(e, "Couldn't load this. Try again.")))
       .finally(() => setLoading(false));
-  }, [fetchKey, debouncedSearch, statusFilter, page, pageSize]);
+  }, [fetchKey, debouncedSearch, statusFilter, typeFilter, page, pageSize]);
 
   const patchRow = async (id: string, fields: Partial<SoloDriver>) => {
     const existing = rows.find((d) => d.id === id);
@@ -2549,15 +2636,18 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
   // New drivers start as Company Driver — the common case.
   const [saveErr, setSaveErr] = useState<string | null>(null);
   const openCreate = () => { setEditing({ type: "C/D" }); setFieldErrors({}); setSaveErr(null); setModal("create"); };
-  const openEdit   = (d: SoloDriver) => { setEditing(d); setFieldErrors({}); setSaveErr(null); setModal("edit"); };
+  const openEdit   = (d: SoloDriver) => { setEditing({ ...d, homeFrom: d.home?.startDate, homeUntil: d.home?.endDate }); setFieldErrors({}); setSaveErr(null); setModal("edit"); };
   const save = async (d: SoloDriver) => {
+    if (!d.homeFrom !== !d.homeUntil) { setSaveErr("Pick both home days, or leave both empty."); return; }
     setSaving(true);
     setFieldErrors({});
     setSaveErr(null);
     try {
       if (modal === "create") {
-        await api.post<any>("/drivers", fromSolo(d));
+        const made = await api.post<any>("/drivers", fromSolo(d));
         notify.success(`${d.name} added successfully`);
+        await saveHomeFromForm(made?.id, undefined, d.homeFrom, d.homeUntil)
+          .catch((e) => notify.error(friendlyError(e, "The driver was added, but the home time wasn't saved.")));
       } else {
         // The modal only rearranges its own state on drag — the load order the user
         // left it in reaches the server here, folded into the same Save click as
@@ -2575,6 +2665,8 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
         await api.put<any>(`/drivers/${d.id}`, body);
         if (queueChanged) await api.put(`/drivers/${d.id}/queue`, { load_ids: newTailIds });
         notify.success(`${d.name} updated successfully`);
+        await saveHomeFromForm(d.id, d.home, d.homeFrom, d.homeUntil)
+          .catch((e) => notify.error(friendlyError(e, "The driver was saved, but the home time wasn't.")));
       }
       setModal(null);
       setFetchKey((k) => k + 1);
@@ -2622,6 +2714,7 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
       <Toolbar
         search={search} onSearch={handleSearch}
         statusFilter={statusFilter} onStatus={handleStatus}
+        typeFilter={typeFilter} onType={setTypeFilter}
         entityLabel="Driver" onManual={openCreate} onImport={() => setImporting(true)} onEld={() => setEldOpen(true)} canEld={canEld}
         placeholder="Search drivers, trucks…" canCreate={canCreate}
       />
@@ -2635,6 +2728,7 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
               <TH width={150}>Phone</TH>
               <TH width={72}>Type</TH>
               <TH width={110}>Status</TH>
+              <TH width={130}>Home</TH>
               <TH width={120}>Current Load</TH>
               <TH width={120}>Next Load</TH>
               <TH width={110}>Truck</TH>
@@ -2669,6 +2763,7 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
                 <TD mono>{d.phone || <Dash />}</TD>
                 <TD><TypeBadge type={d.type} /></TD>
                 <TD><StatusDropdown value={d.status} onChange={(s) => requestStatus(d, s)} /></TD>
+                <TD><HomeCell home={d.home} /></TD>
                 <TD mono>
                   {d.currentLoad ? (
                     <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 600, color: "var(--primary)", backgroundColor: "var(--secondary)", borderRadius: 4, padding: "2px 7px" }}>
@@ -2714,7 +2809,7 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
             ))}
             {!loading && rows.length === 0 && (
               <tr>
-                <td colSpan={11} style={{ padding: "40px 20px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
+                <td colSpan={13} style={{ padding: "40px 20px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
                   No drivers match your filters.
                 </td>
               </tr>
@@ -2775,6 +2870,7 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
   const [search, setSearch]                   = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [statusFilter, setStatus]             = useState("All");
+  const [typeFilter, setTypeFilter]           = useState("All");
   const [page, setPage]                       = useState(1);
   const [pageSize, setPageSize]               = useState(20);
   const [importing, setImporting]             = useState(false);
@@ -2787,13 +2883,20 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
     return () => clearTimeout(t);
   }, [search]);
 
-  useEffect(() => { setPage(1); }, [statusFilter]);
+  useEffect(() => { setPage(1); }, [statusFilter, typeFilter]);
+  // Home time changed on a driver (in the open form): the Home column reads it again.
+  useEffect(() => {
+    const again = () => setFetchKey((k) => k + 1);
+    window.addEventListener(HOME_CHANGED, again);
+    return () => window.removeEventListener(HOME_CHANGED, again);
+  }, []);
 
   useEffect(() => {
     setLoading(true);
     api.getList<any>("/drivers", {
       q: debouncedSearch || undefined,
       status: statusFilter !== "All" ? statusFilter : undefined,
+      type: typeFilter !== "All" ? typeFilter : undefined,
       team: "true",
       page,
       page_size: pageSize,
@@ -2805,7 +2908,7 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
       })
       .catch((e) => setError(friendlyError(e, "Couldn't load this. Try again.")))
       .finally(() => setLoading(false));
-  }, [fetchKey, debouncedSearch, statusFilter, page, pageSize]);
+  }, [fetchKey, debouncedSearch, statusFilter, typeFilter, page, pageSize]);
 
   const patchRow = async (id: string, fields: Partial<TeamDriver>) => {
     const existing = rows.find((d) => d.id === id);
@@ -2853,14 +2956,17 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
   // New drivers start as Company Driver — the common case.
   const [saveErr, setSaveErr] = useState<string | null>(null);
   const openCreate = () => { setEditing({ type: "C/D" }); setFieldErrors({}); setSaveErr(null); setModal("create"); };
-  const openEdit   = (d: TeamDriver) => { setEditing(d); setFieldErrors({}); setSaveErr(null); setModal("edit"); };
+  const openEdit   = (d: TeamDriver) => { setEditing({ ...d, homeFrom: d.home?.startDate, homeUntil: d.home?.endDate }); setFieldErrors({}); setSaveErr(null); setModal("edit"); };
   const save = async (d: TeamDriver) => {
+    if (!d.homeFrom !== !d.homeUntil) { setSaveErr("Pick both home days, or leave both empty."); return; }
     setSaving(true);
     setFieldErrors({});
     setSaveErr(null);
     try {
       if (modal === "create") {
-        await api.post<any>("/drivers", fromTeam(d));
+        const made = await api.post<any>("/drivers", fromTeam(d));
+        await saveHomeFromForm(made?.id, undefined, d.homeFrom, d.homeUntil)
+          .catch((e) => notify.error(friendlyError(e, "The team was added, but the home time wasn't saved.")));
         notify.success(`${d.name1} & ${d.name2} added successfully`);
       } else {
         // See the solo table's save() for why this reorder rides along with the field
@@ -2874,6 +2980,8 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
         await api.put<any>(`/drivers/${d.id}`, body);
         if (queueChanged) await api.put(`/drivers/${d.id}/queue`, { load_ids: newTailIds });
         notify.success(`Team updated successfully`);
+        await saveHomeFromForm(d.id, d.home, d.homeFrom, d.homeUntil)
+          .catch((e) => notify.error(friendlyError(e, "The team was saved, but the home time wasn't.")));
       }
       setModal(null);
       setFetchKey((k) => k + 1);
@@ -2920,6 +3028,7 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
       <Toolbar
         search={search} onSearch={handleSearch}
         statusFilter={statusFilter} onStatus={handleStatus}
+        typeFilter={typeFilter} onType={setTypeFilter}
         entityLabel="Team" onManual={openCreate} onImport={() => setImporting(true)} onEld={() => setEldOpen(true)} canEld={canEld}
         placeholder="Search teams, trucks…" canCreate={canCreate}
       />
@@ -2935,6 +3044,7 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
               <TH width={150}>Phone 2</TH>
               <TH width={72}>Type</TH>
               <TH width={110}>Status</TH>
+              <TH width={130}>Home</TH>
               <TH width={120}>Current Load</TH>
               <TH width={120}>Next Load</TH>
               <TH width={110}>Truck</TH>
@@ -2972,6 +3082,7 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
                 <TD mono>{d.phone2 || <Dash />}</TD>
                 <TD><TypeBadge type={d.type} /></TD>
                 <TD><StatusDropdown value={d.status} onChange={(s) => requestStatus(d, s)} /></TD>
+                <TD><HomeCell home={d.home} /></TD>
                 <TD mono>
                   {d.currentLoad ? (
                     <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 600, color: "var(--primary)", backgroundColor: "var(--secondary)", borderRadius: 4, padding: "2px 7px" }}>
@@ -3017,7 +3128,7 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
             ))}
             {!loading && rows.length === 0 && (
               <tr>
-                <td colSpan={14} style={{ padding: "40px 20px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
+                <td colSpan={15} style={{ padding: "40px 20px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
                   No teams match your filters.
                 </td>
               </tr>

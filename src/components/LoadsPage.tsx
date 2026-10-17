@@ -231,7 +231,7 @@ function withCompletedStops(l: Load): Load {
 
 // ─── Custom Select ─────────────────────────────────────────────────────────────
 
-function CustomSelect({
+export function CustomSelect({
   value, options, onChange, width, compact = false, dropUp = false, plain = false,
 }: {
   value: string; options: SelectOpt[]; onChange: (v: string) => void;
@@ -353,7 +353,7 @@ function CustomSelect({
 
 const PAGE_SIZES = [20, 40, 60, 100];
 
-function Pagination({ page, total, pageSize, onPage, onPageSize, loading = false }: {
+export function Pagination({ page, total, pageSize, onPage, onPageSize, loading = false }: {
   page: number; total: number; pageSize: number;
   onPage: (p: number) => void; onPageSize: (s: number) => void; loading?: boolean;
 }) {
@@ -427,7 +427,7 @@ function Pagination({ page, total, pageSize, onPage, onPageSize, loading = false
 // ─── Shared table primitives ───────────────────────────────────────────────────
 
 // `pinned` keeps a column (the row actions) in view when the table scrolls sideways.
-const TH = ({ children, width, align = "left", pinned = false }: { children: React.ReactNode; width?: number; align?: string; pinned?: boolean }) => (
+export const TH = ({ children, width, align = "left", pinned = false }: { children: React.ReactNode; width?: number; align?: string; pinned?: boolean }) => (
   <th style={{
     padding: "8px 14px", textAlign: align as "left" | "center" | "right",
     fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600,
@@ -558,7 +558,7 @@ function StatusDropdown({ value, onChange, readOnly = false }: { value: Status; 
 
 // Row actions stay quiet (grey) until hovered or focused, then take their meaning's colour.
 // An icon-only button says nothing to a screen reader (or on hover) without a label.
-function ActionBtn({ icon, tone, onClick, label }: { icon: React.ReactNode; tone: "edit" | "delete"; onClick: () => void; label: string }) {
+export function ActionBtn({ icon, tone, onClick, label }: { icon: React.ReactNode; tone: "edit" | "delete"; onClick: () => void; label: string }) {
   const hot = tone === "delete"
     ? { color: "#EF4444", bg: "rgba(239,68,68,0.12)" }
     : { color: "var(--primary)", bg: "var(--primary-soft)" };
@@ -2273,16 +2273,17 @@ export function LoadFormPage() {
   );
 }
 
-function DeleteConfirm({ label, onClose, onConfirm, busy = false, error }: { label: string; onClose: () => void; onConfirm: () => void; busy?: boolean; error?: string | null }) {
+// `title` and `body` default to a load's wording; other pages pass their own.
+export function DeleteConfirm({ label, onClose, onConfirm, busy = false, error, title = "Delete load?", body }: { label: string; onClose: () => void; onConfirm: () => void; busy?: boolean; error?: string | null; title?: string; body?: React.ReactNode }) {
   return (
     <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div style={{ backgroundColor: "var(--card)", borderRadius: 12, width: 360, padding: 24, boxShadow: "0 20px 60px rgba(0,0,0,0.25)", textAlign: "center" }}>
         <div style={{ width: 44, height: 44, borderRadius: "50%", backgroundColor: "rgba(239,68,68,0.14)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
           <Trash2 size={20} color="#EF4444" />
         </div>
-        <div style={{ fontFamily: "var(--font-sans)", fontSize: 15, fontWeight: 600, color: "var(--foreground)", marginBottom: 6 }}>Delete load?</div>
+        <div style={{ fontFamily: "var(--font-sans)", fontSize: 15, fontWeight: 600, color: "var(--foreground)", marginBottom: 6 }}>{title}</div>
         <div style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)", marginBottom: error ? 12 : 20 }}>
-          Load <strong>{label}</strong> will be permanently removed.
+          {body ?? <>Load <strong>{label}</strong> will be permanently removed.</>}
         </div>
         <FormError message={error} style={{ marginBottom: 16 }} />
         <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
