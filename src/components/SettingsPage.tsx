@@ -4,6 +4,7 @@ import {
   Users, UsersRound, ShieldCheck, Plus, Pencil, Trash2, X, Check,
   Eye, EyeOff, ToggleLeft, ToggleRight, Search, ChevronDown, ChevronLeft, ChevronRight, CalendarDays,
   Truck, AlertCircle, Unlink, Settings as SettingsIcon,
+  Percent,
 } from "lucide-react";
 import { useAuth } from "../lib/auth";
 import { hasPerm } from "../lib/permissions";
@@ -22,6 +23,7 @@ import { fmtDate, fmtDateTime } from "../lib/dates";
 import { DatePicker } from "./DatePicker";
 import { NumberField } from "./NumberField";
 import { ScrollPane } from "./ScrollX";
+import { KpiTableTab } from "./KpiTableTab";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -65,6 +67,7 @@ interface User {
   // The percent of each completed load's rate this person is paid today; null when they
   // are not paid one. Read-only here — it is changed in the user form's "Paid per load".
   kpiPercent: number | null;
+  kpiTable: boolean; // paid by the KPI table rather than a fixed percent
 }
 
 // ─── Backend types + mappers ──────────────────────────────────────────────────
@@ -82,6 +85,7 @@ interface BackendUser {
   work_from?: string;
   work_to?: string;
   kpi_percent?: number | null;
+  kpi_mode?: "fixed" | "table" | null;
 }
 
 interface BackendRole {
@@ -171,6 +175,7 @@ function toUser(b: BackendUser): User {
     password: "",
     status:   (b.status === "active" || b.status === "Active") ? "Active" : "Suspended",
     kpiPercent: b.kpi_percent ?? null,
+    kpiTable: b.kpi_mode === "table",
   };
 }
 
@@ -615,10 +620,10 @@ const loadErrText = (e: unknown, what: string) => friendlyError(e, `Couldn't loa
 
 // A person's pay per load (dispatcher KPI): the percent of each completed load's rate they
 // earn, as a history of "from this day on, this percent". 0% = not paid from that day.
-interface KpiRate { percent: number; active_from: string }
+interface KpiRate { mode?: "fixed" | "table"; percent: number; active_from: string }
 interface KpiRates { current: KpiRate | null; history: KpiRate[]; today: string }
 // What the user form asks the page to save after the user itself: a new percent from a day.
-interface KpiChange { percent: number; activeFrom: string }
+interface KpiChange { mode: "fixed" | "table"; percent: number; activeFrom: string }
 
 const todayIso = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
 
@@ -684,11 +689,16 @@ function UserModal({ user, roles, teams, saving, error, onClose, onSave, canSetP
   const [rates, setRates]   = useState<KpiRates | null>(null);
   const [paid, setPaid]     = useState(false);
   const [percent, setPercent] = useState("");
+  // Fixed: a percent of every load's rate. Table: the percent their week earns from the
+  // company's KPI table (Settings → KPI Table).
+  const [mode, setMode] = useState<"fixed" | "table">("fixed");
   const [activeFrom, setActiveFrom] = useState(todayIso());
   const today = rates?.today ?? todayIso();
   // The entry that will be in force once everything on file has started: the last one.
   const latest = rates?.history.length ? rates.history[rates.history.length - 1] : null;
-  const wasPaid = !!latest && latest.percent > 0;
+  const byTable = (r: KpiRate | null | undefined) => r?.mode === "table";
+  const wasPaid = !!latest && (byTable(latest) || latest.percent > 0);
+  const wasLabel = latest ? (byTable(latest) ? "the KPI table" : `${latest.percent}%`) : "";
 
   useEffect(() => {
     if (!user.id || !canSetPay) return;
@@ -698,8 +708,9 @@ function UserModal({ user, roles, teams, saving, error, onClose, onSave, canSetP
         if (gone || !r) return;
         setRates(r);
         const last = r.history.length ? r.history[r.history.length - 1] : null;
-        setPaid(!!last && last.percent > 0);
-        if (last && last.percent > 0) setPercent(String(last.percent));
+        setPaid(!!last && (last.mode === "table" || last.percent > 0));
+        if (last && last.mode === "table") setMode("table");
+        else if (last && last.percent > 0) setPercent(String(last.percent));
         setActiveFrom(r.today);
       })
       // Not being able to read it (no permission, older server) just leaves the section as "not paid".
@@ -708,7 +719,7 @@ function UserModal({ user, roles, teams, saving, error, onClose, onSave, canSetP
   }, [user.id]);
 
   const pct = Number(percent);
-  const percentErr = !paid ? null
+  const percentErr = !paid || mode === "table" ? null
     : percent.trim() === "" ? "Enter the percent."
     : !Number.isFinite(pct) || pct <= 0 || pct > 100 ? "Enter a percent above 0, up to 100."
     : null;
@@ -718,9 +729,13 @@ function UserModal({ user, roles, teams, saving, error, onClose, onSave, canSetP
   // to stop it. Nothing when it reads the same as what's already on file.
   const kpiChange = (): KpiChange | null => {
     if (!payable) return null;
-    if (!paid) return wasPaid ? { percent: 0, activeFrom: today } : null;
-    if (wasPaid && latest!.percent === pct && latest!.active_from >= activeFrom) return null;
-    return { percent: pct, activeFrom };
+    if (!paid) return wasPaid ? { mode: "fixed", percent: 0, activeFrom: today } : null;
+    if (mode === "table") {
+      if (byTable(latest) && latest!.active_from >= activeFrom) return null;
+      return { mode: "table", percent: 0, activeFrom };
+    }
+    if (wasPaid && !byTable(latest) && latest!.percent === pct && latest!.active_from >= activeFrom) return null;
+    return { mode: "fixed", percent: pct, activeFrom };
   };
 
   const handleSave = () => {
@@ -863,28 +878,49 @@ function UserModal({ user, roles, teams, saving, error, onClose, onSave, canSetP
 
               {paid && (
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: "12px 14px" }}>
+                  <div style={{ ...fieldStyle, gridColumn: "1 / -1" }}>
+                    <span style={capStyle}>Pay type</span>
+                    <div role="radiogroup" aria-label="Pay type" style={{ display: "inline-flex", alignSelf: "flex-start", padding: 3, gap: 2, borderRadius: 8, backgroundColor: "var(--muted)" }}>
+                      {([["fixed", "Fixed %"], ["table", "KPI table"]] as const).map(([v, label]) => (
+                        <button key={v} type="button" role="radio" aria-checked={mode === v} onClick={() => setMode(v)}
+                          style={{ height: 28, padding: "0 14px", borderRadius: 6, border: "none", cursor: "pointer", fontFamily: "var(--font-sans)", fontSize: 12.5, fontWeight: 600, backgroundColor: mode === v ? "var(--card)" : "transparent", color: mode === v ? "var(--foreground)" : "var(--muted-foreground)", boxShadow: mode === v ? "0 1px 2px rgba(0,0,0,0.12)" : "none" }}>
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  {mode === "table" ? (
+                    <div style={{ ...fieldStyle, justifyContent: "center" }}>
+                      <div style={{ fontFamily: "var(--font-sans)", fontSize: 12.5, color: "var(--muted-foreground)", lineHeight: 1.45 }}>
+                        Paid by the company <strong style={{ color: "var(--foreground)" }}>KPI table</strong>: each week's gross and RPM pick the percent (Settings → KPI Table).
+                      </div>
+                    </div>
+                  ) : (
                   <label style={fieldStyle}>
                     <span style={capStyle}>Percent of the load's rate <span style={{ color: "#EF4444" }}>*</span></span>
                     <NumberField label="Percent of the load's rate" suffix="%" max={100} placeholder="e.g. 1.5" invalid={submitted && !!percentErr}
                       value={Number(percent) || 0} onChange={(n) => setPercent(n ? String(n) : "")} />
                     <FieldHint text={submitted ? percentErr : null} />
                   </label>
+                  )}
                   <div style={fieldStyle}>
                     <span style={capStyle}>Active from <span style={{ color: "#EF4444" }}>*</span></span>
                     <DatePicker label="Active from" value={activeFrom} min={today} onChange={setActiveFrom} invalid={submitted && !!dateErr} />
                     <FieldHint text={submitted ? dateErr : null} />
                   </div>
                   {/* What this does, in plain numbers, before it's saved */}
+                  {mode === "fixed" && (
                   <div style={{ ...fieldStyle, justifyContent: "flex-end" }}>
                     <div style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)", lineHeight: 1.45 }}>
                       {percentErr ? "Only today or a later day can be chosen." : <>A $1,000 load pays <strong style={{ color: "var(--foreground)" }}>${(10 * pct).toFixed(2)}</strong>.</>}
                     </div>
                   </div>
+                  )}
                   <div style={{ gridColumn: "1 / -1", display: "flex", gap: 8, padding: "9px 11px", borderRadius: 8, backgroundColor: "var(--primary-faint)", fontFamily: "var(--font-sans)", fontSize: 12.5, color: "var(--foreground)", lineHeight: 1.5 }}>
                     <AlertCircle size={14} style={{ color: "var(--primary)", flexShrink: 0, marginTop: 2 }} />
                     <span>
                       Applies to loads <strong>completed from {fmtDate(activeFrom)}</strong>.
-                      {wasPaid ? ` Earlier loads keep ${latest!.percent}%.` : " Earlier loads pay nothing."}
+                      {wasPaid ? ` Earlier loads keep ${wasLabel}.` : " Earlier loads pay nothing."}
                     </span>
                   </div>
                 </div>
@@ -892,7 +928,7 @@ function UserModal({ user, roles, teams, saving, error, onClose, onSave, canSetP
 
               {!paid && wasPaid && (
                 <div style={{ fontFamily: "var(--font-sans)", fontSize: 12.5, color: "#B45309", lineHeight: 1.5 }}>
-                  Saving stops the pay from today ({fmtDate(today)}). Loads completed before today keep the {latest!.percent}% they earned.
+                  Saving stops the pay from today ({fmtDate(today)}). Loads completed before today keep what they earned by {wasLabel}.
                 </div>
               )}
 
@@ -901,7 +937,7 @@ function UserModal({ user, roles, teams, saving, error, onClose, onSave, canSetP
                   <span style={{ fontWeight: 600 }}>History</span>
                   {rates.history.map((h) => (
                     <span key={h.active_from} style={{ whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>
-                      {h.percent > 0 ? `${h.percent}%` : "Off"} from {fmtDate(h.active_from)}{h.active_from > today ? " (scheduled)" : ""}
+                      {h.mode === "table" ? "KPI table" : h.percent > 0 ? `${h.percent}%` : "Off"} from {fmtDate(h.active_from)}{h.active_from > today ? " (scheduled)" : ""}
                     </span>
                   ))}
                 </div>
@@ -1008,7 +1044,7 @@ function UsersTab({ roles, teams, reloadTeams, reloadRoles, canCreate, canUpdate
       let kpiErr: string | null = null;
       if (userId && kpi) {
         try {
-          await api.post(`/kpi/rates`, { user_id: userId, percent: kpi.percent, active_from: kpi.activeFrom });
+          await api.post(`/kpi/rates`, { user_id: userId, mode: kpi.mode, percent: kpi.percent, active_from: kpi.activeFrom });
         } catch (e) {
           kpiErr = friendlyError(e, "request failed");
         }
@@ -1138,7 +1174,7 @@ function UsersTab({ roles, teams, reloadTeams, reloadRoles, canCreate, canUpdate
                       {role?.name ?? (u.roleName || <Dash />)}
                     </span>
                   </td>
-                  <TD mono>{u.kpiPercent ? `${u.kpiPercent.toLocaleString("en-US", { maximumFractionDigits: 2 })}%` : <Dash />}</TD>
+                  <TD mono>{u.kpiTable ? "KPI table" : u.kpiPercent ? `${u.kpiPercent.toLocaleString("en-US", { maximumFractionDigits: 2 })}%` : <Dash />}</TD>
                   <TD><span style={{ color: "var(--muted-foreground)" }}>{team?.name ?? <Dash />}</span></TD>
                   <TD mono>{u.login}</TD>
                   <td style={{ padding: "8px 14px", borderBottom: "1px solid var(--border)", verticalAlign: "middle" }}>
@@ -2257,7 +2293,7 @@ function EldTab({ canManage }: { canManage: boolean }) {
   );
 }
 
-type TabId = "users" | "teams" | "roles" | "week" | "eld";
+type TabId = "users" | "teams" | "roles" | "week" | "eld" | "kpi";
 
 export function SettingsPage() {
   const { user } = useAuth();
@@ -2290,6 +2326,8 @@ export function SettingsPage() {
     { id: "roles",  label: "Roles & Permissions", icon: <ShieldCheck  size={15} />, module: "roles" },
     { id: "week",   label: "Work Week",           icon: <CalendarDays size={15} />, module: "settings" },
     { id: "eld",    label: "ELD",                 icon: <Truck        size={15} />, module: "eld" },
+    // The KPI table pays dispatchers, so it rides on the Payouts keys: read to see it, update to change it.
+    { id: "kpi",    label: "KPI Table",           icon: <Percent      size={15} />, module: "payouts" },
   ];
   const tabs = TAB_DEFS.filter((t) => can(t.module));
 
@@ -2333,6 +2371,7 @@ export function SettingsPage() {
           {tab === "roles" && <RolesTab onRolesChange={setRoles} canCreate={can("roles", "create")} canUpdate={can("roles", "update")} canDelete={can("roles", "delete")} />}
           {tab === "week"  && <WeekTab canEdit={can("settings", "update")} />}
           {tab === "eld"   && <EldTab canManage={canEldUpdate} />}
+          {tab === "kpi"   && <KpiTableTab canEdit={can("payouts", "update")} />}
         </div>
       </div>
     </div>

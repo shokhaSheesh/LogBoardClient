@@ -15,7 +15,8 @@ export interface PagePerm {
 
 // The company-plane modules that Settings manages — the page shows if the user can read
 // any of them (and each tab is gated individually inside SettingsPage).
-export const SETTINGS_MODULES = ["settings", "users", "roles", "teams"];
+// "payouts" is there for the KPI Table tab.
+export const SETTINGS_MODULES = ["settings", "users", "roles", "teams", "payouts"];
 
 export const PAGE_PERMS: PagePerm[] = [
   { path: "dashboard",  module: "dashboard"  },

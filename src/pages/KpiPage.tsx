@@ -17,15 +17,26 @@ import { ScrollPane } from "../components/ScrollX";
 // Dispatchers on the left, the picked one's loads on the right — the list a dispatcher
 // would otherwise bring the owner at month end.
 
-interface Row { dispatcher_id: string; name: string; loads: number; rate_total: number; percent_min: number; percent_max: number; amount: number }
+interface Row { dispatcher_id: string; name: string; loads: number; rate_total: number; percent_min: number; percent_max: number; by_table?: number; amount: number }
 interface Summary { rows: Row[]; totals: { loads: number; rate_total: number; amount: number } }
+interface Rule { gross_from: number; gross_to: number | null; rpm_from: number; rpm_to: number | null; percent: number }
+// One work week of a dispatcher: the whole week's gross, miles and RPM (they pick the table's
+// percent), the window's loads in it and what they earned.
+interface WeekRow {
+  week_start: string; week_end: string; loads: number; gross: number; miles: number; rpm: number;
+  table_percent: number; rule: Rule | null; by_table: number; percent_min: number; percent_max: number; amount: number;
+  next: { gross_needed: number; percent: number } | null;
+}
 interface LoadRow { payout_id: string; load_ref: string; broker: string; driver: string; completed_at: string; rate: number; percent: number; amount: number }
 
 const money = (n: number) => `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const whole = (n: number) => `$${Math.round(n).toLocaleString()}`;
-// "2%", or "1–2%" when the percent changed inside the period; null when none is set.
-const pctLabel = (r: Row) => r.percent_max === 0 ? null : r.percent_min === r.percent_max ? `${r.percent_max}%` : `${r.percent_min}–${r.percent_max}%`;
-const HOW = "Loads completed in the period, for the dispatcher on the load at that time. KPI = load rate × that dispatcher's percent on the completion day. Added and deducted amounts don't count.";
+// "2%", or "1–2%" when the percent changed inside the period, with "KPI table" when the
+// table paid any of it; null when nothing was paid.
+const pctRange = (min: number, max: number) => min === max ? `${max}%` : `${min}–${max}%`;
+const pctLabel = (r: Row) => r.percent_max === 0 ? null : (r.by_table ? "KPI table · " : "") + pctRange(r.percent_min, r.percent_max);
+const range2 = (from: number, to: number | null, fmt: (n: number) => string) => to == null ? `${fmt(from)}+` : `${fmt(from)}–${fmt(to)}`;
+const HOW = "Loads completed in the period, for the dispatcher on the load at that time. KPI = load rate × the dispatcher's percent: a fixed one, or — paid by the KPI table — the percent their whole work week earns from its gross and RPM. Weeks are added up for a month. Added and deducted amounts don't count.";
 
 export function KpiPage() {
   const navigate = useNavigate();
@@ -63,13 +74,15 @@ export function KpiPage() {
 
   // The picked dispatcher's loads.
   const [loads, setLoads]             = useState<LoadRow[] | null>(null);
+  const [weeks, setWeeks]             = useState<WeekRow[] | null>(null);
   const [loadsError, setLoadsError]   = useState(false);
   useEffect(() => {
-    if (!picked) { setLoads(null); return; }
+    if (!picked) { setLoads(null); setWeeks(null); return; }
     let gone = false;
-    setLoads(null); setLoadsError(false);
-    api.get<LoadRow[]>(`/kpi/loads?dispatcher_id=${picked}${range ? `&${range}` : ""}`)
-      .then((rows) => { if (!gone) setLoads(rows ?? []); })
+    setLoads(null); setWeeks(null); setLoadsError(false);
+    const q = `dispatcher_id=${picked}${range ? `&${range}` : ""}`;
+    Promise.all([api.get<LoadRow[]>(`/kpi/loads?${q}`), api.get<WeekRow[]>(`/kpi/weeks?${q}`)])
+      .then(([rows, wks]) => { if (!gone) { setLoads(rows ?? []); setWeeks(wks ?? []); } })
       .catch(() => { if (!gone) setLoadsError(true); });
     return () => { gone = true; };
   }, [picked, range]);
@@ -162,8 +175,51 @@ export function KpiPage() {
             <ScrollPane style={{ flex: 1, overflow: "auto", scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent" }}>
               {!current ? <div style={quiet}>{data && data.rows.length === 0 ? "Nothing to show for this period." : "Pick a dispatcher."}</div>
                 : loadsError ? <div style={{ ...quiet, color: "#EF4444" }}>Couldn't load these loads.</div>
-                : !loads ? <div style={quiet}>Loading loads…</div>
-                : (
+                : !loads || !weeks ? <div style={quiet}>Loading loads…</div>
+                : (<>
+                  {/* Week by week: each week's gross and RPM pick its percent; a month is its weeks added up. */}
+                  <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 0 }}>
+                    <thead>
+                      <tr>
+                        <th style={th()}>Week</th>
+                        <th style={th("right")}>Gross</th>
+                        <th style={th("right")}>RPM</th>
+                        <th style={th()}>Paid by</th>
+                        <th style={th("right")}>Loads</th>
+                        <th style={th("right")}>KPI</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {weeks.map((w) => {
+                        const fixedOnly = w.by_table === 0;
+                        const how = fixedOnly
+                          ? `Fixed ${pctRange(w.percent_min, w.percent_max)}`
+                          : w.rule
+                            ? `${range2(w.rule.gross_from, w.rule.gross_to, whole)} · RPM ${range2(w.rule.rpm_from, w.rule.rpm_to, (n) => n.toFixed(2))} → ${w.table_percent}%`
+                            : `Below the table → ${w.table_percent}%`;
+                        return (
+                          <tr key={w.week_start}>
+                            <td style={td()}>{fmtDate(w.week_start)} – {fmtDate(w.week_end)}</td>
+                            <td style={td("right")}>{whole(w.gross)}</td>
+                            <td style={{ ...td("right"), color: w.miles > 0 ? "var(--foreground)" : "var(--muted-foreground)" }} title={w.miles > 0 ? `${Math.round(w.miles).toLocaleString()} mi with deadhead` : "No miles recorded on these loads"}>
+                              {w.miles > 0 ? `$${w.rpm.toFixed(2)}` : "no miles"}
+                            </td>
+                            <td style={td()}>
+                              <span style={chip(true)}>{how}</span>
+                              {!fixedOnly && w.next && (
+                                <span style={{ marginLeft: 8, fontSize: 12, color: "var(--muted-foreground)" }}>
+                                  {whole(w.next.gross_needed)} more → {w.next.percent}%
+                                </span>
+                              )}
+                            </td>
+                            <td style={td("right")}>{w.loads}</td>
+                            <td style={{ ...td("right"), fontWeight: 600 }}>{money(w.amount)}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                  <div style={{ padding: "14px 14px 6px", fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--muted-foreground)" }}>Loads</div>
                   <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 0 }}>
                     <thead>
                       <tr>
@@ -191,7 +247,7 @@ export function KpiPage() {
                       ))}
                     </tbody>
                   </table>
-                )}
+                </>)}
             </ScrollPane>
           </div>
         </div>
