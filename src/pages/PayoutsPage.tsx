@@ -18,6 +18,7 @@ import { fmtDate, fmtDateRange } from "../lib/dates";
 import { NumberField } from "../components/NumberField";
 import { ScrollPane } from "../components/ScrollX";
 import { useDialogKeys, useLayer } from "../lib/layers";
+import { useRowNav } from "../lib/rowNav";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -321,6 +322,7 @@ export function PayoutsPage() {
   const weekStart = user?.company?.week_start_day ?? 1;
 
   const [payouts, setPayouts]           = useState<Payout[]>([]);
+  const nav = useRowNav(payouts.length, payouts);
   const [total, setTotal]               = useState(0);
   const [totals, setTotals]             = useState<Totals>({ rate: 0, added: 0, deducted: 0, net: 0 });
   const [loading, setLoading]           = useState(true);
@@ -527,7 +529,7 @@ export function PayoutsPage() {
               <TH align="center" pinned>Adjust</TH>
             </tr>
           </thead>
-          <tbody>
+          <tbody ref={nav.ref}>
             {/* The loader lives in the table: the toolbar stays put (and keeps focus) while
                 a filter change is in flight. With rows on screen they're dimmed instead. */}
             {loading && payouts.length === 0 && (
@@ -551,9 +553,9 @@ export function PayoutsPage() {
                 </td>
               </tr>
             )}
-            {payouts.map((p) => {
+            {payouts.map((p, i) => {
               return (
-                <tr key={p.id}
+                <tr {...nav.row(i)} key={p.id}
                   onMouseEnter={(e) => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = "var(--primary-faint)"; }}
                   onMouseLeave={(e) => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = ""; }}>
 

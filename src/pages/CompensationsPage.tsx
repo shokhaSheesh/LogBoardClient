@@ -22,6 +22,7 @@ import { Kpi } from "../components/Kpi";
 import { Dash } from "../components/Dash";
 import { ScrollPane } from "../components/ScrollX";
 import { FormError, formErrorInModal, friendlyError, notify } from "../components/feedback";
+import { useRowNav } from "../lib/rowNav";
 
 // Compensations: what the carrier has asked brokers to pay on top of a load's rate (TONU,
 // detention, layover, extra miles), with where each request stands. A record only — a paid
@@ -108,6 +109,7 @@ export function CompensationsPage() {
     );
   };
   const rows = data?.items ?? [];
+  const nav = useRowNav(rows.length, data);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", backgroundColor: "var(--background)", overflow: "hidden" }}>
@@ -156,11 +158,11 @@ export function CompensationsPage() {
                   <TH width={92} align="center" pinned>Actions</TH>
                 </tr>
               </thead>
-              <tbody>
+              <tbody ref={nav.ref}>
                 {rows.map((c, i) => {
                   const waiting = c.status === "pending" ? daysSince(c.requestedAt) : null;
                   return (
-                    <tr key={c.id} style={{ backgroundColor: "var(--card)" }}
+                    <tr {...nav.row(i)} key={c.id} style={{ backgroundColor: "var(--card)" }}
                       onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--primary-faint)"; }}
                       onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "var(--card)"; }}>
                       <td style={{ ...td, fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--muted-foreground)", textAlign: "center" }}>{(page - 1) * pageSize + i + 1}</td>

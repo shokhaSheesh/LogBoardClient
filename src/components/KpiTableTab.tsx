@@ -8,6 +8,7 @@ import { useLayer } from "../lib/layers";
 import { NumberField } from "./NumberField";
 import { Dash } from "./Dash";
 import { FormError, formErrorInModal, friendlyError, notify } from "./feedback";
+import { useRowNav } from "../lib/rowNav";
 
 // Settings → KPI Table: the company's one table of rules for dispatchers paid by it. Each rule
 // is "a week whose gross and RPM fall in these ranges pays this percent", plus an optional
@@ -46,6 +47,7 @@ export function KpiTableTab({ canEdit }: { canEdit: boolean }) {
   }, []);
 
   const rules = view?.current?.rules ?? [];
+  const nav = useRowNav(rules.length, view);
   const fallback = view?.current?.fallback_percent ?? 0.5;
   const week = view ? `${fmtDate(view.week_start)} – ${fmtDate(view.week_end)}` : "";
 
@@ -128,9 +130,9 @@ export function KpiTableTab({ canEdit }: { canEdit: boolean }) {
               <TH width={92} align="center">Actions</TH>
             </tr>
           </thead>
-          <tbody>
-            {rules.map((r) => (
-              <tr key={r.id}>
+          <tbody ref={nav.ref}>
+            {rules.map((r, i) => (
+              <tr {...nav.row(i)} key={r.id}>
                 <td style={td}>{span(r.gross_from, r.gross_to, whole)}</td>
                 <td style={td}>{span(r.rpm_from, r.rpm_to, rpm)}</td>
                 <td style={{ ...td, textAlign: "right", fontWeight: 700 }}>{r.percent}%</td>

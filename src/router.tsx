@@ -10,6 +10,7 @@ import { DriversPage } from "./pages/DriversPage";
 import { EquipmentsPage } from "./pages/EquipmentsPage";
 import { PayoutsPage } from "./pages/PayoutsPage";
 import { CompensationsPage } from "./pages/CompensationsPage";
+import { ShortcutsPage } from "./pages/ShortcutsPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { BillingPage } from "./pages/BillingPage";
 import { useAuth } from "./lib/auth";
@@ -93,6 +94,7 @@ export const router = createBrowserRouter([
           { path: "equipments", element: <PermGuard path="equipments"><EquipmentsPage /></PermGuard> },
           { path: "payouts", element: <PermGuard path="payouts"><PayoutsPage /></PermGuard> },
           { path: "compensations", element: <PermGuard path="compensations"><CompensationsPage /></PermGuard> },
+          { path: "shortcuts", element: <ShortcutsPage /> },
           { path: "payouts/kpi", element: <PermGuard path="payouts"><KpiPage /></PermGuard> },
           { path: "billing", element: <PermGuard path="billing"><BillingPage /></PermGuard> },
           { path: "settings/*", element: <PermGuard path="settings"><SettingsPage /></PermGuard> },

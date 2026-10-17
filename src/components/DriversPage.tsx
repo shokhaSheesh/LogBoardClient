@@ -27,6 +27,7 @@ import { NumberField } from "./NumberField";
 import { DatePicker } from "./DatePicker";
 import { ScrollPane, ScrollX } from "./ScrollX";
 import { useDialogKeys, useLayer } from "../lib/layers";
+import { useRowNav } from "../lib/rowNav";
 
 type DriverStatus = Status;
 type DriverType   = "O/O" | "C/D";
@@ -1906,7 +1907,7 @@ function useDriverWeek(driverId: string) {
 
 function DriverDetail({ driver, onBack }: { driver: SoloDriver; onBack: () => void }) {
   // Esc goes back to the list, once nothing is open on top.
-  useLayer(true, { onEscape: onBack });
+  useLayer(true, { onEscape: onBack, page: true });
   const { weekOffset, setWeekOffset, data, loading: loadingLoads, error } = useDriverWeek(driver.id);
   const [tab, setTab] = useState<DetailTab>("loads");
   const summary = data?.summary;
@@ -2185,7 +2186,7 @@ function DriverDetail({ driver, onBack }: { driver: SoloDriver; onBack: () => vo
 
 function TeamDetail({ team, onBack }: { team: TeamDriver; onBack: () => void }) {
   // Esc goes back to the list, once nothing is open on top.
-  useLayer(true, { onEscape: onBack });
+  useLayer(true, { onEscape: onBack, page: true });
   // A team is a driver row, so it uses the same recap endpoint.
   const { weekOffset, setWeekOffset, data, loading: loadingLoads, error } = useDriverWeek(team.id);
   const [tab, setTab] = useState<DetailTab>("loads");
@@ -2548,6 +2549,7 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
   const canEld       = hasPerm(user, "eld", "read");   // see the ELD roster
   const canManageEld = hasPerm(user, "eld", "update"); // link / unlink / sync
   const [rows, setRows]               = useState<SoloDriver[]>([]);
+  const nav = useRowNav(rows.length, rows);
   const [total, setTotal]             = useState(0);
   const [loading, setLoading]         = useState(true);
   const [error, setError]             = useState("");
@@ -2636,14 +2638,13 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
   // `completed` un-completes it — which deletes its payout. Ask first.
   const [uncompleting, setUncompleting] = useState<{ driver: SoloDriver; to: DriverStatus } | null>(null);
 
-  const applyStatus = (d: SoloDriver, s: DriverStatus) => {
-    if (s === "completed") completeLoad(d.id, d.currentLoadId);
-    else patchRow(d.id, { status: s });
-  };
+  // Both return the save, so the status badge keeps its spinner until the server has answered.
+  const applyStatus = (d: SoloDriver, s: DriverStatus): Promise<void> =>
+    s === "completed" ? completeLoad(d.id, d.currentLoadId) : patchRow(d.id, { status: s });
 
-  const requestStatus = (d: SoloDriver, s: DriverStatus) => {
+  const requestStatus = (d: SoloDriver, s: DriverStatus): Promise<void> | void => {
     if (d.status === "completed" && s !== "completed") { setUncompleting({ driver: d, to: s }); return; }
-    applyStatus(d, s);
+    return applyStatus(d, s);
   };
 
   // New drivers start as Company Driver — the common case.
@@ -2751,9 +2752,10 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
               <TH width={90} align="center" pinned>Actions</TH>
             </tr>
           </thead>
-          <tbody>
+          <tbody ref={nav.ref}>
             {rows.map((d, i) => (
               <tr
+                {...nav.row(i)}
                 key={d.id}
                 onMouseEnter={(e) => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = "var(--primary-faint)"; }}
                 onMouseLeave={(e) => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = ""; }}
@@ -2871,6 +2873,7 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
   const canEld       = hasPerm(user, "eld", "read");   // see the ELD roster
   const canManageEld = hasPerm(user, "eld", "update"); // link / unlink / sync
   const [rows, setRows]               = useState<TeamDriver[]>([]);
+  const nav = useRowNav(rows.length, rows);
   const [total, setTotal]             = useState(0);
   const [loading, setLoading]         = useState(true);
   const [error, setError]             = useState("");
@@ -2956,14 +2959,13 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
   // See the solo table — un-completing deletes the load's payout, so it asks first.
   const [uncompleting, setUncompleting] = useState<{ driver: TeamDriver; to: DriverStatus } | null>(null);
 
-  const applyStatus = (d: TeamDriver, s: DriverStatus) => {
-    if (s === "completed") completeLoad(d.id, d.currentLoadId);
-    else patchRow(d.id, { status: s });
-  };
+  // Both return the save, so the status badge keeps its spinner until the server has answered.
+  const applyStatus = (d: TeamDriver, s: DriverStatus): Promise<void> =>
+    s === "completed" ? completeLoad(d.id, d.currentLoadId) : patchRow(d.id, { status: s });
 
-  const requestStatus = (d: TeamDriver, s: DriverStatus) => {
+  const requestStatus = (d: TeamDriver, s: DriverStatus): Promise<void> | void => {
     if (d.status === "completed" && s !== "completed") { setUncompleting({ driver: d, to: s }); return; }
-    applyStatus(d, s);
+    return applyStatus(d, s);
   };
 
   // New drivers start as Company Driver — the common case.
@@ -3067,9 +3069,10 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
               <TH width={90} align="center" pinned>Actions</TH>
             </tr>
           </thead>
-          <tbody>
+          <tbody ref={nav.ref}>
             {rows.map((d, i) => (
               <tr
+                {...nav.row(i)}
                 key={d.id}
                 onMouseEnter={(e) => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = "var(--primary-faint)"; }}
                 onMouseLeave={(e) => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = ""; }}

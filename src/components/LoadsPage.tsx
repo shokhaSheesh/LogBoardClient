@@ -29,6 +29,7 @@ import { fmtDateTime } from "../lib/dates";
 import { NumberField } from "./NumberField";
 import { ScrollPane, ScrollX } from "./ScrollX";
 import { useLayer } from "../lib/layers";
+import { useRowNav } from "../lib/rowNav";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -1615,6 +1616,7 @@ function LoadForm({ load, onCancel, onSave, saving = false, error, startDirty = 
     onEscape: onCancel,
     onSubmit: () => { if (!saving && !checking) void handleSave(); },
     enterSubmits: false,
+    page: true,
   });
 
   const inputStyle: React.CSSProperties = {
@@ -2319,7 +2321,7 @@ interface HistoryEvent {
 
 function LoadDetail({ load, onBack, onEdit }: { load: Load; onBack: () => void; onEdit?: () => void }) {
   // Esc goes back to the list, once nothing is open on top.
-  useLayer(true, { onEscape: onBack });
+  useLayer(true, { onEscape: onBack, page: true });
   const [tab, setTab] = useState<"info" | "log">("info");
   const [log, setLog]         = useState<HistoryEvent[]>([]);
   const [logLoading, setLogLoading] = useState(false);
@@ -2589,6 +2591,7 @@ export function LoadsPage() {
   const canUpdate = hasPerm(user, "loads", "update");
   const canDelete = hasPerm(user, "loads", "delete");
   const [loads, setLoads]           = useState<Load[]>([]);
+  const nav = useRowNav(loads.length, loads);
   const [total, setTotal]           = useState(0);
   const [loading, setLoading]       = useState(true);
   const [fetchKey, setFetchKey]     = useState(0);
@@ -2604,6 +2607,19 @@ export function LoadsPage() {
   const [page, setPage]             = useState(1);
   const [pageSize, setPageSize]     = useState(20);
   const [detailLoad, setDetail]     = useState<Load | null>(null);
+
+  // /workspace/loads?open=<load id> opens that load's detail — the quick search's way in.
+  // The parameter is dropped once read, so Back and a refresh land on the list.
+  // (Dropping the parameter changes it again, so the request isn't tied to this effect's cleanup.)
+  const openId = searchParams.get("open");
+  useEffect(() => {
+    if (!openId) return;
+    api.get<BackendLoad>(`/loads/${openId}`)
+      .then((b) => { if (b) setDetail(toLoad(b)); })
+      .catch((e) => notify.error(friendlyError(e, "Couldn't open that load.")));
+    navigate("/workspace/loads", { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openId]);
 
   // Old deep link: /workspace/loads?edit=<load id>. Editing has its own page now — send
   // any link still in that shape (a bookmark, an open tab) on to it.
@@ -2642,7 +2658,9 @@ export function LoadsPage() {
         const mapped = (items ?? []).map((b) => toLoad(b));
         setLoads(mapped);
         setTotal(t);
-        setDetail((prev) => prev ? (mapped.find((l) => l.id === prev.id) ?? null) : null);
+        // Refresh an open load from the list; one opened from outside it (the quick search)
+        // may not be on this page, and stays as it is.
+        setDetail((prev) => prev ? (mapped.find((l) => l.id === prev.id) ?? prev) : null);
       })
       .catch((e) => { if (!cancelled) notify.error(friendlyError(e)); })
       .finally(() => { if (!cancelled) { setLoading(false); setLoadedOnce(true); } });
@@ -2667,9 +2685,10 @@ export function LoadsPage() {
   // Moving a load out of `completed` deletes its payout, so it asks first.
   const [uncompleting, setUncompleting] = useState<{ load: Load; to: Status } | null>(null);
 
-  const requestStatus = (l: Load, s: Status) => {
+  // Returns the save, so the status badge keeps its spinner until the server has answered.
+  const requestStatus = (l: Load, s: Status): Promise<void> | void => {
     if (l.status === "completed" && s !== "completed") { setUncompleting({ load: l, to: s }); return; }
-    patchLoad(l.id, { status: s });
+    return patchLoad(l.id, { status: s });
   };
 
   // Creating and editing happen on their own page (LoadFormPage), not in a dialog here.
@@ -2779,9 +2798,10 @@ export function LoadsPage() {
                   <TH width={118} align="center" pinned>Actions</TH>
                 </tr>
               </thead>
-              <tbody>
+              <tbody ref={nav.ref}>
                 {loads.map((l, i) => (
                   <tr
+                    {...nav.row(i)}
                     key={l.id}
                     style={{ backgroundColor: "var(--card)" }}
                     onMouseEnter={(e) => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = "var(--primary-faint)"; }}

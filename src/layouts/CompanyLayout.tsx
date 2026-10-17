@@ -20,6 +20,7 @@ import {
   Menu,
   Check,
   LogOut,
+  Keyboard,
   Sun,
   Moon,
   AlertTriangle,
@@ -32,6 +33,8 @@ import { api, setCompanyId, getCompanyId } from "../lib/api";
 import { useBoardPresence } from "../lib/useBoardPresence";
 import { useEntitlement, type EntitlementCopy } from "../lib/entitlement";
 import { useLayer } from "../lib/layers";
+import { QuickSearch } from "../components/QuickSearch";
+import { Shortcuts, showShortcuts } from "../components/Shortcuts";
 
 // ─── Account types ──────────────────────────────────────────────────────────
 
@@ -235,6 +238,22 @@ function AccountSwitcher({
 
           {/* Divider */}
           <div style={{ height: 1, backgroundColor: "var(--border)", margin: "6px 4px" }} />
+
+          <button
+            onClick={() => { setOpen(false); showShortcuts(); }}
+            style={{
+              display: "flex", alignItems: "center", gap: 10,
+              width: "100%", boxSizing: "border-box", padding: "8px 10px", border: "none", borderRadius: 8,
+              backgroundColor: "transparent", cursor: "pointer", textAlign: "left",
+              fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 500, color: "var(--foreground)",
+            }}
+            onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--muted)"; }}
+            onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = "transparent"; }}
+          >
+            <Keyboard size={15} style={{ flexShrink: 0, color: "var(--muted-foreground)" }} />
+            <span style={{ flex: 1 }}>Keyboard shortcuts</span>
+            <kbd style={{ fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600, color: "var(--muted-foreground)", border: "1px solid var(--border)", borderRadius: 5, padding: "0 5px" }}>?</kbd>
+          </button>
 
           <button
             onClick={handleLogout}
@@ -875,8 +894,10 @@ function TopHeader({ onToggleSidebar, accounts, activeAccountId, onSwitch }: {
 
       <div className="flex-1" />
 
-      {/* Right: active users + bell + account switcher */}
+      {/* Right: search, active users + bell + account switcher */}
       <div className="flex items-center gap-4">
+        <QuickSearch />
+        <Shortcuts />
         <ActiveUsers companyId={activeAccountId} />
 
         <ThemeToggle />

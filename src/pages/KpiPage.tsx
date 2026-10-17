@@ -89,8 +89,8 @@ export function KpiPage() {
   const [week, setWeek]             = useState<WeekRow | null>(null);
   // Esc goes back one level: from a week's loads to the weeks, and from the page to Payouts.
   // The page's layer goes on first, so an open week sits above it.
-  useLayer(true, { onEscape: () => navigate("/workspace/payouts") });
-  useLayer(!!week, { onEscape: () => setWeek(null) });
+  useLayer(true, { onEscape: () => navigate("/workspace/payouts"), page: true });
+  useLayer(!!week, { onEscape: () => setWeek(null), page: true });
   useEffect(() => {
     setWeek(null);
     if (!picked) { setWeeks(null); return; }

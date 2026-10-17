@@ -10,6 +10,7 @@ import { FormError, formErrorInModal, friendlyError, notify } from "./feedback";
 import { Dash } from "./Dash";
 import { ScrollPane } from "./ScrollX";
 import { useDialogKeys, useLayer } from "../lib/layers";
+import { useRowNav } from "../lib/rowNav";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -902,6 +903,7 @@ function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
   const canUpdate = hasPerm(user, "equipments", "update");
   const canDelete = hasPerm(user, "equipments", "delete");
   const [rows, setRows]           = useState<TruckRow[]>([]);
+  const nav = useRowNav(rows.length, rows);
   const [total, setTotal]         = useState(0);
   const [loading, setLoading]     = useState(true);
   const [error, setError]         = useState("");
@@ -1029,9 +1031,9 @@ function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
               <TH width={90} align="center" pinned>Actions</TH>
             </tr>
           </thead>
-          <tbody>
+          <tbody ref={nav.ref}>
             {rows.map((r, i) => (
-              <tr key={r.id}
+              <tr {...nav.row(i)} key={r.id}
                 onMouseEnter={(e) => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = "var(--primary-faint)"; }}
                 onMouseLeave={(e) => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = ""; }}
               >
@@ -1088,6 +1090,7 @@ function TrailersTab({ onCountChange }: { onCountChange: (n: number) => void }) 
   const canUpdate = hasPerm(user, "equipments", "update");
   const canDelete = hasPerm(user, "equipments", "delete");
   const [rows, setRows]           = useState<TrailerRow[]>([]);
+  const nav = useRowNav(rows.length, rows);
   const [total, setTotal]         = useState(0);
   const [loading, setLoading]     = useState(true);
   const [error, setError]         = useState("");
@@ -1214,9 +1217,9 @@ function TrailersTab({ onCountChange }: { onCountChange: (n: number) => void }) 
               <TH width={90} align="center" pinned>Actions</TH>
             </tr>
           </thead>
-          <tbody>
+          <tbody ref={nav.ref}>
             {rows.map((r, i) => (
-              <tr key={r.id}
+              <tr {...nav.row(i)} key={r.id}
                 onMouseEnter={(e) => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = "var(--primary-faint)"; }}
                 onMouseLeave={(e) => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = ""; }}
               >

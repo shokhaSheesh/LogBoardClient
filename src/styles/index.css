@@ -20,3 +20,8 @@
 @supports not selector(::-webkit-scrollbar) {
   .hx { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
 }
+
+/* The row ↑ / ↓ last moved to (lib/rowNav). !important because rows set their own background
+   inline for hover. */
+tr[data-kbd-active="true"] > td { background-color: var(--primary-faint) !important; }
+tr[data-kbd-active="true"] > td:first-child { box-shadow: inset 3px 0 0 var(--primary); }

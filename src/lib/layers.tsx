@@ -25,6 +25,10 @@ export interface LayerKeys {
   // false: plain Enter doesn't save (a long page form, where Enter in one field shouldn't
   // send the whole thing). ⌘/Ctrl + Enter and ⌘/Ctrl + S still do.
   enterSubmits?: boolean;
+  // A whole view rather than something over it (a driver's page, the load form): Esc still
+  // goes back from it, but it doesn't count as "something open" — single-key shortcuts and
+  // the table arrows keep working on it.
+  page?: boolean;
 }
 
 interface Layer { keys: React.MutableRefObject<LayerKeys> }
@@ -58,6 +62,9 @@ function onKey(e: KeyboardEvent) {
     top.onSubmit();
   }
 }
+
+/** Whether anything is open over the page — a dropdown, a form, a confirm. */
+export const anyLayerOpen = () => stack.some((l) => !l.keys.current.page);
 
 /** Puts a layer on the stack while `open`. The handlers are read when a key comes, so they're never stale. */
 export function useLayer(open: boolean, keys: LayerKeys) {
