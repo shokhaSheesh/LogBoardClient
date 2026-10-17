@@ -1920,7 +1920,7 @@ function DriverDetail({ driver, onBack }: { driver: SoloDriver; onBack: () => vo
       note: (summary?.deadhead_miles ?? 0) > 0 ? `incl. ${summary!.deadhead_miles.toLocaleString()} empty` : undefined },
     { label: "Loads",       value: String(summary?.loads ?? 0),                        icon: <Package    size={16} />, color: "#8B5CF6", bg: "rgba(139,92,246,0.14)" },
     { label: "Avg $/Mile",  value: `$${(summary?.rpm ?? 0).toFixed(2)}`,               icon: <TrendingUp size={16} />, color: "#F59E0B", bg: "rgba(245,158,11,0.14)" },
-    { label: "Week Payout", value: `$${(summary?.driver_pay ?? 0).toLocaleString()}`,  icon: <DollarSign size={16} />, color: "#22D3EE", bg: "rgba(34,211,238,0.14)",
+    { label: "Week Payout", value: `$${(summary?.driver_pay ?? 0).toLocaleString("en-US", { maximumFractionDigits: 2 })}`,  icon: <DollarSign size={16} />, color: "#22D3EE", bg: "rgba(34,211,238,0.14)",
       note: summary?.pay_type ? undefined : "No pay type set" },
   ];
 
@@ -2126,7 +2126,7 @@ function DriverDetail({ driver, onBack }: { driver: SoloDriver; onBack: () => vo
                       <TH>Origin</TH>
                       <TH>Destination</TH>
                       <TH width={80} align="center">Miles</TH>
-                      <TH width={100} align="center">Payout</TH>
+                      <TH width={100} align="center">Rate</TH>
                       <TH width={110} align="center">Completed</TH>
                       <TH width={110} align="center">Status</TH>
                     </tr>
@@ -2196,7 +2196,7 @@ function TeamDetail({ team, onBack }: { team: TeamDriver; onBack: () => void }) 
       note: (summary?.deadhead_miles ?? 0) > 0 ? `incl. ${summary!.deadhead_miles.toLocaleString()} empty` : undefined },
     { label: "Loads",       value: String(summary?.loads ?? 0),                       icon: <Package    size={16} />, color: "#8B5CF6", bg: "rgba(139,92,246,0.14)" },
     { label: "Avg $/Mile",  value: `$${(summary?.rpm ?? 0).toFixed(2)}`,              icon: <TrendingUp size={16} />, color: "#F59E0B", bg: "rgba(245,158,11,0.14)" },
-    { label: "Week Payout", value: `$${(summary?.driver_pay ?? 0).toLocaleString()}`, icon: <DollarSign size={16} />, color: "#22D3EE", bg: "rgba(34,211,238,0.14)",
+    { label: "Week Payout", value: `$${(summary?.driver_pay ?? 0).toLocaleString("en-US", { maximumFractionDigits: 2 })}`, icon: <DollarSign size={16} />, color: "#22D3EE", bg: "rgba(34,211,238,0.14)",
       note: summary?.pay_type ? undefined : "No pay type set" },
   ];
 
@@ -2418,7 +2418,7 @@ function TeamDetail({ team, onBack }: { team: TeamDriver; onBack: () => void }) 
                       <TH>Origin</TH>
                       <TH>Destination</TH>
                       <TH width={80} align="center">Miles</TH>
-                      <TH width={100} align="center">Payout</TH>
+                      <TH width={100} align="center">Rate</TH>
                       <TH width={110} align="center">Completed</TH>
                       <TH width={110} align="center">Status</TH>
                     </tr>
