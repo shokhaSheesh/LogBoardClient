@@ -17,11 +17,17 @@ import { showShortcuts } from "./Shortcuts";
 interface Hit { id: string; ref: string; broker: string; driver: string; status: string; route: string }
 
 const RECENT_KEY = "brelo.quicksearch.recent";
+// The last few loads opened from here, newest first — never more than RECENT_MAX, on the way
+// in and on the way out.
+const RECENT_MAX = 5;
 const readRecent = (): Hit[] => {
-  try { return JSON.parse(localStorage.getItem(RECENT_KEY) ?? "[]") as Hit[]; } catch { return []; }
+  try {
+    const v = JSON.parse(localStorage.getItem(RECENT_KEY) ?? "[]");
+    return Array.isArray(v) ? (v as Hit[]).slice(0, RECENT_MAX) : [];
+  } catch { return []; }
 };
 const remember = (h: Hit) => {
-  try { localStorage.setItem(RECENT_KEY, JSON.stringify([h, ...readRecent().filter((r) => r.id !== h.id)].slice(0, 5))); } catch { /* private window */ }
+  try { localStorage.setItem(RECENT_KEY, JSON.stringify([h, ...readRecent().filter((r) => r.id !== h.id)].slice(0, RECENT_MAX))); } catch { /* private window */ }
 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -33,7 +39,7 @@ const toHit = (l: any): Hit => {
 };
 
 // Results line up like the Loads table: Load # | Broker | Driver | Route | Status.
-const gridRow: React.CSSProperties = { display: "grid", gridTemplateColumns: "130px minmax(0,1.3fr) minmax(0,1.1fr) minmax(0,1.4fr) 96px", alignItems: "center", gap: 12 };
+const gridRow: React.CSSProperties = { display: "grid", gridTemplateColumns: "140px minmax(0,1.3fr) minmax(0,1.1fr) minmax(0,1.4fr) 100px", alignItems: "center", gap: 20 };
 
 // The typed text, picked out where it appears in a value (ignoring case).
 function mark(text: string, query: string): React.ReactNode {
@@ -107,7 +113,8 @@ export function QuickSearch() {
 
   if (!allowed) return null;
 
-  const kbd: React.CSSProperties = { fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600, color: "var(--muted-foreground)", border: "1px solid var(--border)", borderRadius: 5, padding: "1px 5px", backgroundColor: "var(--card)", whiteSpace: "nowrap" };
+  const hint: React.CSSProperties = { display: "inline-flex", alignItems: "center", gap: 6 };
+  const kbd: React.CSSProperties = { fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600, color: "var(--muted-foreground)", border: "1px solid var(--border)", borderRadius: 5, padding: "2px 6px", backgroundColor: "var(--card)", whiteSpace: "nowrap" };
 
   return (
     <>
@@ -126,25 +133,25 @@ export function QuickSearch() {
           onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }}
           style={{ position: "fixed", inset: 0, zIndex: 10040, backgroundColor: "rgba(0,0,0,0.35)", display: "flex", justifyContent: "center", alignItems: "flex-start", paddingTop: "12vh" }}>
           <div style={{ width: 860, maxWidth: "calc(100vw - 32px)", backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 12, boxShadow: "0 24px 70px rgba(0,0,0,0.3)", overflow: "hidden", display: "flex", flexDirection: "column" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", borderBottom: "1px solid var(--border)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "16px 20px", borderBottom: "1px solid var(--border)" }}>
               <Search size={16} style={{ color: "var(--muted-foreground)", flexShrink: 0 }} />
               <input ref={inputRef} value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={onInputKey}
                 placeholder="Load #, broker or driver…" aria-label="Search loads" autoComplete="off" spellCheck={false}
                 role="combobox" aria-expanded={showing.length > 0} aria-controls="quick-search-list"
                 aria-activedescendant={showing[active] ? `qs-${showing[active].id}` : undefined}
-                style={{ flex: 1, minWidth: 0, border: "none", outline: "none", background: "transparent", fontFamily: "var(--font-sans)", fontSize: 15, color: "var(--foreground)" }} />
+                style={{ flex: 1, minWidth: 0, border: "none", outline: "none", background: "transparent", fontFamily: "var(--font-sans)", fontSize: 16, color: "var(--foreground)" }} />
               {loading && <span style={{ width: 14, height: 14, borderRadius: "50%", border: "2px solid var(--border)", borderTopColor: "var(--primary)", animation: "spin 0.7s linear infinite", flexShrink: 0 }} />}
               <span style={kbd}>Esc</span>
             </div>
 
-            <div ref={listRef} id="quick-search-list" role="listbox" style={{ maxHeight: "50vh", overflowY: "auto", padding: 6 }}>
+            <div ref={listRef} id="quick-search-list" role="listbox" style={{ maxHeight: "50vh", overflowY: "auto", padding: "10px 12px 12px" }}>
               {!query.trim() && showing.length > 0 && (
-                <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 8px 4px", fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--muted-foreground)" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 14px 10px", fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--muted-foreground)" }}>
                   <Clock size={12} /> Recently opened
                 </div>
               )}
               {showing.length > 0 && (
-                <div style={{ ...gridRow, padding: "6px 10px 4px", fontFamily: "var(--font-sans)", fontSize: 10.5, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--muted-foreground)" }}>
+                <div style={{ ...gridRow, padding: "0 14px 8px", fontFamily: "var(--font-sans)", fontSize: 10.5, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--muted-foreground)" }}>
                   <span>Load #</span><span>Broker</span><span>Driver</span><span>Route</span><span style={{ textAlign: "right" }}>Status</span>
                 </div>
               )}
@@ -155,7 +162,7 @@ export function QuickSearch() {
                 return (
                   <div key={h.id} id={`qs-${h.id}`} data-i={i} role="option" aria-selected={on}
                     onMouseMove={() => setActive(i)} onClick={() => go(h)}
-                    style={{ ...gridRow, padding: "9px 10px", borderRadius: 7, cursor: "pointer", backgroundColor: on ? "var(--primary-faint)" : "transparent", boxShadow: on ? "inset 3px 0 0 var(--primary)" : "none" }}>
+                    style={{ ...gridRow, padding: "13px 14px", marginTop: 2, borderRadius: 8, cursor: "pointer", backgroundColor: on ? "var(--primary-faint)" : "transparent", boxShadow: on ? "inset 3px 0 0 var(--primary)" : "none" }}>
                     <span style={{ ...cell, fontFamily: "var(--font-mono)", fontWeight: 700, color: "var(--primary)" }}>{mark(h.ref || "—", query)}</span>
                     <span style={cell} title={h.broker}>{h.broker ? mark(h.broker, query) : <span style={{ color: "var(--muted-foreground)" }}>—</span>}</span>
                     <span style={{ ...cell, color: h.driver ? "var(--foreground)" : "var(--muted-foreground)", fontStyle: h.driver ? "normal" : "italic" }} title={h.driver}>{h.driver ? mark(h.driver, query) : "Unassigned"}</span>
@@ -167,21 +174,21 @@ export function QuickSearch() {
                 );
               })}
               {query.trim() && !loading && hits.length === 0 && (
-                <div style={{ padding: "28px 12px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>No loads match “{query.trim()}”.</div>
+                <div style={{ padding: "36px 16px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>No loads match “{query.trim()}”.</div>
               )}
               {!query.trim() && showing.length === 0 && (
-                <div style={{ padding: "28px 12px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>Type a load number, broker or driver.</div>
+                <div style={{ padding: "36px 16px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>Type a load number, broker or driver.</div>
               )}
             </div>
 
-            <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "8px 14px", borderTop: "1px solid var(--border)", fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)" }}>
-              <span><span style={kbd}>↑</span> <span style={kbd}>↓</span> move</span>
-              <span><span style={kbd}>Enter</span> open</span>
-              <span><span style={kbd}>Esc</span> close</span>
+            <div style={{ display: "flex", alignItems: "center", gap: 20, padding: "12px 20px", borderTop: "1px solid var(--border)", fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)" }}>
+              <span style={hint}><span style={kbd}>↑</span><span style={kbd}>↓</span> move</span>
+              <span style={hint}><span style={kbd}>Enter</span> open</span>
+              <span style={hint}><span style={kbd}>Esc</span> close</span>
               <span style={{ flex: 1 }} />
               <button type="button" onClick={() => { close(); showShortcuts(); }}
                 style={{ border: "none", background: "none", padding: 0, cursor: "pointer", fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)", textDecoration: "underline" }}>
-                All shortcuts <span style={kbd}>?</span>
+                <span style={hint}>All shortcuts <span style={kbd}>?</span></span>
               </button>
             </div>
           </div>
