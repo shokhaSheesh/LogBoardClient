@@ -27,6 +27,7 @@ import { CAL } from "./calendar";
 import { Dash } from "./Dash";
 import { fmtDateTime } from "../lib/dates";
 import { NumberField } from "./NumberField";
+import { ScrollPane, ScrollX } from "./ScrollX";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -1852,7 +1853,7 @@ function LoadForm({ load, onCancel, onSave, saving = false, error, startDirty = 
               </div>
               {flagNote("stops")}
 
-              <div style={{ overflowX: "auto" }}>
+              <ScrollX>
                 <div style={{ display: "flex", flexDirection: "column", gap: 10, minWidth: 760 }}>
                   <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                     {stops.map((stop, idx) => {
@@ -2047,7 +2048,7 @@ function LoadForm({ load, onCancel, onSave, saving = false, error, startDirty = 
                     </button>
                   </div>
                 </div>
-              </div>
+              </ScrollX>
             </div>
 
           {/* The numbers */}
@@ -2747,7 +2748,7 @@ export function LoadsPage() {
           </div>
 
           {/* Table — dim existing rows while a page-change refetch is in flight */}
-          <div style={{ flex: 1, overflow: "auto", scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent" }}>
+          <ScrollPane style={{ flex: 1, overflow: "auto", scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent" }}>
             <table style={{ width: "max-content", minWidth: "100%", borderCollapse: "separate", borderSpacing: 0, opacity: loading && loads.length > 0 ? 0.45 : 1, pointerEvents: loading ? "none" : "auto", transition: "opacity 0.15s" }}>
               <thead>
                 <tr>
@@ -2891,7 +2892,7 @@ export function LoadsPage() {
                 )}
               </tbody>
             </table>
-          </div>
+          </ScrollPane>
 
           <Pagination
             page={page} total={total} pageSize={pageSize}

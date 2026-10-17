@@ -8,6 +8,7 @@ import { driverDisplayName } from "../lib/driverName";
 import { PageLoader } from "./PageLoader";
 import { FormError, formErrorInModal, friendlyError, notify } from "./feedback";
 import { Dash } from "./Dash";
+import { ScrollPane } from "./ScrollX";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -1008,7 +1009,7 @@ function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
       </div>
 
       {/* Table — dim existing rows while a page-change refetch is in flight */}
-      <div style={{ flex: 1, overflow: "auto", scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent" }}>
+      <ScrollPane style={{ flex: 1, overflow: "auto", scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent" }}>
         {loading && rows.length === 0 ? (
           <PageLoader label="trucks" />
         ) : (
@@ -1063,7 +1064,7 @@ function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
           </tbody>
         </table>
         )}
-      </div>
+      </ScrollPane>
 
       <Pagination total={total} page={page} pageSize={pageSize} loading={loading} onPage={setPage} onPageSize={(s) => { setPageSize(s); setPage(1); }} />
 
@@ -1194,7 +1195,7 @@ function TrailersTab({ onCountChange }: { onCountChange: (n: number) => void }) 
       </div>
 
       {/* Table */}
-      <div style={{ flex: 1, overflow: "auto", scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent" }}>
+      <ScrollPane style={{ flex: 1, overflow: "auto", scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent" }}>
         {loading && rows.length === 0 ? (
           <PageLoader label="trailers" />
         ) : (
@@ -1245,7 +1246,7 @@ function TrailersTab({ onCountChange }: { onCountChange: (n: number) => void }) 
           </tbody>
         </table>
         )}
-      </div>
+      </ScrollPane>
 
       <Pagination total={total} page={page} pageSize={pageSize} loading={loading} onPage={setPage} onPageSize={(s) => { setPageSize(s); setPage(1); }} />
 

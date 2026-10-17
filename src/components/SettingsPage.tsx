@@ -21,6 +21,7 @@ import { Dash } from "./Dash";
 import { fmtDate, fmtDateTime } from "../lib/dates";
 import { DatePicker } from "./DatePicker";
 import { NumberField } from "./NumberField";
+import { ScrollPane } from "./ScrollX";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -1094,7 +1095,7 @@ function UsersTab({ roles, teams, reloadTeams, reloadRoles, canCreate, canUpdate
       </div>
 
       {/* Table */}
-      <div style={{ flex: 1, overflow: "auto", scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent" }}>
+      <ScrollPane style={{ flex: 1, overflow: "auto", scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent" }}>
         <table style={{ width: "max-content", minWidth: "100%", borderCollapse: "separate", borderSpacing: 0, tableLayout: "fixed" }}>
           <thead>
             <tr>
@@ -1170,7 +1171,7 @@ function UsersTab({ roles, teams, reloadTeams, reloadRoles, canCreate, canUpdate
             )}
           </tbody>
         </table>
-      </div>
+      </ScrollPane>
 
       {/* Pagination */}
       <Pagination
@@ -1574,7 +1575,7 @@ function TeamsTab({ canCreate, canUpdate, canDelete }: {
       </div>
 
       {/* Table */}
-      <div style={{ flex: 1, overflow: "auto", scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent" }}>
+      <ScrollPane style={{ flex: 1, overflow: "auto", scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent" }}>
         <table style={{ width: "max-content", minWidth: "100%", borderCollapse: "separate", borderSpacing: 0, tableLayout: "fixed" }}>
           <thead>
             <tr>
@@ -1635,7 +1636,7 @@ function TeamsTab({ canCreate, canUpdate, canDelete }: {
             )}
           </tbody>
         </table>
-      </div>
+      </ScrollPane>
 
       {/* Pagination */}
       <Pagination
@@ -1888,7 +1889,7 @@ function RolesTab({ onRolesChange, canCreate, canUpdate, canDelete }: {
         )}
       </div>
 
-      <div style={{ flex: 1, overflow: "auto", scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent" }}>
+      <ScrollPane style={{ flex: 1, overflow: "auto", scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent" }}>
         <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 0 }}>
           <thead>
             <tr>
@@ -1944,7 +1945,7 @@ function RolesTab({ onRolesChange, canCreate, canUpdate, canDelete }: {
             })}
           </tbody>
         </table>
-      </div>
+      </ScrollPane>
 
 
       {(modal === "create" || modal === "edit") && (

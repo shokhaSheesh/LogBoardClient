@@ -16,6 +16,7 @@ import { PeriodFilter, ALL_TIME, type Period } from "../components/PeriodFilter"
 import { useNavigate } from "react-router";
 import { fmtDate, fmtDateRange } from "../lib/dates";
 import { NumberField } from "../components/NumberField";
+import { ScrollPane } from "../components/ScrollX";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -492,7 +493,7 @@ export function PayoutsPage() {
       </div>
 
       {/* ── Table — dim existing rows while a page-change refetch is in flight ── */}
-      <div style={{ flex: 1, overflow: "auto", scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent" }}>
+      <ScrollPane style={{ flex: 1, overflow: "auto", scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent" }}>
         <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 0, tableLayout: "fixed", opacity: loading && payouts.length > 0 ? 0.45 : 1, pointerEvents: loading ? "none" : "auto", transition: "opacity 0.15s" }}>
           <colgroup>
             <col style={{ width: 150 }} />{/* Dispatcher */}
@@ -607,7 +608,7 @@ export function PayoutsPage() {
           </tbody>
 
         </table>
-      </div>
+      </ScrollPane>
 
       <Pagination page={page} total={total} pageSize={pageSize} loading={loading} onPage={setPage} onPageSize={(s) => setPageSize(s as PageSize)} />
 

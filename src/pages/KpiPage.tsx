@@ -8,6 +8,7 @@ import { friendlyError } from "../components/feedback";
 import { Dash } from "../components/Dash";
 import { Kpi } from "../components/Kpi";
 import { PeriodFilter, ALL_TIME, type Period, type PeriodMode } from "../components/PeriodFilter";
+import { ScrollPane } from "../components/ScrollX";
 
 // ─── Dispatcher KPI (/workspace/payouts/kpi) ──────────────────────────────────
 //
@@ -158,7 +159,7 @@ export function KpiPage() {
                 </span>
               )}
             </div>
-            <div style={{ flex: 1, overflow: "auto", scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent" }}>
+            <ScrollPane style={{ flex: 1, overflow: "auto", scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent" }}>
               {!current ? <div style={quiet}>{data && data.rows.length === 0 ? "Nothing to show for this period." : "Pick a dispatcher."}</div>
                 : loadsError ? <div style={{ ...quiet, color: "#EF4444" }}>Couldn't load these loads.</div>
                 : !loads ? <div style={quiet}>Loading loads…</div>
@@ -191,7 +192,7 @@ export function KpiPage() {
                     </tbody>
                   </table>
                 )}
-            </div>
+            </ScrollPane>
           </div>
         </div>
       </div>

@@ -33,6 +33,10 @@ export function AppToaster() {
       position="top-right"
       richColors
       closeButton
+      // Several toasts sit one under another instead of collapsing into a pile.
+      expand
+      visibleToasts={4}
+      gap={8}
       toastOptions={{ style: { fontFamily: "var(--font-sans)", fontSize: 13 } }}
     />
   );

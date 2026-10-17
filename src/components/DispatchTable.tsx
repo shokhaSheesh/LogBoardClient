@@ -15,6 +15,7 @@ import { cleanAppt, formatAppt } from "../lib/appt";
 import { UncompleteConfirm } from "./UncompleteConfirm";
 import { Dash } from "./Dash";
 import { fmtDate, fmtDateTime } from "../lib/dates";
+import { ScrollPane, ScrollX } from "./ScrollX";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -1532,7 +1533,7 @@ export function DispatchTable() {
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+    <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
       {/* Copy buttons stay hidden until their value is hovered — via CSS so :hover beats
           the default (inline opacity would win and never let the rule show it). */}
       <style>{`.cp-btn{opacity:0;transition:opacity .12s} .cp-wrap:hover .cp-btn{opacity:1} .cp-btn.cp-done{opacity:1}`}</style>
@@ -1655,7 +1656,7 @@ export function DispatchTable() {
       </div>
 
       {/* ── Table(s) ── */}
-      <div ref={boardRef} style={{ flex: 1, overflow: "auto", position: "relative", scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent" }}>
+      <ScrollPane ref={boardRef} style={{ flex: 1, overflow: "auto", position: "relative", scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent" }}>
         {loading ? (
           <PageLoader label="board" />
         ) : error ? (
@@ -1668,7 +1669,7 @@ export function DispatchTable() {
           <div style={{ display: "flex", flexDirection: "column", gap: 28, padding: "16px 16px 24px" }}>
             {teamGroups.map((g) => {
               return (
-                <div key={g.name} style={{ border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden" }}>
+                <div key={g.name} style={{ border: "1px solid var(--border)", borderRadius: 10, overflow: "clip" }}>
                   {/* Section header — plain block above the table, so it never scrolls
                       horizontally with the table's own scroll. */}
                   <div style={{ padding: "10px 14px", backgroundColor: "var(--muted)", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
@@ -1683,15 +1684,15 @@ export function DispatchTable() {
                       {g.drivers.length}
                     </span>
                   </div>
-                  <div style={{ overflowX: "auto" }}>
+                  <ScrollX>
                     {renderBoardTable(g.drivers, "No drivers match your filters.")}
-                  </div>
+                  </ScrollX>
                 </div>
               );
             })}
           </div>
         ) : renderBoardTable(visible, rows.length === 0 ? "No drivers on the board yet." : "No drivers match your filters.")}
-      </div>
+      </ScrollPane>
     </div>
   );
 

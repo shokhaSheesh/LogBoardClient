@@ -10,3 +10,13 @@
   from { opacity: 0; transform: translateY(8px); }
   to   { opacity: 1; transform: translateY(0); }
 }
+
+/* A box that scrolls left–right under our own bar (components/ScrollX): the native
+   horizontal bar is hidden, and the vertical one is drawn thin to match the rest of the app.
+   Firefox can't hide one direction only, so it keeps its thin native bars. */
+.hx::-webkit-scrollbar { width: 8px; height: 0; }
+.hx::-webkit-scrollbar-thumb { background: var(--border); border-radius: 8px; }
+.hx::-webkit-scrollbar-track { background: transparent; }
+@supports not selector(::-webkit-scrollbar) {
+  .hx { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+}

@@ -14,6 +14,7 @@ import { Kpi } from "./Kpi";
 import { PeriodFilter, type PeriodMode } from "./PeriodFilter";
 import { fmtDate, fmtDateRange } from "../lib/dates";
 import { NumberField } from "./NumberField";
+import { ScrollPane, ScrollX } from "./ScrollX";
 
 type CellType = Status | "load" | "empty";
 
@@ -36,8 +37,9 @@ interface DriverRow {
   companyProfit: number;
   weekTotal?: number;
   driverPay?: number; // what the DRIVER earns this window; reported by the backend, undefined until it sends it
-  miles: number;
-  rpm: number; // 0 when miles is 0 — render "—" rather than 0.00
+  miles: number;      // loaded miles
+  totalMiles: number; // loaded + deadhead: what the truck actually drove, and what rpm divides by
+  rpm: number; // 0 when totalMiles is 0
 }
 
 // ─── Backend types + mapper ───────────────────────────────────────────────────
@@ -60,8 +62,9 @@ interface BackendDriverRow {
   company_profit?: number;
   week_total?: number; // the row's earnings for the window (load cells only)
   driver_pay?: number; // what the driver earns this window (rpm×miles or %×gross); reported, never nets off revenue
-  miles?: number;      // mileage of the loads the ledger attributes to this driver
-  rpm?: number;        // week_total ÷ miles; 0 when miles is 0
+  miles?: number;      // loaded mileage of the loads the ledger attributes to this driver
+  total_miles?: number; // miles + deadhead_miles
+  rpm?: number;        // week_total ÷ total_miles; 0 when total_miles is 0
   days?: Record<string, BackendCell>;
 }
 
@@ -91,6 +94,7 @@ function toDriverRow(b: BackendDriverRow): DriverRow {
     weekTotal:     b.week_total,
     driverPay:     b.driver_pay,
     miles:         b.miles ?? 0,
+    totalMiles:    b.total_miles ?? b.miles ?? 0,
     rpm:           b.rpm   ?? 0,
     dateMap,
   };
@@ -495,7 +499,9 @@ function CellEditPanel({
         {edit.mode === "load" && (
           <>
             <div>
-              <div style={editCap}>Loads completed that day</div>
+              {/* The list is every load of this driver, newest first — not only that day's or
+                  only completed ones — so the label says just that. */}
+              <div style={editCap}>Driver's loads · newest first</div>
               <LoadMultiSelect selected={edit.loadIds} driverId={edit.driverId} onChange={onLoadsChange} open={loadsOpen} onOpenChange={setLoadsOpen} />
             </div>
             <div>
@@ -570,7 +576,7 @@ const MAX_DAYS = 90;
 // right; R holds each summary column's distance from the right edge, left→right:
 // Total · Driver pay · Target · Co. profit.
 const DRV_W = 200;
-const SUM_W = { total: 104, pay: 104, target: 124, profit: 104 };
+const SUM_W = { total: 156, pay: 104, target: 124, profit: 104 };
 const R = { profit: 0, target: SUM_W.profit, pay: SUM_W.profit + SUM_W.target, total: SUM_W.profit + SUM_W.target + SUM_W.pay };
 
 const money = (n: number) => (n < 0 ? `-$${Math.abs(n).toLocaleString()}` : fmt(n));
@@ -784,7 +790,8 @@ export function GrossMatrix() {
   function summarize(list: DriverRow[]) {
     const gross  = list.reduce((s, d) => s + (d.weekTotal ?? rangeTotal(d)), 0);
     const profit = list.reduce((s, d) => s + d.companyProfit, 0);
-    const miles  = list.reduce((s, d) => s + d.miles, 0);
+    // Total miles (deadhead included), the same denominator the server's rpm uses.
+    const miles  = list.reduce((s, d) => s + d.totalMiles, 0);
     // Driver pay is optional (backend may not send it yet) — only total the rows that have it.
     const anyPay = list.some((d) => d.driverPay != null);
     const pay    = list.reduce((s, d) => s + (d.driverPay ?? 0), 0);
@@ -834,7 +841,7 @@ export function GrossMatrix() {
           <Kpi icon={<CircleDollarSign size={18} />} label="Gross" value={money(all.gross)} note={`${filtered.length} ${filtered.length === 1 ? "driver" : "drivers"}`} />
           <Kpi icon={<Wallet size={18} />} label="Driver pay" value={all.anyPay ? money(all.pay) : <Dash />} />
           <Kpi icon={<TrendingUp size={18} />} label="Company profit" value={money(all.profit)} tone={all.profit < 0 ? "bad" : "plain"} />
-          <Kpi icon={<Gauge size={18} />} label="Rate per mile" value={`$${(all.rpm ?? 0).toFixed(2)}`} note={`${all.miles.toLocaleString()} mi`} />
+          <Kpi icon={<Gauge size={18} />} label="Rate per mile" value={`$${(all.rpm ?? 0).toFixed(2)}`} note={`${Math.round(all.miles).toLocaleString()} total mi`} />
         </div>
 
         {truncated && (
@@ -877,7 +884,7 @@ export function GrossMatrix() {
 
           {/* The loader lives in here, so the controls above stay put (and keep focus) while a
               week change or a search is in flight. With rows on screen they're dimmed instead. */}
-          <div style={{ flex: 1, overflow: "auto", scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent", opacity: loading && rows.length > 0 ? 0.5 : 1, pointerEvents: loading ? "none" : "auto", transition: "opacity 0.15s" }}>
+          <ScrollPane style={{ flex: 1, overflow: "auto", scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent", opacity: loading && rows.length > 0 ? 0.5 : 1, pointerEvents: loading ? "none" : "auto", transition: "opacity 0.15s" }}>
             {loading && rows.length === 0 ? (
               <PageLoader label="gross" />
             ) : loadErr ? (
@@ -893,7 +900,7 @@ export function GrossMatrix() {
             ) : viewMode === "teams" && teamGroups.length > 0 ? (
               <div style={{ display: "flex", flexDirection: "column", gap: 20, padding: 16 }}>
                 {teamGroups.map((g) => (
-                  <div key={g.name} style={{ border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden" }}>
+                  <div key={g.name} style={{ border: "1px solid var(--border)", borderRadius: 10, overflow: "clip" }}>
                     {/* Section header — plain block above the table, so it never scrolls
                         horizontally with the table's own scroll. */}
                     <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
@@ -908,14 +915,14 @@ export function GrossMatrix() {
                         {g.drivers.length} {g.drivers.length === 1 ? "driver" : "drivers"}
                       </span>
                     </div>
-                    <div style={{ overflowX: "auto" }}>
+                    <ScrollX>
                       {renderGrossTable(g.drivers)}
-                    </div>
+                    </ScrollX>
                   </div>
                 ))}
               </div>
             ) : renderGrossTable(filtered)}
-          </div>
+          </ScrollPane>
         </div>
       </div>
     </div>
@@ -985,7 +992,7 @@ export function GrossMatrix() {
           ) : driversList.map((driver) => {
             const total    = driver.weekTotal ?? rangeTotal(driver);
             // rpm is 0 when the driver has no recorded mileage — shown as $0.00/mi.
-            const driverRpm = driver.miles > 0 ? driver.rpm : null;
+            const driverRpm = driver.totalMiles > 0 ? driver.rpm : null;
             // Target may be unset (0/undefined) — keep the same layout regardless: $0 / 0% / empty bar.
             const targetPct = driver.weeklyTarget ? Math.min(100, Math.round((total / driver.weeklyTarget) * 100)) : 0;
 
@@ -1034,11 +1041,11 @@ export function GrossMatrix() {
                   );
                 })}
 
-                {/* Total, with the rate per mile under it */}
+                {/* Total, with the total miles and the rate per mile under it */}
                 <td style={sumTd(R.total, SUM_W.total, true)}>
                   <div style={sumAmount}>{fmt(total)}</div>
-                  <div style={sumNote} title={`${driver.miles.toLocaleString()} mi`}>
-                    ${(driverRpm ?? 0).toFixed(2)}/mi
+                  <div style={sumNote} title={`${driver.miles.toLocaleString()} loaded + ${(driver.totalMiles - driver.miles).toLocaleString()} deadhead mi`}>
+                    {Math.round(driver.totalMiles).toLocaleString()} mi · ${(driverRpm ?? 0).toFixed(2)}/mi
                   </div>
                 </td>
 
@@ -1088,8 +1095,8 @@ export function GrossMatrix() {
             })}
             <td style={{ ...totTd, textAlign: "right", padding: "0 12px", backgroundColor: "var(--background)", borderLeft: edge, right: R.total, zIndex: 17 }}>
               <div>{fmt(g.gross)}</div>
-              <div style={{ ...sumNote, fontWeight: 500 }} title={`${g.miles.toLocaleString()} mi`}>
-                ${(g.rpm ?? 0).toFixed(2)}/mi
+              <div style={{ ...sumNote, fontWeight: 500 }}>
+                {Math.round(g.miles).toLocaleString()} mi · ${(g.rpm ?? 0).toFixed(2)}/mi
               </div>
             </td>
             <td style={{ ...totTd, textAlign: "right", padding: "0 12px", backgroundColor: "var(--background)", right: R.pay, zIndex: 17 }}>

@@ -24,6 +24,7 @@ import { fmtDate, fmtDateRange } from "../lib/dates";
 import { weekOf } from "./PeriodFilter";
 import { NumberField } from "./NumberField";
 import { DatePicker } from "./DatePicker";
+import { ScrollPane, ScrollX } from "./ScrollX";
 
 type DriverStatus = Status;
 type DriverType   = "O/O" | "C/D";
@@ -2052,7 +2053,7 @@ function DriverDetail({ driver, onBack }: { driver: SoloDriver; onBack: () => vo
                 No loads for this week.
               </div>
             ) : (
-              <div style={{ overflowX: "auto" }}>
+              <ScrollX>
                 <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 600 }}>
                   <thead>
                     <tr>
@@ -2094,7 +2095,7 @@ function DriverDetail({ driver, onBack }: { driver: SoloDriver; onBack: () => vo
                     })}
                   </tbody>
                 </table>
-              </div>
+              </ScrollX>
             )}
           </div>
         </div>
@@ -2339,7 +2340,7 @@ function TeamDetail({ team, onBack }: { team: TeamDriver; onBack: () => void }) 
                 No loads for this week.
               </div>
             ) : (
-              <div style={{ overflowX: "auto" }}>
+              <ScrollX>
                 <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 600 }}>
                   <thead>
                     <tr>
@@ -2379,7 +2380,7 @@ function TeamDetail({ team, onBack }: { team: TeamDriver; onBack: () => void }) 
                     })}
                   </tbody>
                 </table>
-              </div>
+              </ScrollX>
             )}
           </div>
         </div>
@@ -2625,7 +2626,7 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
         placeholder="Search drivers, trucks…" canCreate={canCreate}
       />
 
-      <div style={{ flex: 1, overflow: "auto", scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent" }}>
+      <ScrollPane style={{ flex: 1, overflow: "auto", scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent" }}>
         <table style={{ width: "max-content", minWidth: "100%", borderCollapse: "separate", borderSpacing: 0, opacity: loading ? 0.45 : 1, pointerEvents: loading ? "none" : "auto", transition: "opacity 0.15s" }}>
           <thead>
             <tr>
@@ -2720,7 +2721,7 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
             )}
           </tbody>
         </table>
-      </div>
+      </ScrollPane>
 
       <Pagination
         page={page} total={total} pageSize={pageSize} loading={loading}
@@ -2923,7 +2924,7 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
         placeholder="Search teams, trucks…" canCreate={canCreate}
       />
 
-      <div style={{ flex: 1, overflow: "auto", scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent" }}>
+      <ScrollPane style={{ flex: 1, overflow: "auto", scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent" }}>
         <table style={{ width: "max-content", minWidth: "100%", borderCollapse: "separate", borderSpacing: 0, opacity: loading ? 0.45 : 1, pointerEvents: loading ? "none" : "auto", transition: "opacity 0.15s" }}>
           <thead>
             <tr>
@@ -3023,7 +3024,7 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
             )}
           </tbody>
         </table>
-      </div>
+      </ScrollPane>
 
       <Pagination
         page={page} total={total} pageSize={pageSize} loading={loading}
