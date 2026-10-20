@@ -22,6 +22,7 @@ import { AddressAutocomplete, type AddressParts } from "./AddressAutocomplete";
 import { SendToDriverButton } from "./TelegramGroup";
 import { UncompleteConfirm } from "./UncompleteConfirm";
 import { RouteMap, type RoutePoint } from "./RouteMap";
+import { FuelActionBtn, FuelCell, FuelPlanCard, type FuelPlanSummary } from "./FuelPlan";
 import { PeriodFilter, ALL_TIME, type Period } from "./PeriodFilter";
 import { CAL } from "./calendar";
 import { Dash } from "./Dash";
@@ -115,6 +116,8 @@ interface Load {
   // completed with afterwards (the backend keeps them on the load).
   truckUnit: string;
   trailerUnit: string;
+  // The latest fuel plan's summary, null when the load has none (read-only).
+  fuelPlan: FuelPlanSummary | null;
 }
 
 interface BackendLoad {
@@ -137,6 +140,7 @@ interface BackendLoad {
   dispatcher?: string;
   truck_unit?: string;
   trailer_unit?: string;
+  fuel_plan?: FuelPlanSummary | null;
 }
 
 // ─── Config ───────────────────────────────────────────────────────────────────
@@ -177,6 +181,7 @@ function toLoad(b: BackendLoad): Load {
     truckUnit:   b.truck_unit   ?? "",
     trailerUnit: b.trailer_unit ?? "",
     dispatcher_id: b.dispatcher_id ?? "",
+    fuelPlan: b.fuel_plan ?? null,
   };
 }
 
@@ -2319,7 +2324,7 @@ interface HistoryEvent {
   changes: HistoryChange[] | null; created_at: string;
 }
 
-function LoadDetail({ load, onBack, onEdit }: { load: Load; onBack: () => void; onEdit?: () => void }) {
+function LoadDetail({ load, onBack, onEdit, onPlanMade, calcFuel = false }: { load: Load; onBack: () => void; onEdit?: () => void; onPlanMade?: (s: FuelPlanSummary) => void; calcFuel?: boolean }) {
   // Esc goes back to the list, once nothing is open on top.
   useLayer(true, { onEscape: onBack, page: true });
   const [tab, setTab] = useState<"info" | "log">("info");
@@ -2362,6 +2367,15 @@ function LoadDetail({ load, onBack, onEdit }: { load: Load; onBack: () => void; 
     const at = s.lat != null && s.lng != null ? { lat: s.lat, lng: s.lng } : found[i];
     return at ? [{ ...at, label: stopLetter(i), title: cityState(s) }] : [];
   });
+
+  // The places the fuel plan's route bar names: where the route picks up from (the first
+  // stop not done), the pickup while it's still ahead, and the delivery.
+  const nextIdx = stops.findIndex((s) => !s.done);
+  const fuelPlaces = {
+    next: nextIdx >= 0 ? cityState(stops[nextIdx]) || "Next stop" : "Next stop",
+    pickup: stops[0] && !stops[0].done ? cityState(stops[0]) || null : null,
+    delivery: stops.length ? cityState(stops[stops.length - 1]) || "Delivery" : "Delivery",
+  };
 
   // Rate per mile divides by the distance actually driven — loaded plus empty — the same
   // span the load form, the Gross page and driver pay use.
@@ -2529,6 +2543,20 @@ function LoadDetail({ load, onBack, onEdit }: { load: Load; onBack: () => void; 
                 <RouteMap points={mapPoints} height={320} />
               </div>
             </div>
+
+            {/* Fuel: where to buy diesel on this trip, and how much */}
+            <FuelPlanCard
+              loadId={load.id}
+              loadLabel={load.loadId}
+              driverName={load.driver}
+              truckUnit={load.truckUnit}
+              finished={load.status === "completed"}
+              summary={load.fuelPlan}
+              places={fuelPlaces}
+              onEdit={onEdit}
+              onPlanMade={onPlanMade}
+              autoStart={calcFuel}
+            />
           </div>
         )}
 
@@ -2589,6 +2617,9 @@ export function LoadsPage() {
   const navigate = useNavigate();
   const canCreate = hasPerm(user, "loads", "create");
   const canUpdate = hasPerm(user, "loads", "update");
+  // The Fuel column shows a load's plan to anyone who may read plans; Calculate needs create.
+  const canFuel = hasPerm(user, "fuel_plans", "read");
+  const canFuelMake = hasPerm(user, "fuel_plans", "create");
   const canDelete = hasPerm(user, "loads", "delete");
   const [loads, setLoads]           = useState<Load[]>([]);
   const nav = useRowNav(loads.length, loads);
@@ -2607,6 +2638,9 @@ export function LoadsPage() {
   const [page, setPage]             = useState(1);
   const [pageSize, setPageSize]     = useState(20);
   const [detailLoad, setDetail]     = useState<Load | null>(null);
+  // The load whose fuel plan is being worked out on opening it (the row's fuel button).
+  const [calcFuelOn, setCalcFuelOn] = useState<string | null>(null);
+  const openDetail = (l: Load, calcFuel = false) => { setCalcFuelOn(calcFuel ? l.id : null); setDetail(l); };
 
   // /workspace/loads?open=<load id> opens that load's detail — the quick search's way in.
   // The parameter is dropped once read, so Back and a refresh land on the list.
@@ -2736,7 +2770,12 @@ export function LoadsPage() {
           backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 12,
         }}>
           {detailLoad ? (
-            <LoadDetail load={detailLoad} onBack={() => setDetail(null)} onEdit={canUpdate ? () => openEdit(detailLoad) : undefined} />
+            <LoadDetail load={detailLoad} calcFuel={calcFuelOn === detailLoad.id} onBack={() => { setCalcFuelOn(null); setDetail(null); }} onEdit={canUpdate ? () => openEdit(detailLoad) : undefined}
+              onPlanMade={(fp) => {
+                // The list's copy of the load learns of the plan now, not on its next refresh.
+                setLoads((prev) => prev.map((x) => (x.id === detailLoad.id ? { ...x, fuelPlan: fp } : x)));
+                setDetail((d) => (d && d.id === detailLoad.id ? { ...d, fuelPlan: fp } : d));
+              }} />
           ) : (<>
 
           {/* Toolbar */}
@@ -2792,10 +2831,11 @@ export function LoadsPage() {
                   <TH width={120}>Status</TH>
                   <TH width={240}>Route</TH>
                   <TH width={250}>Appt Times</TH>
+                  {canFuel && <TH width={190}>Fuel</TH>}
                   <TH width={100} align="right">Miles</TH>
                   <TH width={100} align="right">Rate</TH>
                   <TH width={120}>Dispatcher</TH>
-                  <TH width={118} align="center" pinned>Actions</TH>
+                  <TH width={150} align="center" pinned>Actions</TH>
                 </tr>
               </thead>
               <tbody ref={nav.ref}>
@@ -2812,7 +2852,7 @@ export function LoadsPage() {
                     </td>
                     <td style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", verticalAlign: "middle" }}>
                       <button
-                        onClick={() => setDetail(l)}
+                        onClick={() => openDetail(l)}
                         style={{ fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 600, color: "var(--primary)", backgroundColor: "var(--secondary)", borderRadius: 4, padding: "2px 8px", border: "none", cursor: "pointer", outline: "none" }}
                         onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.textDecoration = "underline"; }}
                         onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.textDecoration = "none"; }}
@@ -2878,6 +2918,11 @@ export function LoadsPage() {
                         })}
                       </div>
                     </td>
+                    {canFuel && (
+                      <td style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", verticalAlign: "middle" }}>
+                        <FuelCell summary={l.fuelPlan} finished={l.status === "completed"} onOpen={() => openDetail(l)} />
+                      </td>
+                    )}
                     <td style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", verticalAlign: "middle", textAlign: "right" }}>
                       {l.totalMiles ? (
                         <div style={{ display: "flex", flexDirection: "column", gap: 1, alignItems: "flex-end" }}>
@@ -2909,6 +2954,10 @@ export function LoadsPage() {
                         columns scrolling underneath never show through. */}
                     <td style={{ padding: "8px 10px", borderBottom: "1px solid var(--border)", verticalAlign: "middle", textAlign: "center", position: "sticky", right: 0, backgroundColor: "var(--card)", boxShadow: "inset 1px 0 0 var(--border)" }}>
                       <div style={{ display: "inline-flex", gap: 2 }}>
+                        {/* A completed load has nothing to fuel; its slot stays, so the icons line up down the column. */}
+                        {canFuelMake && (l.status !== "completed"
+                          ? <FuelActionBtn loadLabel={l.loadId} hasPlan={!!l.fuelPlan} onClick={() => openDetail(l, true)} />
+                          : <span aria-hidden="true" style={{ width: 30, flexShrink: 0 }} />)}
                         {l.driver_id && <SendToDriverButton variant="icon" loadId={l.id} loadLabel={l.loadId} driverName={l.driver} />}
                         {canUpdate && <ActionBtn label={`Edit ${l.loadId || "load"}`} tone="edit" icon={<Pencil size={14} />} onClick={() => openEdit(l)} />}
                         {canDelete && <ActionBtn label={`Delete ${l.loadId || "load"}`} tone="delete" icon={<Trash2 size={14} />} onClick={() => setDeleting(l)} />}
@@ -2919,7 +2968,7 @@ export function LoadsPage() {
                 ))}
                 {loads.length === 0 && (
                   <tr>
-                    <td colSpan={11} style={{ padding: "40px 20px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
+                    <td colSpan={canFuel ? 12 : 11} style={{ padding: "40px 20px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)" }}>
                       {loading ? "Loading loads…" : "No loads match your filters."}
                     </td>
                   </tr>

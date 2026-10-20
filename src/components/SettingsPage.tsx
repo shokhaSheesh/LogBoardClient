@@ -4,7 +4,7 @@ import {
   Users, UsersRound, ShieldCheck, Plus, Pencil, Trash2, X, Check,
   Eye, EyeOff, ToggleLeft, ToggleRight, Search, ChevronDown, ChevronLeft, ChevronRight, CalendarDays,
   Truck, AlertCircle, Unlink, Settings as SettingsIcon,
-  Percent,
+  Percent, Fuel,
 } from "lucide-react";
 import { useAuth } from "../lib/auth";
 import { hasPerm } from "../lib/permissions";
@@ -2304,7 +2304,101 @@ function EldTab({ canManage }: { canManage: boolean }) {
   );
 }
 
-type TabId = "users" | "teams" | "roles" | "week" | "eld" | "kpi";
+// ─── Fuel tab ─────────────────────────────────────────────────────────────────
+
+type IftaMode = "net" | "pump";
+const IFTA_CHOICES: { id: IftaMode; title: string; badge?: string; text: React.ReactNode }[] = [
+  { id: "net", title: "After IFTA", badge: "recommended",
+    text: <>The company files IFTA: the tax is owed where the miles are driven and the pump tax comes back. So a stop is compared by its pump price <b>minus</b> its state's tax rate.</> },
+  { id: "pump", title: "Pump price",
+    text: <>The tax is passed through differently (for example owner-operators leased on). Stops are compared by what the pump says.</> },
+];
+
+// How fuel plans compare stops across states (companies.fuel_ifta_mode). A truck's own
+// numbers — tank, mpg, reserve — live on the truck.
+function FuelTab({ canEdit }: { canEdit: boolean }) {
+  const [saved, setSaved]     = useState<IftaMode | null>(null); // null = still loading
+  const [picked, setPicked]   = useState<IftaMode | null>(null);
+  const [saving, setSaving]   = useState(false);
+  const [loadError, setLoadError] = useState(false);
+
+  useEffect(() => {
+    api.get<{ fuel_ifta_mode?: IftaMode }>(`/company`)
+      .then((c) => setSaved(c.fuel_ifta_mode === "pump" ? "pump" : "net"))
+      .catch(() => setLoadError(true));
+  }, []);
+
+  const shown = picked ?? saved;
+  const dirty = picked !== null && picked !== saved;
+  const save = async () => {
+    if (!canEdit || !dirty || saving) return;
+    setSaving(true);
+    try {
+      // The PUT needs mc/name every time; re-read them now so a rename made since this tab
+      // opened isn't reverted. Fields left out (the work week) keep what is stored.
+      const fresh = await api.get<{ mc: string; name: string; eld?: string }>(`/company`);
+      await api.put(`/company`, { mc: fresh.mc, name: fresh.name, eld: fresh.eld, fuel_ifta_mode: picked });
+      setSaved(picked);
+      setPicked(null);
+      notify.success("Fuel setting saved. New fuel plans use it.");
+    } catch (e) {
+      notify.error(friendlyError(e, "Couldn't save the fuel setting."));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loadError) return <div style={{ padding: "32px 28px", fontFamily: "var(--font-sans)", fontSize: 13, color: "#EF4444" }}>Couldn't load company settings.</div>;
+  if (shown === null) return <PageLoader label="fuel settings" />;
+
+  return (
+    <div style={{ padding: "32px 28px", display: "flex", flexDirection: "column", gap: 24, maxWidth: 640, overflowY: "auto" }}>
+      <div>
+        <div style={{ fontFamily: "var(--font-sans)", fontSize: 16, fontWeight: 700, color: "var(--foreground)", marginBottom: 6 }}>How fuel plans compare prices</div>
+        <div style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)", lineHeight: 1.6 }}>
+          Each state charges its own fuel tax (IFTA). This decides whether a plan picks stops by the pump price or by the price after that tax.
+        </div>
+      </div>
+
+      <div role="radiogroup" aria-label="Compare fuel prices by" style={{ display: "flex", flexDirection: "column", gap: 10, opacity: saving ? 0.6 : 1 }}>
+        {IFTA_CHOICES.map((c) => {
+          const on = shown === c.id;
+          return (
+            <label key={c.id} style={{ display: "flex", gap: 12, alignItems: "flex-start", padding: 14, borderRadius: 10, cursor: canEdit ? "pointer" : "default",
+              border: on ? "2px solid var(--primary)" : "1px solid var(--border)", backgroundColor: on ? "var(--primary-tint)" : "var(--card)", margin: on ? 0 : 1 }}>
+              <input type="radio" name="ifta" checked={on} disabled={!canEdit || saving}
+                onChange={() => setPicked(c.id === saved ? null : c.id)}
+                style={{ marginTop: 3, accentColor: "var(--primary)" }} />
+              <span>
+                <span style={{ display: "flex", alignItems: "center", gap: 8, fontFamily: "var(--font-sans)", fontSize: 13.5, fontWeight: 700, color: "var(--foreground)" }}>
+                  {c.title}
+                  {c.badge && <span style={{ fontSize: 11, fontWeight: 600, color: "var(--primary)", backgroundColor: "var(--primary-soft)", padding: "2px 7px", borderRadius: 4 }}>{c.badge}</span>}
+                </span>
+                <span style={{ display: "block", fontFamily: "var(--font-sans)", fontSize: 12.5, color: "var(--muted-foreground)", marginTop: 3, lineHeight: 1.55 }}>{c.text}</span>
+              </span>
+            </label>
+          );
+        })}
+      </div>
+
+      {canEdit && (
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <button onClick={() => { void save(); }} disabled={!dirty || saving}
+            style={{ display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "8px 16px", borderRadius: 7, border: "none", backgroundColor: dirty ? "var(--primary)" : "var(--muted)", color: dirty ? "#fff" : "var(--muted-foreground)", cursor: dirty && !saving ? "pointer" : "default", opacity: saving ? 0.75 : 1 }}>
+            <Check size={14} /> {saving ? "Saving…" : "Save"}
+          </button>
+          {dirty && <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)" }}>Plans already made keep the way they were worked out; recalculate to use the new one.</span>}
+        </div>
+      )}
+
+      <div style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)" }}>
+        Tank size, mpg and reserve are set on each truck (Equipments → edit truck).
+      </div>
+    </div>
+  );
+}
+
+type TabId = "users" | "teams" | "roles" | "week" | "fuel" | "eld" | "kpi";
 
 export function SettingsPage() {
   const { user } = useAuth();
@@ -2336,6 +2430,7 @@ export function SettingsPage() {
     { id: "teams",  label: "Teams",               icon: <UsersRound   size={15} />, module: "teams" },
     { id: "roles",  label: "Roles & Permissions", icon: <ShieldCheck  size={15} />, module: "roles" },
     { id: "week",   label: "Work Week",           icon: <CalendarDays size={15} />, module: "settings" },
+    { id: "fuel",   label: "Fuel",                icon: <Fuel         size={15} />, module: "settings" },
     { id: "eld",    label: "ELD",                 icon: <Truck        size={15} />, module: "eld" },
     // The KPI table pays dispatchers, so it rides on the Payouts keys: read to see it, update to change it.
     { id: "kpi",    label: "KPI Table",           icon: <Percent      size={15} />, module: "payouts" },
@@ -2381,6 +2476,7 @@ export function SettingsPage() {
           {tab === "teams" && <TeamsTab canCreate={can("teams", "create")} canUpdate={can("teams", "update")} canDelete={can("teams", "delete")} />}
           {tab === "roles" && <RolesTab onRolesChange={setRoles} canCreate={can("roles", "create")} canUpdate={can("roles", "update")} canDelete={can("roles", "delete")} />}
           {tab === "week"  && <WeekTab canEdit={can("settings", "update")} />}
+          {tab === "fuel"  && <FuelTab canEdit={can("settings", "update")} />}
           {tab === "eld"   && <EldTab canManage={canEldUpdate} />}
           {tab === "kpi"   && <KpiTableTab canEdit={can("payouts", "update")} />}
         </div>

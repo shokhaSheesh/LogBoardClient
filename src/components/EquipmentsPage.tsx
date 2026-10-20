@@ -8,6 +8,7 @@ import { driverDisplayName } from "../lib/driverName";
 import { PageLoader } from "./PageLoader";
 import { FormError, formErrorInModal, friendlyError, notify } from "./feedback";
 import { Dash } from "./Dash";
+import { NumberField } from "./NumberField";
 import { ScrollPane } from "./ScrollX";
 import { useDialogKeys, useLayer } from "../lib/layers";
 import { useRowNav } from "../lib/rowNav";
@@ -25,7 +26,26 @@ interface TruckRow {
   make: string;
   model: string;
   vin: string;
+  // The fuel plan's numbers for this truck; null = not set, the plan uses its default.
+  tank_gal?: number | null;
+  mpg?: number | null;
+  reserve_pct?: number | null;
+  min_buy_gal?: number | null;
+  max_off_route_mi?: number | null;
 }
+
+// The fuel settings: what each means, the default the plan uses when it's empty, and the
+// range the server accepts (trucks_fuel_settings, migration 0086).
+type FuelKey = "tank_gal" | "mpg" | "reserve_pct" | "min_buy_gal" | "max_off_route_mi";
+const FUEL_FIELDS: { key: FuelKey; label: string; unit: string; hint: string; def: number; min: number; max: number; decimals: number }[] = [
+  { key: "tank_gal",         label: "Tank size",        unit: "gal", hint: "both tanks",         def: 250, min: 20,  max: 500, decimals: 0 },
+  { key: "mpg",              label: "Miles per gallon", unit: "mpg", hint: "loaded",             def: 6.5, min: 2,   max: 15,  decimals: 1 },
+  { key: "reserve_pct",      label: "Never below",      unit: "%",   hint: "reserve",            def: 15,  min: 1,   max: 50,  decimals: 0 },
+  { key: "min_buy_gal",      label: "Smallest buy",     unit: "gal", hint: "worth stopping for", def: 50,  min: 1,   max: 500, decimals: 0 },
+  { key: "max_off_route_mi", label: "Max off route",    unit: "mi",  hint: "detour to a stop",   def: 3,   min: 0.1, max: 5,   decimals: 1 },
+];
+const fuelOutOfRange = (r: Partial<TruckRow>) =>
+  FUEL_FIELDS.filter((f) => { const v = r[f.key]; return !!v && (v < f.min || v > f.max); });
 
 interface TrailerRow {
   id: string;
@@ -492,9 +512,16 @@ function EquipModal({ title, row, onClose, onSave, saving = false, error, equipK
   const [opened] = useState(() => JSON.stringify(row));
   const requestClose = useEscape(onClose, saving, { onSave: () => handleSave(), dirty: JSON.stringify(form) !== opened });
 
+  const truck = form as Partial<TruckRow>;
+  const setFuel = (k: FuelKey, v: number) => setForm((f) => ({ ...f, [k]: v || null }));
+  const [fuelChecked, setFuelChecked] = useState(false);
+  const badFuel = equipKind === "truck" && fuelChecked ? fuelOutOfRange(truck).map((f) => f.key) : [];
+
   const handleSave = () => {
     setTouched({ unit: true });
+    setFuelChecked(true);
     if (!form.unit?.toString().trim()) return;
+    if (equipKind === "truck" && fuelOutOfRange(truck).length > 0) return;
     onSave(form as EquipRow);
   };
 
@@ -578,6 +605,38 @@ function EquipModal({ title, row, onClose, onSave, saving = false, error, equipK
               style={{ fontFamily: "var(--font-mono)", fontSize: 13, padding: "7px 10px", borderRadius: 8, height: 36, border: "1px solid var(--border)", backgroundColor: "var(--card)", color: "var(--foreground)", outline: "none", width: "100%", boxSizing: "border-box" as const, letterSpacing: "0.04em" }}
             />
           </label>
+
+          {/* The fuel plan's numbers for this truck. Empty uses the default shown in grey. */}
+          {equipKind === "truck" && (() => {
+            const val = (f: typeof FUEL_FIELDS[number]) => truck[f.key] || f.def;
+            const range = Math.round(val(FUEL_FIELDS[0]) * val(FUEL_FIELDS[1]));
+            return (
+              <div style={{ gridColumn: "1 / -1", marginTop: 4, border: "1px solid var(--border)", borderRadius: 10, padding: 14, display: "flex", flexDirection: "column", gap: 12 }}>
+                <div>
+                  <div style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 700, color: "var(--foreground)" }}>Fuel settings</div>
+                  <div style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)", marginTop: 2 }}>Used by fuel plans for this truck. Leave a field empty to use the default shown in grey.</div>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(118px, 1fr))", gap: 10 }}>
+                  {FUEL_FIELDS.map((f) => {
+                    const bad = badFuel.includes(f.key);
+                    return (
+                      <label key={f.key} style={{ display: "flex", flexDirection: "column", gap: 5, minWidth: 0 }}>
+                        <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: 600, color: bad ? "#EF4444" : "var(--foreground)" }}>{f.label}</span>
+                        <NumberField value={truck[f.key] ?? undefined} onChange={(n) => setFuel(f.key, n)} label={f.label}
+                          placeholder={String(f.def)} suffix={f.unit} decimals={f.decimals} invalid={bad} />
+                        <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: bad ? "#EF4444" : "var(--muted-foreground)" }}>
+                          {bad ? `${f.min}–${f.max} ${f.unit}` : f.hint}
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+                <div style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)", backgroundColor: "var(--muted)", borderRadius: 8, padding: "8px 10px" }}>
+                  A full tank goes about <b style={{ color: "var(--foreground)" }}>{range.toLocaleString("en-US")} mi</b> ({val(FUEL_FIELDS[0])} gal × {val(FUEL_FIELDS[1])} mpg).
+                </div>
+              </div>
+            );
+          })()}
         </div>
         <FormError message={error} style={formErrorInModal} />
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, padding: "14px 20px", borderTop: "1px solid var(--border)" }}>
@@ -947,7 +1006,9 @@ function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
   const save = async (r: EquipRow) => {
     const d = r as TruckRow;
     // Only the writable fields — driver/driver_team/driver_name2/id are read-only (resolved).
-    const payload = { unit: d.unit, driver_id: d.driver_id || null, make: d.make, model: d.model, vin: d.vin };
+    // An empty fuel setting goes as 0, which puts it back to the plan's default.
+    const fuel = Object.fromEntries(FUEL_FIELDS.map((f) => [f.key, d[f.key] || 0]));
+    const payload = { unit: d.unit, driver_id: d.driver_id || null, make: d.make, model: d.model, vin: d.vin, ...fuel };
     setSaving(true);
     setSaveErr(null);
     try {
