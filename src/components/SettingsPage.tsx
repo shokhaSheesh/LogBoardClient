@@ -24,7 +24,7 @@ import { DatePicker } from "./DatePicker";
 import { NumberField } from "./NumberField";
 import { ScrollPane } from "./ScrollX";
 import { KpiTableTab } from "./KpiTableTab";
-import { closeAsking, useDialogKeys, useLayer } from "../lib/layers";
+import { closeAsking, useDialogKeys, useLayer, backdropClose } from "../lib/layers";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -562,8 +562,8 @@ function ModalShell({ label, onClose, busy = false, onSave, dirty = false, child
 
   return (
     <div ref={ref} role="dialog" aria-modal="true" aria-label={label} onKeyDown={onKeyDown}
-      // A press that starts on the backdrop itself (not a drag out of a field) closes it.
-      onMouseDown={(e) => { if (e.target === e.currentTarget) requestClose(); }}
+      // A click on the backdrop itself closes it, asking first about unsaved changes.
+      {...backdropClose(requestClose)}
       style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
       {children}
     </div>

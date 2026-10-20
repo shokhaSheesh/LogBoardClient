@@ -113,6 +113,23 @@ export function useDialogKeys({ onClose, onSave, dirty = false, busy = false, op
   return requestClose;
 }
 
+/**
+ * Spread on a dialog's backdrop: a click on the dark area around the dialog closes it, like
+ * its ✕ and Esc — pass the same close (requestClose for a form, so unsaved changes are asked
+ * about, and nothing happens while it saves). Only a press that starts AND ends on the
+ * backdrop counts: selecting text in a field and letting go outside it keeps the dialog open.
+ */
+export function backdropClose(close: () => void) {
+  return {
+    onMouseDown: (e: React.MouseEvent<HTMLElement>) => { e.currentTarget.dataset.pressed = e.target === e.currentTarget ? "1" : ""; },
+    onClick: (e: React.MouseEvent<HTMLElement>) => {
+      const pressed = e.currentTarget.dataset.pressed === "1";
+      e.currentTarget.dataset.pressed = "";
+      if (pressed && e.target === e.currentTarget) close();
+    },
+  };
+}
+
 /** Mounted once at the app root: the "Discard your changes?" dialog every form shares. */
 export function DiscardHost() {
   const [pending, setPending] = useState<((discard: boolean) => void) | null>(null);

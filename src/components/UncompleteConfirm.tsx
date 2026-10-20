@@ -1,7 +1,7 @@
 import { createPortal } from "react-dom";
 import { RotateCcw, AlertTriangle } from "lucide-react";
 import { STATUS_CONFIG, type Status } from "../lib/statuses";
-import { useLayer } from "../lib/layers";
+import { useLayer, backdropClose } from "../lib/layers";
 
 // Moving a load out of `completed` is the one destructive action on the board that
 // happens from a plain dropdown: the backend deletes the load's payout row and clears
@@ -23,7 +23,7 @@ export function UncompleteConfirm({ to, label, busy, onCancel, onConfirm }: {
   useLayer(true, { onEscape: () => { if (!busy) onCancel(); } });
 
   return createPortal(
-    <div
+    <div {...backdropClose(() => { if (!busy) onCancel(); })}
       style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: 9600, display: "flex", alignItems: "center", justifyContent: "center" }}
       onClick={(e) => { if (e.target === e.currentTarget && !busy) onCancel(); }}
     >

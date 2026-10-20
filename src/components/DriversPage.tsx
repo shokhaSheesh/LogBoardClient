@@ -26,7 +26,7 @@ import { weekOf } from "./PeriodFilter";
 import { NumberField } from "./NumberField";
 import { DatePicker } from "./DatePicker";
 import { ScrollPane, ScrollX } from "./ScrollX";
-import { useDialogKeys, useLayer } from "../lib/layers";
+import { useDialogKeys, useLayer, backdropClose } from "../lib/layers";
 import { useRowNav } from "../lib/rowNav";
 
 type DriverStatus = Status;
@@ -1201,7 +1201,7 @@ function SoloModal({ driver, onClose, onSave, canReorderLoads, saving, error, fi
   const [opened] = useState(() => JSON.stringify(driver));
   const requestClose = useEscape(onClose, saving, { onSave: handleSave, dirty: JSON.stringify(form) !== opened });
   return (
-    <div role="dialog" aria-modal="true" style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }}>
+    <div {...backdropClose(requestClose)} role="dialog" aria-modal="true" style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div style={{ backgroundColor: "var(--card)", borderRadius: 12, width: 780, maxWidth: "calc(100vw - 32px)", boxShadow: "0 20px 60px rgba(0,0,0,0.22)", overflow: "visible" }}>
         {/* Header */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "13px 20px", borderBottom: "1px solid var(--border)" }}>
@@ -1348,7 +1348,7 @@ function TeamModal({ driver, onClose, onSave, canReorderLoads, saving, error, fi
   const [opened] = useState(() => JSON.stringify(driver));
   const requestClose = useEscape(onClose, saving, { onSave: handleSave, dirty: JSON.stringify(form) !== opened });
   return (
-    <div role="dialog" aria-modal="true" style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }}>
+    <div {...backdropClose(requestClose)} role="dialog" aria-modal="true" style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div style={{ backgroundColor: "var(--card)", borderRadius: 12, width: 960, maxWidth: "calc(100vw - 32px)", boxShadow: "0 20px 60px rgba(0,0,0,0.22)", overflow: "visible" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "13px 20px", borderBottom: "1px solid var(--border)" }}>
           <span style={{ fontFamily: "var(--font-sans)", fontSize: 15, fontWeight: 700, color: "var(--foreground)", letterSpacing: "-0.01em" }}>
@@ -1466,9 +1466,9 @@ function TeamModal({ driver, onClose, onSave, canReorderLoads, saving, error, fi
 }
 
 function DeleteConfirm({ label, onClose, onConfirm, busy = false, error }: { label: string; onClose: () => void; onConfirm: () => void; busy?: boolean; error?: string | null }) {
-  useEscape(onClose, busy);
+  const requestClose = useEscape(onClose, busy);
   return (
-    <div role="dialog" aria-modal="true" style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }}>
+    <div {...backdropClose(requestClose)} role="dialog" aria-modal="true" style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div style={{ backgroundColor: "var(--card)", borderRadius: 12, width: 380, padding: 28, boxShadow: "0 20px 60px rgba(0,0,0,0.22)", textAlign: "center" }}>
         <div style={{ width: 44, height: 44, borderRadius: "50%", backgroundColor: "rgba(239,68,68,0.14)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
           <Trash2 size={20} color="#EF4444" />
@@ -1545,10 +1545,10 @@ function ImportModal({ entityLabel, endpoint, templateEndpoint, templateFile, on
     }
   };
   // Esc closes; Enter imports the picked file.
-  useEscape(onClose, submitting, { onSave: submit });
+  const requestClose = useEscape(onClose, submitting, { onSave: submit });
 
   return (
-    <div role="dialog" aria-modal="true" style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }}>
+    <div {...backdropClose(requestClose)} role="dialog" aria-modal="true" style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div style={{ backgroundColor: "var(--card)", borderRadius: 12, width: 520, boxShadow: "0 20px 60px rgba(0,0,0,0.22)" }}>
         {/* Header */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderBottom: "1px solid var(--border)" }}>

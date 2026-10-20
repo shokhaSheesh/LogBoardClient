@@ -4,7 +4,7 @@ import { api, ApiError } from "../lib/api";
 import { AsyncSearchableSelect } from "./AsyncSelect";
 import { driverDisplayName } from "../lib/driverName";
 import { FormError, friendlyError } from "./feedback";
-import { useLayer } from "../lib/layers";
+import { useLayer, backdropClose } from "../lib/layers";
 
 // One entry from GET /eld/drivers: a driver on the provider's roster, and how (if at all)
 // it maps to a board driver.
@@ -116,7 +116,7 @@ export function EldModal({ onClose, onLinked, canManage = true }: { onClose: () 
   useLayer(true, { onEscape: () => { if (!syncing && !busyId) onClose(); } });
 
   return (
-    <div role="dialog" aria-modal="true" aria-label="ELD drivers" style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }}>
+    <div {...backdropClose(() => { if (!syncing && !busyId) onClose(); })} role="dialog" aria-modal="true" aria-label="ELD drivers" style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div style={{ backgroundColor: "var(--card)", borderRadius: 12, width: 660, maxWidth: "calc(100vw - 32px)", maxHeight: "88vh", boxShadow: "0 20px 60px rgba(0,0,0,0.22)", display: "flex", flexDirection: "column" }}>
         {/* Header */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 20px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>

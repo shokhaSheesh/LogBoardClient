@@ -29,7 +29,7 @@ import { Dash } from "./Dash";
 import { fmtDateTime } from "../lib/dates";
 import { NumberField } from "./NumberField";
 import { ScrollPane, ScrollX } from "./ScrollX";
-import { useLayer } from "../lib/layers";
+import { useLayer, backdropClose } from "../lib/layers";
 import { useRowNav } from "../lib/rowNav";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -647,7 +647,7 @@ function ExtractModal({ onClose, onExtracted }: {
   };
 
   return (
-    <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }}>
+    <div {...backdropClose(() => { if (!busy) close(); })} style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div style={{ backgroundColor: "var(--card)", borderRadius: 12, width: 540, boxShadow: "0 20px 60px rgba(0,0,0,0.22)" }}>
         {/* Header */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 20px", borderBottom: "1px solid var(--border)", borderRadius: "12px 12px 0 0" }}>
@@ -2272,7 +2272,7 @@ export function LoadFormPage() {
       )}
 
       {blocker.state === "blocked" && (
-        <div role="dialog" aria-modal="true" aria-label="Unsaved changes" style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: 400, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <div {...backdropClose(() => blocker.reset?.())} role="dialog" aria-modal="true" aria-label="Unsaved changes" style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: 400, display: "flex", alignItems: "center", justifyContent: "center" }}>
           <div style={{ backgroundColor: "var(--card)", borderRadius: 12, width: 380, maxWidth: "calc(100vw - 32px)", padding: 24, boxShadow: "0 20px 60px rgba(0,0,0,0.25)" }}>
             <div style={{ fontFamily: "var(--font-sans)", fontSize: 15, fontWeight: 700, color: "var(--foreground)", marginBottom: 6 }}>Leave without saving?</div>
             <div style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)", lineHeight: 1.55, marginBottom: 20 }}>
@@ -2294,7 +2294,7 @@ export function DeleteConfirm({ label, onClose, onConfirm, busy = false, error, 
   // Esc cancels. Enter never deletes: it takes a click (or tabbing to Delete).
   useLayer(true, { onEscape: () => { if (!busy) onClose(); } });
   return (
-    <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }}>
+    <div {...backdropClose(() => { if (!busy) onClose(); })} style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div style={{ backgroundColor: "var(--card)", borderRadius: 12, width: 360, padding: 24, boxShadow: "0 20px 60px rgba(0,0,0,0.25)", textAlign: "center" }}>
         <div style={{ width: 44, height: 44, borderRadius: "50%", backgroundColor: "rgba(239,68,68,0.14)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
           <Trash2 size={20} color="#EF4444" />

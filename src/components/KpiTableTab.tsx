@@ -4,7 +4,7 @@ import { api } from "../lib/api";
 import { fmtDate } from "../lib/dates";
 import { ActionBtn, DeleteConfirm, TH } from "./LoadsPage";
 import { FieldLabel, useEscape } from "./DriversPage";
-import { useLayer } from "../lib/layers";
+import { useLayer, backdropClose } from "../lib/layers";
 import { NumberField } from "./NumberField";
 import { Dash } from "./Dash";
 import { FormError, formErrorInModal, friendlyError, notify } from "./feedback";
@@ -224,7 +224,7 @@ function RuleModal({ rule, week, onClose, onSaved }: { rule: Rule | null; week: 
   );
 
   return (
-    <div role="dialog" aria-modal="true" aria-label={isNew ? "New KPI rule" : "Edit KPI rule"} style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }}>
+    <div {...backdropClose(requestClose)} role="dialog" aria-modal="true" aria-label={isNew ? "New KPI rule" : "Edit KPI rule"} style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div style={{ backgroundColor: "var(--card)", borderRadius: 12, width: 480, maxWidth: "calc(100vw - 32px)", boxShadow: "0 20px 60px rgba(0,0,0,0.22)" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "13px 20px", borderBottom: "1px solid var(--border)" }}>
           <span style={{ fontFamily: "var(--font-sans)", fontSize: 15, fontWeight: 700, color: "var(--foreground)", letterSpacing: "-0.01em" }}>{isNew ? "New KPI rule" : "Edit KPI rule"}</span>

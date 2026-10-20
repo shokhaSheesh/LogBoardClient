@@ -13,7 +13,7 @@ import {
 } from "../lib/compensations";
 import { ActionBtn, CustomSelect, DeleteConfirm, Pagination, TH } from "../components/LoadsPage";
 import { FieldLabel, useEscape } from "../components/DriversPage";
-import { useLayer } from "../lib/layers";
+import { useLayer, backdropClose } from "../lib/layers";
 import { AsyncSearchableSelect } from "../components/AsyncSelect";
 import { DatePicker } from "../components/DatePicker";
 import { NumberField } from "../components/NumberField";
@@ -319,7 +319,7 @@ function CompensationModal({ value, onClose, onSaved }: { value: Compensation | 
   const area: React.CSSProperties = { fontFamily: "var(--font-sans)", fontSize: 13, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border)", backgroundColor: "var(--card)", color: "var(--foreground)", outline: "none", width: "100%", boxSizing: "border-box", resize: "vertical", minHeight: 72 };
 
   return (
-    <div role="dialog" aria-modal="true" aria-label={isNew ? "New compensation request" : "Edit compensation request"} style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }}>
+    <div {...backdropClose(requestClose)} role="dialog" aria-modal="true" aria-label={isNew ? "New compensation request" : "Edit compensation request"} style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div style={{ backgroundColor: "var(--card)", borderRadius: 12, width: 560, maxWidth: "calc(100vw - 32px)", boxShadow: "0 20px 60px rgba(0,0,0,0.22)" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "13px 20px", borderBottom: "1px solid var(--border)" }}>
           <span style={{ fontFamily: "var(--font-sans)", fontSize: 15, fontWeight: 700, color: "var(--foreground)", letterSpacing: "-0.01em" }}>
