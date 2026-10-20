@@ -991,6 +991,17 @@ export function CompanyLayout() {
   const [accounts, setAccounts]               = useState<Account[]>([]);
   const [activeAccountId, setActiveAccountId] = useState(getCompanyId());
 
+  // The workspace is one screen: every page scrolls inside its own panel, never the window.
+  // Left scrollable, the window took any scroll that ran past a panel's end (or a few pixels
+  // a page stuck out by), and the whole app slid up, leaving a blank strip under it.
+  useEffect(() => {
+    const root = document.documentElement, body = document.body;
+    const was = [root.style.overflow, body.style.overflow];
+    root.style.overflow = body.style.overflow = "hidden";
+    window.scrollTo(0, 0);
+    return () => { [root.style.overflow, body.style.overflow] = was; };
+  }, []);
+
   // Fetch real accounts for owners; dispatcher/updater have a fixed company_id from login
   useEffect(() => {
     if (user?.role === "owner") {
@@ -1054,7 +1065,7 @@ export function CompanyLayout() {
 
   return (
     <div
-      className="flex h-screen overflow-hidden"
+      className="fixed inset-0 flex overflow-hidden"
       style={{ fontFamily: "var(--font-sans)", backgroundColor: "var(--background)" }}
     >
       <Sidebar

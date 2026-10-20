@@ -339,7 +339,8 @@ function PlanBody({ plan, places }: { plan: Plan; places: FuelRoutePlaces }) {
     { label: "Gallons", value: gal(t.gallons), sub: `ends with ${gal(plan.end_fuel_gal)} gal` },
     { label: "Fuel cost", value: money(t.cost), sub: net ? `${money(t.net_cost)} after IFTA` : "at the pump" },
     t.savings != null
-      ? { label: "Saves", value: money(t.savings), sub: "vs filling up at a quarter tank", good: t.savings > 0 }
+      // Never below $0: plans made before the server clamped it could still say "$-4.29".
+      ? { label: "Saves", value: money(Math.max(0, t.savings)), sub: "vs filling up at a quarter tank", good: t.savings > 0 }
       : { label: "Saves", value: "—", sub: "nothing to compare with" },
   ];
 
