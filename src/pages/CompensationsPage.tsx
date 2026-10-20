@@ -72,6 +72,8 @@ export function CompensationsPage() {
 
   const refresh = () => setFetchKey((k) => k + 1);
 
+  // The status pill spins until the save is done (StatusPicker awaits this), then the list
+  // reloads as after any change.
   const changeStatus = async (c: Compensation, s: CompStatus) => {
     if (s === c.status) return;
     try {
@@ -230,17 +232,20 @@ export function CompensationsPage() {
 
 // ─── Status, changed from the table ───────────────────────────────────────────
 
-function StatusPill({ status, chevron }: { status: CompStatus; chevron?: boolean }) {
+function StatusPill({ status, chevron, busy }: { status: CompStatus; chevron?: boolean; busy?: boolean }) {
   const c = compStatus(status);
   return (
     <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600, color: c.color, backgroundColor: c.bg, borderRadius: 4, padding: "3px 8px", whiteSpace: "nowrap", userSelect: "none" }}>
-      {c.label}{chevron && <ChevronDown size={10} style={{ opacity: 0.7 }} />}
+      {c.label}
+      {busy && <span style={{ width: 9, height: 9, borderRadius: "50%", border: `1.5px solid ${c.color}55`, borderTopColor: c.color, animation: "spin 0.7s linear infinite", display: "inline-block" }} />}
+      {chevron && <ChevronDown size={10} style={{ opacity: 0.7 }} />}
     </span>
   );
 }
 
-function StatusPicker({ value, onChange, readOnly }: { value: CompStatus; onChange: (s: CompStatus) => void; readOnly?: boolean }) {
+function StatusPicker({ value, onChange, readOnly }: { value: CompStatus; onChange: (s: CompStatus) => Promise<void>; readOnly?: boolean }) {
   const [rect, setRect] = useState<DOMRect | null>(null);
+  const [busy, setBusy] = useState(false); // saving: the pill spins, as the Loads and Drivers ones do
   useLayer(!!rect, { onEscape: () => setRect(null) });
   const anchor = useRef<HTMLButtonElement>(null);
   const menu = useRef<HTMLDivElement>(null);
@@ -257,16 +262,16 @@ function StatusPicker({ value, onChange, readOnly }: { value: CompStatus; onChan
   const pos = rect && menuPosition(rect, COMP_STATUSES.length, 168);
   return (
     <>
-      <button ref={anchor} aria-label="Change status" onClick={() => setRect(rect ? null : anchor.current!.getBoundingClientRect())}
-        style={{ border: "none", background: "none", padding: 0, cursor: "pointer", display: "inline-flex" }}>
-        <StatusPill status={value} chevron />
+      <button ref={anchor} aria-label="Change status" disabled={busy} onClick={() => setRect(rect ? null : anchor.current!.getBoundingClientRect())}
+        style={{ border: "none", background: "none", padding: 0, cursor: busy ? "default" : "pointer", display: "inline-flex" }}>
+        <StatusPill status={value} chevron={!busy} busy={busy} />
       </button>
       {rect && pos && createPortal(
         <div ref={menu} role="menu" style={{ position: "fixed", top: pos.top, left: pos.left, zIndex: 9999, minWidth: 168, padding: 5, display: "flex", flexDirection: "column", gap: 1, backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 10, boxShadow: "0 10px 30px rgba(0,0,0,0.16)" }}>
           {COMP_STATUSES.map((s) => {
             const on = s.value === value;
             return (
-              <button key={s.value} role="menuitem" onMouseDown={(e) => { e.preventDefault(); setRect(null); onChange(s.value); }}
+              <button key={s.value} role="menuitem" onMouseDown={(e) => { e.preventDefault(); setRect(null); if (s.value === value) return; setBusy(true); void onChange(s.value).finally(() => setBusy(false)); }}
                 style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 8px", border: "none", borderRadius: 6, backgroundColor: on ? s.bg : "transparent", cursor: "pointer", textAlign: "left" }}
                 onMouseEnter={(e) => { if (!on) e.currentTarget.style.backgroundColor = "var(--muted)"; }}
                 onMouseLeave={(e) => { if (!on) e.currentTarget.style.backgroundColor = "transparent"; }}>
