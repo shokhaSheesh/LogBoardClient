@@ -12,10 +12,24 @@ import { NumberField } from "./NumberField";
 import { ScrollPane } from "./ScrollX";
 import { useDialogKeys, useLayer, backdropClose } from "../lib/layers";
 import { useRowNav } from "../lib/rowNav";
+import { fmtDate } from "../lib/dates";
+import { DatePicker } from "./DatePicker";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface TruckRow {
+// A unit's insurance (migration 0089). The status is the server's, worked out from the period:
+// available, ending_soon (30 days or fewer left), expired, or not_available; days left counts to
+// the last insured day (0 on it, negative after).
+type InsStatus = "available" | "not_available" | "ending_soon" | "expired";
+interface Insured {
+  insurance_available?: boolean;
+  insurance_from?: string | null;   // YYYY-MM-DD
+  insurance_to?: string | null;
+  insurance_status?: InsStatus;
+  insurance_days_left?: number | null;
+}
+
+interface TruckRow extends Insured {
   id: string;
   unit: string;
   driver: string;
@@ -47,7 +61,7 @@ const FUEL_FIELDS: { key: FuelKey; label: string; unit: string; hint: string; de
 const fuelOutOfRange = (r: Partial<TruckRow>) =>
   FUEL_FIELDS.filter((f) => { const v = r[f.key]; return !!v && (v < f.min || v > f.max); });
 
-interface TrailerRow {
+interface TrailerRow extends Insured {
   id: string;
   unit: string;
   driver: string;
@@ -58,6 +72,66 @@ interface TrailerRow {
   model: string;
   vin: string;
 }
+
+// ─── Insurance ────────────────────────────────────────────────────────────────
+
+const INS_STYLE: Record<InsStatus, { label: string; color: string; bg: string; dot: string }> = {
+  available:     { label: "Available",     color: "var(--primary)",          bg: "var(--primary-soft)", dot: "var(--primary)" },
+  not_available: { label: "Not available", color: "var(--muted-foreground)", bg: "var(--muted)",        dot: "var(--muted-foreground)" },
+  ending_soon:   { label: "Ending soon",   color: "var(--caution)",          bg: "var(--caution-soft)", dot: "#F59E0B" },
+  expired:       { label: "Expired",       color: "#DC2626",                 bg: "rgba(239,68,68,0.12)", dot: "#EF4444" },
+};
+const INS_FILTER_OPTS: SelectOpt[] = [
+  { value: "", label: "All Insurance Statuses" },
+  { value: "available", label: "Available" },
+  { value: "not_available", label: "Not available" },
+  { value: "ending_soon", label: "Ending soon" },
+  { value: "expired", label: "Expired" },
+];
+
+// "12 days left", "Expires today", "Expired 3 days ago" — "" when there is nothing to warn of.
+function daysLeftText(left: number | null | undefined): string {
+  if (left == null || left > 30) return "";
+  if (left === 0) return "Expires today";
+  if (left === 1) return "Expires tomorrow";
+  if (left > 0) return `${left} days left`;
+  return left === -1 ? "Expired yesterday" : `Expired ${-left} days ago`;
+}
+
+function InsuranceBadge({ status }: { status?: InsStatus }) {
+  const st = INS_STYLE[status ?? "not_available"];
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: 600, color: st.color, backgroundColor: st.bg, padding: "2px 9px", borderRadius: 99, whiteSpace: "nowrap" }}>
+      <span style={{ width: 6, height: 6, borderRadius: "50%", backgroundColor: st.dot }} />{st.label}
+    </span>
+  );
+}
+
+// The period, and under it how close its end is when that's 30 days or fewer (or past).
+function InsurancePeriod({ r }: { r: Insured }) {
+  if (!r.insurance_available || !r.insurance_from || !r.insurance_to) return <Dash />;
+  const warn = daysLeftText(r.insurance_days_left);
+  const expired = r.insurance_status === "expired";
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 3, alignItems: "flex-start" }}>
+      <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--foreground)", whiteSpace: "nowrap" }}>{fmtDate(r.insurance_from)} – {fmtDate(r.insurance_to)}</span>
+      {warn && <span style={{ fontFamily: "var(--font-sans)", fontSize: 11.5, fontWeight: 600, color: expired ? "#DC2626" : "var(--caution)", backgroundColor: expired ? "rgba(239,68,68,0.12)" : "var(--caution-soft)", padding: "1px 8px", borderRadius: 99, whiteSpace: "nowrap" }}>{warn}</span>}
+    </div>
+  );
+}
+
+// Days from today to a YYYY-MM-DD day, in the viewer's calendar (the form's live hint; the
+// lists use the server's count).
+function daysUntil(day: string): number {
+  const [y, m, d] = day.split("-").map(Number);
+  const now = new Date();
+  return Math.round((Date.UTC(y, m - 1, d) - Date.UTC(now.getFullYear(), now.getMonth(), now.getDate())) / 86400000);
+}
+
+// What a save sends about insurance: not available drops the period.
+const insurancePayload = (r: Insured) => r.insurance_available
+  ? { insurance_available: true, insurance_from: r.insurance_from ?? "", insurance_to: r.insurance_to ?? "" }
+  : { insurance_available: false };
 
 // ─── CustomSelect ─────────────────────────────────────────────────────────────
 
@@ -517,11 +591,20 @@ function EquipModal({ title, row, onClose, onSave, saving = false, error, equipK
   const [fuelChecked, setFuelChecked] = useState(false);
   const badFuel = equipKind === "truck" && fuelChecked ? fuelOutOfRange(truck).map((f) => f.key) : [];
 
+  const ins = form as Insured;
+  const setIns = (patch: Partial<Insured>) => setForm((f) => ({ ...f, ...patch }));
+  const [insChecked, setInsChecked] = useState(false);
+  const insProblem = !ins.insurance_available ? ""
+    : !ins.insurance_from || !ins.insurance_to ? "Pick both days of the insurance period."
+    : ins.insurance_to < ins.insurance_from ? "The period can't end before it starts." : "";
+
   const handleSave = () => {
     setTouched({ unit: true });
     setFuelChecked(true);
+    setInsChecked(true);
     if (!form.unit?.toString().trim()) return;
     if (equipKind === "truck" && fuelOutOfRange(truck).length > 0) return;
+    if (insProblem) return;
     onSave(form as EquipRow);
   };
 
@@ -605,6 +688,56 @@ function EquipModal({ title, row, onClose, onSave, saving = false, error, equipK
               style={{ fontFamily: "var(--font-mono)", fontSize: 13, padding: "7px 10px", borderRadius: 8, height: 36, border: "1px solid var(--border)", backgroundColor: "var(--card)", color: "var(--foreground)", outline: "none", width: "100%", boxSizing: "border-box" as const, letterSpacing: "0.04em" }}
             />
           </label>
+
+          {/* Insurance: available or not, and the period. Ending soon / expired is never picked —
+              it follows from the period, so the form only says how close the end is. */}
+          {(() => {
+            const left = ins.insurance_available && ins.insurance_to ? daysUntil(ins.insurance_to) : null;
+            const warn = left != null && !insProblem ? daysLeftText(left) : "";
+            const expired = left != null && left < 0;
+            const seg = (on: boolean): React.CSSProperties => ({ height: 30, padding: "0 14px", border: "none", borderRadius: 6, cursor: "pointer", fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: on ? 600 : 500, backgroundColor: on ? "var(--card)" : "transparent", color: on ? "var(--foreground)" : "var(--muted-foreground)", boxShadow: on ? "0 1px 2px rgba(0,0,0,0.12)" : "none" });
+            return (
+              <div style={{ gridColumn: "1 / -1", marginTop: 4, border: "1px solid var(--border)", borderRadius: 10, padding: 14, display: "flex", flexDirection: "column", gap: 12 }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                  <div>
+                    <div style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 700, color: "var(--foreground)" }}>Insurance</div>
+                    <div style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)", marginTop: 2 }}>
+                      {ins.insurance_available ? `Whether this ${equipKind} is insured, and for which period.` : "Not insured. Switch to Available to add the period."}
+                    </div>
+                  </div>
+                  <div role="radiogroup" aria-label="Insurance" style={{ display: "inline-flex", padding: 3, backgroundColor: "var(--muted)", borderRadius: 8 }}>
+                    <button type="button" role="radio" aria-checked={!!ins.insurance_available} onClick={() => setIns({ insurance_available: true })} style={seg(!!ins.insurance_available)}>Available</button>
+                    <button type="button" role="radio" aria-checked={!ins.insurance_available} onClick={() => setIns({ insurance_available: false })} style={seg(!ins.insurance_available)}>Not available</button>
+                  </div>
+                </div>
+                {ins.insurance_available && (
+                  <>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12 }}>
+                      <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                        <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: 600, color: "var(--foreground)" }}>From <span style={{ color: "#EF4444" }}>*</span></span>
+                        <DatePicker label="Insurance from" value={ins.insurance_from ?? ""} invalid={insChecked && !ins.insurance_from}
+                          onChange={(day) => setIns({ insurance_from: day, insurance_to: ins.insurance_to && ins.insurance_to < day ? day : ins.insurance_to })} />
+                      </label>
+                      <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                        <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: 600, color: "var(--foreground)" }}>To <span style={{ color: "#EF4444" }}>*</span></span>
+                        <DatePicker label="Insurance to" value={ins.insurance_to ?? ""} min={ins.insurance_from || undefined} invalid={insChecked && !ins.insurance_to}
+                          onChange={(day) => setIns({ insurance_to: day })} />
+                      </label>
+                    </div>
+                    {insChecked && insProblem && <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "#EF4444" }}>{insProblem}</span>}
+                    {warn && (
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, fontFamily: "var(--font-sans)", fontSize: 12.5, fontWeight: 500, borderRadius: 8, padding: "8px 10px",
+                        color: expired ? "#DC2626" : "var(--caution)", backgroundColor: expired ? "rgba(239,68,68,0.10)" : "var(--caution-soft)" }}>
+                        <AlertCircle size={15} style={{ flexShrink: 0 }} />
+                        {expired ? `The insurance ended on ${fmtDate(ins.insurance_to)}. Renew it, then update the dates here.`
+                          : `${warn === "Expires today" || warn === "Expires tomorrow" ? warn : `Insurance ends in ${left} days`} (${fmtDate(ins.insurance_to)}). Renew it, then update the dates here.`}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            );
+          })()}
 
           {/* The fuel plan's numbers for this truck. Empty uses the default shown in grey. */}
           {equipKind === "truck" && (() => {
@@ -974,6 +1107,7 @@ function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
   const [importing, setImporting] = useState(false);
   const [search, setSearch]       = useState("");
   const [debouncedQ, setDebouncedQ] = useState("");
+  const [insFilter, setInsFilter] = useState(""); // "" = every insurance status
   const [page, setPage]           = useState(1);
   const [pageSize, setPageSize]   = useState(20);
   const [saving, setSaving]       = useState(false);
@@ -988,6 +1122,7 @@ function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
     setLoading(true);
     api.getList<TruckRow>("/trucks", {
       q: debouncedQ || undefined,
+      insurance: insFilter || undefined,
       page,
       page_size: pageSize,
     })
@@ -998,7 +1133,7 @@ function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
       })
       .catch((e) => setError(friendlyError(e, "Couldn't load this. Try again.")))
       .finally(() => setLoading(false));
-  }, [debouncedQ, page, pageSize, fetchKey]);
+  }, [debouncedQ, insFilter, page, pageSize, fetchKey]);
 
   const openCreate = () => { setEditing({}); setSaveErr(null); setModal("create"); };
   const openEdit   = (r: TruckRow) => { setEditing(r); setSaveErr(null); setModal("edit"); };
@@ -1008,7 +1143,7 @@ function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
     // Only the writable fields — driver/driver_team/driver_name2/id are read-only (resolved).
     // An empty fuel setting goes as 0, which puts it back to the plan's default.
     const fuel = Object.fromEntries(FUEL_FIELDS.map((f) => [f.key, d[f.key] || 0]));
-    const payload = { unit: d.unit, driver_id: d.driver_id || null, make: d.make, model: d.model, vin: d.vin, ...fuel };
+    const payload = { unit: d.unit, driver_id: d.driver_id || null, make: d.make, model: d.model, vin: d.vin, ...fuel, ...insurancePayload(d) };
     setSaving(true);
     setSaveErr(null);
     try {
@@ -1070,6 +1205,7 @@ function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
               }}
             />
           </div>
+          <CustomSelect value={insFilter} options={INS_FILTER_OPTS} onChange={(v) => { setInsFilter(v); setPage(1); }} width={210} />
         </div>
         {canCreate && <AddMenu entityLabel="Truck" onManual={openCreate} onImport={() => setImporting(true)} />}
       </div>
@@ -1088,6 +1224,8 @@ function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
               <TH width={150}>Make</TH>
               <TH width={160}>Model</TH>
               <TH width={220}>VIN</TH>
+              <TH width={140}>Insurance</TH>
+              <TH width={200}>Insurance period</TH>
               <TH width={120} align="right">Odometer</TH>
               <TH width={90} align="center" pinned>Actions</TH>
             </tr>
@@ -1108,6 +1246,8 @@ function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
                 <TD>{r.make || <Dash />}</TD>
                 <TD>{r.model || <Dash />}</TD>
                 <TD mono>{r.vin || <Dash />}</TD>
+                <TD><InsuranceBadge status={r.insurance_status} /></TD>
+                <TD><InsurancePeriod r={r} /></TD>
                 <td style={{ padding: "8px 14px", borderBottom: "1px solid var(--border)", verticalAlign: "middle", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12, color: r.odometer != null ? "var(--foreground)" : "var(--muted-foreground)" }}>
                   {r.odometer != null ? `${r.odometer.toLocaleString()} mi` : <Dash />}
                 </td>
@@ -1122,7 +1262,7 @@ function TrucksTab({ onCountChange }: { onCountChange: (n: number) => void }) {
             ))}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={8} style={{ padding: "32px 24px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)", borderBottom: "1px solid var(--border)" }}>
+                <td colSpan={10} style={{ padding: "32px 24px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)", borderBottom: "1px solid var(--border)" }}>
                   No trucks found.
                 </td>
               </tr>
@@ -1163,6 +1303,7 @@ function TrailersTab({ onCountChange }: { onCountChange: (n: number) => void }) 
   const [importing, setImporting] = useState(false);
   const [search, setSearch]       = useState("");
   const [debouncedQ, setDebouncedQ] = useState("");
+  const [insFilter, setInsFilter] = useState(""); // "" = every insurance status
   const [page, setPage]           = useState(1);
   const [pageSize, setPageSize]   = useState(20);
   const [saving, setSaving]       = useState(false);
@@ -1177,6 +1318,7 @@ function TrailersTab({ onCountChange }: { onCountChange: (n: number) => void }) 
     setLoading(true);
     api.getList<TrailerRow>("/trailers", {
       q: debouncedQ || undefined,
+      insurance: insFilter || undefined,
       page,
       page_size: pageSize,
     })
@@ -1187,7 +1329,7 @@ function TrailersTab({ onCountChange }: { onCountChange: (n: number) => void }) 
       })
       .catch((e) => setError(friendlyError(e, "Couldn't load this. Try again.")))
       .finally(() => setLoading(false));
-  }, [debouncedQ, page, pageSize, fetchKey]);
+  }, [debouncedQ, insFilter, page, pageSize, fetchKey]);
 
   const openCreate = () => { setEditing({}); setSaveErr(null); setModal("create"); };
   const openEdit   = (r: TrailerRow) => { setEditing(r); setSaveErr(null); setModal("edit"); };
@@ -1195,7 +1337,7 @@ function TrailersTab({ onCountChange }: { onCountChange: (n: number) => void }) 
   const save = async (r: EquipRow) => {
     const d = r as TrailerRow;
     // Only the writable fields — driver/driver_team/driver_name2/id are read-only (resolved).
-    const payload = { unit: d.unit, driver_id: d.driver_id || null, make: d.make, model: d.model, vin: d.vin };
+    const payload = { unit: d.unit, driver_id: d.driver_id || null, make: d.make, model: d.model, vin: d.vin, ...insurancePayload(d) };
     setSaving(true);
     setSaveErr(null);
     try {
@@ -1257,6 +1399,7 @@ function TrailersTab({ onCountChange }: { onCountChange: (n: number) => void }) 
               }}
             />
           </div>
+          <CustomSelect value={insFilter} options={INS_FILTER_OPTS} onChange={(v) => { setInsFilter(v); setPage(1); }} width={210} />
         </div>
         {canCreate && <AddMenu entityLabel="Trailer" onManual={openCreate} onImport={() => setImporting(true)} />}
       </div>
@@ -1275,6 +1418,8 @@ function TrailersTab({ onCountChange }: { onCountChange: (n: number) => void }) 
               <TH width={150}>Make</TH>
               <TH width={200}>Model</TH>
               <TH width={220}>VIN</TH>
+              <TH width={140}>Insurance</TH>
+              <TH width={200}>Insurance period</TH>
               <TH width={90} align="center" pinned>Actions</TH>
             </tr>
           </thead>
@@ -1294,6 +1439,8 @@ function TrailersTab({ onCountChange }: { onCountChange: (n: number) => void }) 
                 <TD>{r.make || <Dash />}</TD>
                 <TD>{r.model || <Dash />}</TD>
                 <TD mono>{r.vin || <Dash />}</TD>
+                <TD><InsuranceBadge status={r.insurance_status} /></TD>
+                <TD><InsurancePeriod r={r} /></TD>
                 <td style={{ padding: "4px 10px", borderBottom: "1px solid var(--border)", verticalAlign: "middle", textAlign: "center", position: "sticky", right: 0, backgroundColor: "var(--card)", boxShadow: "inset 1px 0 0 var(--border)" }}>
                   <div style={{ display: "inline-flex", gap: 2 }}>
                     {canUpdate && <ActionBtn label={`Edit ${r.unit}`} tone="edit" icon={<Pencil size={14} />} onClick={() => openEdit(r)} />}
@@ -1305,7 +1452,7 @@ function TrailersTab({ onCountChange }: { onCountChange: (n: number) => void }) 
             ))}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={7} style={{ padding: "32px 24px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)", borderBottom: "1px solid var(--border)" }}>
+                <td colSpan={9} style={{ padding: "32px 24px", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--muted-foreground)", borderBottom: "1px solid var(--border)" }}>
                   No trailers found.
                 </td>
               </tr>
