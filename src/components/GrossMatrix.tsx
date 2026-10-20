@@ -613,9 +613,9 @@ export function GrossMatrix() {
   const [viewMode, setViewMode] = useState<"all" | "teams">("all"); // one table vs a section per team
   const [teams,    setTeams]    = useState<{ id: string; name: string; driverIds: Set<string>; userNames: string[] }[]>([]);
 
-  // Teams (dispatch pods) for the "By team" view — same fetch/shape as the board: the
+  // Teams (dispatch pods) for the "By Team" view — same fetch/shape as the board: the
   // company-plane /company/teams (gated on teams.read), not the owner-only /owner/* surface,
-  // which 403s for a dispatcher and used to leave them with no "By team" toggle at all.
+  // which 403s for a dispatcher and used to leave them with no "By Team" toggle at all.
   useEffect(() => {
     const companyId = getCompanyId();
     if (!companyId) return;
@@ -798,7 +798,7 @@ export function GrossMatrix() {
     return { gross, profit, miles, rpm: miles > 0 ? gross / miles : null, anyPay, pay };
   }
 
-  // "By team" view: a separate table per team (plus an "Unassigned" section), each with
+  // "By Team" view: a separate table per team (plus an "Unassigned" section), each with
   // its own subtotal row — same pattern as the board.
   const teamGroups: { name: string; isUnassigned: boolean; drivers: DriverRow[]; userNames: string[] }[] =
     viewMode === "teams" && teams.length > 0
@@ -867,7 +867,7 @@ export function GrossMatrix() {
             {/* View toggle: one table vs a section per team */}
             {teams.length > 0 && (
               <div role="group" aria-label="View" style={{ display: "inline-flex", height: 34, boxSizing: "border-box", padding: 3, gap: 2, border: "1px solid var(--border)", borderRadius: 8, backgroundColor: "var(--card)", flexShrink: 0 }}>
-                {([["all", "All drivers", Rows3], ["teams", "By team", Users]] as const).map(([m, label, Icon]) => (
+                {([["all", "All Drivers", Rows3], ["teams", "By Team", Users]] as const).map(([m, label, Icon]) => (
                   <button key={m} onClick={() => setViewMode(m)} aria-pressed={viewMode === m}
                     style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "0 11px", border: "none", borderRadius: 6, cursor: "pointer", fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 500, backgroundColor: viewMode === m ? "var(--primary)" : "transparent", color: viewMode === m ? "var(--primary-foreground)" : "var(--muted-foreground)", outline: "none" }}>
                     <Icon size={14} /> {label}
@@ -929,7 +929,7 @@ export function GrossMatrix() {
   );
 
   // One full gross table (thead+tbody+totals row) for the given driver list — used for
-  // the single "All drivers" table, and once per section in the "By team" view.
+  // the single "All Drivers" table, and once per section in the "By Team" view.
   function renderGrossTable(driversList: DriverRow[]) {
     const g = summarize(driversList);
     const edge = "1px solid var(--border)";

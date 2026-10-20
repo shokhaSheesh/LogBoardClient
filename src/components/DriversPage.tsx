@@ -872,7 +872,7 @@ const STATUS_OPTS: SelectOpt[] = [
 const STATUS_MODAL_OPTS: SelectOpt[] = STATUS_OPTS.slice(1);
 // Owner-operators or company drivers; "All" is both.
 const TYPE_FILTER_OPTS: SelectOpt[] = [
-  { value: "All", label: "All types" },
+  { value: "All", label: "All Types" },
   { value: "O/O", label: "O/O" },
   { value: "C/D", label: "C/D" },
 ];

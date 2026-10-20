@@ -21,7 +21,7 @@ export const ALL_TIME: Period = { mode: "all", from: "", to: "" };
 
 const MODES: { id: PeriodMode; label: string }[] = [
   { id: "week", label: "Week" }, { id: "month", label: "Month" }, { id: "year", label: "Year" },
-  { id: "custom", label: "Range" }, { id: "all", label: "All time" },
+  { id: "custom", label: "Range" }, { id: "all", label: "All Time" },
 ];
 const MONTHS_FULL  = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 const MONTHS_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];

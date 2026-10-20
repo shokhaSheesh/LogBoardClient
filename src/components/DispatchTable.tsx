@@ -1507,7 +1507,7 @@ export function DispatchTable() {
   // `pool` is what the status counters count (search + team); the status filter narrows it.
   const visible = statusFilter === "all" ? pool : pool.filter((d) => d.status === statusFilter);
 
-  // "By team" view: a separate table per team (plus an "Unassigned" section) instead of
+  // "By Team" view: a separate table per team (plus an "Unassigned" section) instead of
   // one shared table — each section gets its own non-scrolling header bar with the
   // team's name and member names, so the header never scrolls away with the table's
   // own horizontal scroll.
@@ -1568,14 +1568,14 @@ export function DispatchTable() {
               aria-haspopup="listbox" aria-expanded={teamOpen}
               style={{ display: "inline-flex", alignItems: "center", gap: 7, height: 34, fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 500, color: activeTeam ? "var(--primary)" : "var(--foreground)", backgroundColor: activeTeam ? "var(--primary-soft)" : "var(--card)", border: `1px solid ${activeTeam ? "transparent" : "var(--border)"}`, borderRadius: 8, padding: "0 12px", cursor: "pointer", whiteSpace: "nowrap" }}>
               <Users size={13} />
-              {activeTeam ? activeTeam.name : "All teams"}
+              {activeTeam ? activeTeam.name : "All Teams"}
               <ChevronDown size={13} style={{ color: "var(--muted-foreground)" }} />
             </button>
             {/* Portal + fixed: the board card clips its overflow, so an absolutely-positioned
                 menu gets cut off whenever the table is short (e.g. a filter matched nothing). */}
             {teamOpen && teamRect && createPortal(
               <div ref={teamPanelRef} role="listbox" style={{ position: "fixed", ...menuPosition(teamRect, teams.length + 1, 200), zIndex: 9999, backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 10, boxShadow: "0 10px 30px rgba(0,0,0,0.16)", minWidth: 200, padding: 5, maxHeight: "min(60vh, 420px)", overflowY: "auto" }}>
-                {[{ id: "all", name: "All teams", count: rows.length }, ...teams.map((t) => ({ id: t.id, name: t.name, count: rows.filter((d) => t.driverIds.has(d.driverId)).length }))].map((t) => {
+                {[{ id: "all", name: "All Teams", count: rows.length }, ...teams.map((t) => ({ id: t.id, name: t.name, count: rows.filter((d) => t.driverIds.has(d.driverId)).length }))].map((t) => {
                   const active = teamFilter === t.id;
                   return (
                     <button key={t.id} role="option" aria-selected={active} onClick={() => { setTeamFilter(t.id); setTeamOpen(false); }}
@@ -1596,7 +1596,7 @@ export function DispatchTable() {
         {/* View toggle: one table vs a section per team */}
         {teams.length > 0 && (
           <div role="group" aria-label="View" style={{ display: "inline-flex", height: 34, boxSizing: "border-box", padding: 3, gap: 2, border: "1px solid var(--border)", borderRadius: 8, backgroundColor: "var(--card)", flexShrink: 0 }}>
-            {([["all", "All drivers", Rows3], ["teams", "By team", Users]] as const).map(([m, label, Icon]) => (
+            {([["all", "All Drivers", Rows3], ["teams", "By Team", Users]] as const).map(([m, label, Icon]) => (
               <button key={m} onClick={() => setViewMode(m)} aria-pressed={viewMode === m}
                 style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "0 11px", border: "none", borderRadius: 6, cursor: "pointer", fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 500, backgroundColor: viewMode === m ? "var(--primary)" : "transparent", color: viewMode === m ? "var(--primary-foreground)" : "var(--muted-foreground)", whiteSpace: "nowrap" }}>
                 <Icon size={14} /> {label}
@@ -1690,7 +1690,7 @@ export function DispatchTable() {
   );
 
   // One full board table (colgroup+thead+tbody) for the given driver list — used for the
-  // single "All drivers" table, and once per section in the "By team" view.
+  // single "All Drivers" table, and once per section in the "By Team" view.
   function renderBoardTable(driversList: Driver[], emptyMessage: string) {
     return (
           <table style={{ width: `max(100%, ${tableW}px)`, borderCollapse: "separate", borderSpacing: 0, tableLayout: "fixed" }}>

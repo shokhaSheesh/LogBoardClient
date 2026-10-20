@@ -33,8 +33,8 @@ const todayIso = () => { const d = new Date(); return `${d.getFullYear()}-${Stri
 // Whole days since a YYYY-MM-DD day, for how long a request has been waiting.
 const daysSince = (day: string) => Math.max(0, Math.round((Date.parse(todayIso()) - Date.parse(day)) / 86400000));
 
-const TYPE_FILTER = [{ value: "", label: "All types" }, ...COMP_TYPES];
-const STATUS_FILTER = [{ value: "", label: "All statuses" }, ...COMP_STATUSES.map(({ value, label }) => ({ value, label }))];
+const TYPE_FILTER = [{ value: "", label: "All Types" }, ...COMP_TYPES];
+const STATUS_FILTER = [{ value: "", label: "All Statuses" }, ...COMP_STATUSES.map(({ value, label }) => ({ value, label }))];
 const td: React.CSSProperties = { padding: "10px 14px", borderBottom: "1px solid var(--border)", verticalAlign: "middle", fontFamily: "var(--font-sans)", fontSize: 12.5, color: "var(--foreground)" };
 
 export function CompensationsPage() {
