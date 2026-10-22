@@ -1,4 +1,4 @@
-import { friendlyError } from "../lib/errors";
+import { friendlyError, tooManyAttempts } from "../lib/errors";
 import { useState } from "react";
 import { useNavigate } from "react-router";
 import { Eye, EyeOff } from "lucide-react";
@@ -98,7 +98,7 @@ export function LoginPage() {
         navigate("/workspace/dashboard", { replace: true });
       }
     } catch (err) {
-      setError(friendlyError(err, "Couldn't sign you in. Try again."));
+      setError(tooManyAttempts(err) || friendlyError(err, "Couldn't sign you in. Try again."));
     } finally {
       setSubmitting(false);
     }

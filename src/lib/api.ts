@@ -14,6 +14,9 @@ export class ApiError extends Error {
   status?: number;
   raw: string;
   fields: FieldProblem[];
+  // On a 429, how many seconds to wait before trying again, when the server said
+  // (Retry-After, or error.retry_after in the body); undefined when it didn't.
+  retryAfter?: number;
   constructor(message: string, code?: string, status?: number, fields: FieldProblem[] = []) {
     super(humanize(message, status));
     this.name = "ApiError";
@@ -68,10 +71,16 @@ export function onEntitlementError(fn: EntitlementListener): () => void {
 // Every failed response goes through here, so the gate is caught no matter which
 // helper (request / requestList / requestPayouts / upload) made the call.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function apiError(json: any, status: number): ApiError {
+function apiError(json: any, status: number, headers?: Headers): ApiError {
   const said = json?.error?.message ?? json?.error;
   const fields = Array.isArray(json?.error?.fields) ? json.error.fields : [];
   const err = new ApiError(typeof said === "string" ? said : "", json?.error?.code, status, fields);
+  if (status === 429) {
+    // Retry-After is readable cross-origin only when the API exposes it, so the body's
+    // retry_after is read too.
+    const wait = Number(headers?.get("Retry-After") ?? json?.error?.retry_after);
+    if (Number.isFinite(wait) && wait > 0) err.retryAfter = wait;
+  }
   const code = entitlementCode(err);
   if (code) entitlementListeners.forEach((fn) => fn(code, err.message));
   return err;
@@ -132,7 +141,7 @@ async function request<T>(
 
   const json = await res.json().catch(() => ({}));
 
-  if (!res.ok) throw apiError(json, res.status);
+  if (!res.ok) throw apiError(json, res.status, res.headers);
 
   // All success responses are wrapped: { "data": ... }
   return (json.data ?? json) as T;
