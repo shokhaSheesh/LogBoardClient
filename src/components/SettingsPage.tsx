@@ -121,7 +121,14 @@ function fromTeam(t: Partial<Team>): Record<string, unknown> {
   };
 }
 
-function parseCatalog(perms: string[]): { page: string; actions: string[] }[] {
+// One row of the role editor: a catalog module, its actions, and where it is listed —
+// the sidebar section it belongs to (from the backend's catalog), under its own label.
+interface CatalogEntry { page: string; label: string; section: string; actions: string[] }
+
+const pageLabel = (page: string) => page.split("_").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+
+// Entries from bare "<page>.<action>" keys, for a catalog shape that carries nothing else.
+function parseCatalog(perms: string[]): CatalogEntry[] {
   const map = new Map<string, string[]>();
   for (const p of perms) {
     if (typeof p !== "string") continue;
@@ -132,33 +139,38 @@ function parseCatalog(perms: string[]): { page: string; actions: string[] }[] {
     if (!map.has(page)) map.set(page, []);
     map.get(page)!.push(action);
   }
-  return [...map.entries()].map(([page, actions]) => ({ page, actions }));
+  return [...map.entries()].map(([page, actions]) => ({ page, label: pageLabel(page), section: "", actions }));
 }
 
-function normalizeCatalog(raw: unknown): string[] {
+// The catalog as the backend sends it: modules { key, label, section, actions }, already in
+// the sidebar's order. Older shapes (bare keys, a page→actions map) still parse, unsectioned.
+function normalizeCatalog(raw: unknown): CatalogEntry[] {
   if (!raw) return [];
   if (Array.isArray(raw)) {
-    // string[] — ideal case
     const strings = raw.filter((x) => typeof x === "string") as string[];
-    if (strings.length > 0) return strings;
-    // array of objects: { key, actions[] } or { name } or { resource, action }
-    return raw.flatMap((x: any) => {
-      if (typeof x !== "object" || x === null) return [];
-      if (typeof x.key === "string" && Array.isArray(x.actions))
-        return (x.actions as string[]).map((a: string) => `${x.key}.${a}`);
-      if (typeof x.name === "string") return [x.name];
-      if (typeof x.resource === "string" && typeof x.action === "string")
-        return [`${x.resource}.${x.action}`];
-      return [];
+    if (strings.length > 0) return parseCatalog(strings);
+    return raw.flatMap((x: any): CatalogEntry[] => {
+      if (typeof x !== "object" || x === null || typeof x.key !== "string" || !Array.isArray(x.actions)) return [];
+      return [{ page: x.key, label: x.label || pageLabel(x.key), section: x.section ?? "", actions: x.actions }];
     });
   }
   if (typeof raw === "object") {
-    // { "board": ["read","create"], "gross": ["read"] }
     return Object.entries(raw as Record<string, unknown>).flatMap(([page, actions]) =>
-      Array.isArray(actions) ? (actions as string[]).map((a: string) => `${page}.${a}`) : []
+      Array.isArray(actions) ? [{ page, label: pageLabel(page), section: "", actions: actions as string[] }] : []
     );
   }
   return [];
+}
+
+// Entries grouped by section, in catalog order; a module with no section is listed last.
+function bySection(entries: CatalogEntry[]): { section: string; entries: CatalogEntry[] }[] {
+  const groups: { section: string; entries: CatalogEntry[] }[] = [];
+  for (const e of [...entries.filter((x) => x.section), ...entries.filter((x) => !x.section)]) {
+    const name = e.section || "Other";
+    const g = groups.find((x) => x.section === name);
+    if (g) g.entries.push(e); else groups.push({ section: name, entries: [e] });
+  }
+  return groups;
 }
 
 function toUser(b: BackendUser): User {
@@ -1703,7 +1715,7 @@ function TeamsTab({ canCreate, canUpdate, canDelete }: {
 // ─── ROLES & PERMISSIONS TAB ─────────────────────────────────────────────────
 
 function RoleModal({ role, entries: catalogEntries, saving, error, onClose, onSave }: {
-  role: Partial<Role>; entries: { page: string; actions: string[] }[]; saving?: boolean; error?: string | null; onClose: () => void; onSave: (r: Role) => void;
+  role: Partial<Role>; entries: CatalogEntry[]; saving?: boolean; error?: string | null; onClose: () => void; onSave: (r: Role) => void;
 }) {
   const allActions = [...new Set(catalogEntries.flatMap((e) => e.actions))].sort(
     (a, b) => (ACTION_ORDER.indexOf(a) + 1 || 99) - (ACTION_ORDER.indexOf(b) + 1 || 99)
@@ -1715,12 +1727,13 @@ function RoleModal({ role, entries: catalogEntries, saving, error, onClose, onSa
   const initPerms = (): Permissions => {
     const base = buildEmpty();
     if (role.permissions) {
-      // Carry over everything the role already holds — including keys the catalog has no
-      // checkbox for — so saving the form can never silently strip a permission.
+      // Only what the catalog offers. A key it no longer lists (gross.create once Gross
+      // became read/update) is not a permission any more, and the server rejects a role
+      // saved with one, so it is left out rather than sent back.
       for (const [page, actions] of Object.entries(role.permissions)) {
-        if (!base[page]) base[page] = {};
+        if (!base[page]) continue;
         for (const [action, val] of Object.entries(actions)) {
-          base[page][action] = val as boolean;
+          if (action in base[page]) base[page][action] = val as boolean;
         }
       }
     }
@@ -1793,36 +1806,42 @@ function RoleModal({ role, entries: catalogEntries, saving, error, onClose, onSa
                     <div key={a} style={{ padding: "8px 6px", fontFamily: "var(--font-sans)", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", textAlign: "center", color: "var(--muted-foreground)" }}>{a}</div>
                   ))}
                 </div>
-                {/* Rows */}
-                {catalogEntries.map(({ page, actions }, pi) => {
-                  const perms = form.permissions?.[page] ?? {};
-                  const allOn = actions.every((a) => perms[a]);
-                  return (
-                    <div key={page} style={{ display: "grid", gridTemplateColumns: `160px 60px repeat(${allActions.length}, 1fr)`, borderBottom: pi < catalogEntries.length - 1 ? "1px solid var(--border)" : "none" }}>
-                      <div style={{ padding: "10px 14px", fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 500, color: "var(--foreground)", display: "flex", alignItems: "center", textTransform: "capitalize" }}>{page}</div>
-                      <div style={{ padding: "10px 6px", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                        <button aria-label={`${allOn ? "Remove" : "Grant"} all ${page} permissions`} aria-pressed={allOn} onClick={() => toggleAll(page, !allOn, actions)} style={{ background: "none", border: "none", cursor: "pointer", color: allOn ? "var(--primary)" : "var(--muted-foreground)", display: "flex" }}>
-                          {allOn ? <ToggleRight size={22} /> : <ToggleLeft size={22} />}
-                        </button>
-                      </div>
-                      {allActions.map((action) => {
-                        const applicable = actions.includes(action);
-                        const on = applicable && !!perms[action];
-                        return (
-                          <div key={action} style={{ padding: "10px 6px", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                            {applicable ? (
-                              <button aria-label={`${page}: ${action}`} aria-pressed={on} onClick={() => toggle(page, action)} style={{ width: 22, height: 22, borderRadius: 4, border: "none", cursor: "pointer", backgroundColor: on ? "var(--primary)" : "var(--muted)", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.1s" }}>
-                                {on && <Check size={13} style={{ color: "#fff" }} strokeWidth={3} />}
-                              </button>
-                            ) : (
-                              <div style={{ width: 22, height: 22, borderRadius: 4, backgroundColor: "var(--muted)", opacity: 0.35 }} />
-                            )}
+                {/* Rows, under the sidebar's sections */}
+                {bySection(catalogEntries).map(({ section, entries }, gi, groups) => (
+                  <div key={section}>
+                    <div style={{ padding: "7px 14px", backgroundColor: "var(--muted)", borderBottom: "1px solid var(--border)", fontFamily: "var(--font-sans)", fontSize: 10.5, fontWeight: 700, color: "var(--muted-foreground)", textTransform: "uppercase", letterSpacing: "0.08em" }}>{section}</div>
+                    {entries.map(({ page, label, actions }, ei) => {
+                      const last = gi === groups.length - 1 && ei === entries.length - 1;
+                      const perms = form.permissions?.[page] ?? {};
+                      const allOn = actions.every((a) => perms[a]);
+                      return (
+                        <div key={page} style={{ display: "grid", gridTemplateColumns: `160px 60px repeat(${allActions.length}, 1fr)`, borderBottom: last ? "none" : "1px solid var(--border)" }}>
+                          <div style={{ padding: "10px 14px 10px 22px", fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 500, color: "var(--foreground)", display: "flex", alignItems: "center" }}>{label}</div>
+                          <div style={{ padding: "10px 6px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                            <button aria-label={`${allOn ? "Remove" : "Grant"} all ${label} permissions`} aria-pressed={allOn} onClick={() => toggleAll(page, !allOn, actions)} style={{ background: "none", border: "none", cursor: "pointer", color: allOn ? "var(--primary)" : "var(--muted-foreground)", display: "flex" }}>
+                              {allOn ? <ToggleRight size={22} /> : <ToggleLeft size={22} />}
+                            </button>
                           </div>
-                        );
-                      })}
-                    </div>
-                  );
-                })}
+                          {allActions.map((action) => {
+                            const applicable = actions.includes(action);
+                            const on = applicable && !!perms[action];
+                            return (
+                              <div key={action} style={{ padding: "10px 6px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                                {applicable ? (
+                                  <button aria-label={`${label}: ${action}`} aria-pressed={on} onClick={() => toggle(page, action)} style={{ width: 22, height: 22, borderRadius: 4, border: "none", cursor: "pointer", backgroundColor: on ? "var(--primary)" : "var(--muted)", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.1s" }}>
+                                    {on && <Check size={13} style={{ color: "#fff" }} strokeWidth={3} />}
+                                  </button>
+                                ) : (
+                                  <span title={`${label} has no ${action}`} style={{ color: "var(--muted-foreground)", opacity: 0.5, fontSize: 13 }}>–</span>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ))}
               </div>
             )}
           </div>
@@ -1857,7 +1876,7 @@ function RolesTab({ onRolesChange, canCreate, canUpdate, canDelete }: {
   const [deleting, setDeleting] = useState<Role | null>(null);
   const [delBusy, setDelBusy]   = useState(false);
   const [delErr, setDelErr]     = useState<string | null>(null);
-  const [catalog, setCatalog]   = useState<string[]>([]);
+  const [catalog, setCatalog]   = useState<CatalogEntry[]>([]);
   // The role form is built from the permission catalog. Until that request settles the
   // form would be built from a guess, so Create/Edit stay disabled while it's in flight.
   const [catalogReady, setCatalogReady] = useState(false);
@@ -1918,10 +1937,10 @@ function RolesTab({ onRolesChange, canCreate, canUpdate, canDelete }: {
   };
 
   // If catalog fetch failed/empty, derive pages from loaded roles + assume full CRUD
-  const effectiveEntries: { page: string; actions: string[] }[] = parseCatalog(catalog).length > 0
-    ? parseCatalog(catalog)
+  const effectiveEntries: CatalogEntry[] = catalog.length > 0
+    ? catalog
     : [...new Set(roles.flatMap((r) => Object.keys(r.permissions)))].map((page) => ({
-        page,
+        page, label: pageLabel(page), section: "",
         actions: ACTION_ORDER,
       }));
 
@@ -1943,7 +1962,7 @@ function RolesTab({ onRolesChange, canCreate, canUpdate, canDelete }: {
           <thead>
             <tr>
               <TH width={190}>Role Name</TH>
-              {effectiveEntries.map(({ page }) => <TH key={page} width={140} align="center" style={{ textTransform: "capitalize" }}>{page}</TH>)}
+              {effectiveEntries.map(({ page, label }) => <TH key={page} width={140} align="center">{label}</TH>)}
               {/* Pinned right: with a dozen permission columns the table scrolls sideways,
                   and the actions must not scroll out of reach. */}
               <TH width={90} align="center" style={{ right: 0, zIndex: 6, boxShadow: "inset 1px 0 0 var(--border)" }}>Actions</TH>
@@ -2015,17 +2034,11 @@ function WeekTab({ canEdit }: { canEdit: boolean }) {
   const [startDay, setStartDay] = useState<number | null>(null); // null = still loading
   const [saving, setSaving]     = useState(false);
   const [loadError, setLoadError] = useState(false);
-  // mc/name/eld are required on the owner company PUT body — fetched once and
-  // echoed back unchanged alongside the new week_start_day.
-  const companyRef = useRef<{ mc: string; name: string; eld?: string } | null>(null);
 
   useEffect(() => {
     if (!companyId) { setLoadError(true); return; }
-    api.get<{ mc: string; name: string; eld?: string; week_start_day?: number }>(`/company`)
-      .then((c) => {
-        companyRef.current = { mc: c.mc, name: c.name, eld: c.eld };
-        setStartDay(typeof c.week_start_day === "number" ? c.week_start_day : 1);
-      })
+    api.get<{ week_start_day?: number }>(`/company/work-week`)
+      .then((c) => setStartDay(typeof c.week_start_day === "number" ? c.week_start_day : 1))
       .catch(() => setLoadError(true));
   }, [companyId]);
 
@@ -2035,16 +2048,12 @@ function WeekTab({ canEdit }: { canEdit: boolean }) {
 
   const save = async () => {
     const day = pending;
-    if (!canEdit || startDay === null || day === null || day === startDay || saving || !companyRef.current) return;
+    if (!canEdit || startDay === null || day === null || day === startDay || saving) return;
     const prev = startDay;
     setStartDay(day); // optimistic
     setSaving(true);
     try {
-      // The PUT replaces mc/name/eld too. Re-read them now so a rename made since this
-      // tab opened isn't reverted by the copy fetched on mount.
-      const fresh = await api.get<{ mc: string; name: string; eld?: string }>(`/company`);
-      companyRef.current = { mc: fresh.mc, name: fresh.name, eld: fresh.eld };
-      await api.put(`/company`, { ...companyRef.current, week_start_day: day });
+      await api.put(`/company/work-week`, { week_start_day: day });
       // Let the Gross page snap to the new current week immediately.
       window.dispatchEvent(new CustomEvent("week-settings-changed", { detail: { weekStartDay: day } }));
       setPending(null);
@@ -2325,7 +2334,7 @@ function FuelTab({ canEdit }: { canEdit: boolean }) {
   const [loadError, setLoadError] = useState(false);
 
   useEffect(() => {
-    api.get<{ fuel_ifta_mode?: IftaMode }>(`/company`)
+    api.get<{ fuel_ifta_mode?: IftaMode }>(`/company/fuel-settings`)
       .then((c) => setSaved(c.fuel_ifta_mode === "pump" ? "pump" : "net"))
       .catch(() => setLoadError(true));
   }, []);
@@ -2336,10 +2345,7 @@ function FuelTab({ canEdit }: { canEdit: boolean }) {
     if (!canEdit || !dirty || saving) return;
     setSaving(true);
     try {
-      // The PUT needs mc/name every time; re-read them now so a rename made since this tab
-      // opened isn't reverted. Fields left out (the work week) keep what is stored.
-      const fresh = await api.get<{ mc: string; name: string; eld?: string }>(`/company`);
-      await api.put(`/company`, { mc: fresh.mc, name: fresh.name, eld: fresh.eld, fuel_ifta_mode: picked });
+      await api.put(`/company/fuel-settings`, { fuel_ifta_mode: picked });
       setSaved(picked);
       setPicked(null);
       notify.success("Fuel setting saved. New fuel plans use it.");
@@ -2431,11 +2437,10 @@ export function SettingsPage() {
     { id: "users",  label: "Users",               icon: <Users        size={15} />, module: "users" },
     { id: "teams",  label: "Teams",               icon: <UsersRound   size={15} />, module: "teams" },
     { id: "roles",  label: "Roles & Permissions", icon: <ShieldCheck  size={15} />, module: "roles" },
-    { id: "week",   label: "Work Week",           icon: <CalendarDays size={15} />, module: "settings" },
-    { id: "fuel",   label: "Fuel",                icon: <Fuel         size={15} />, module: "settings" },
+    { id: "week",   label: "Work Week",           icon: <CalendarDays size={15} />, module: "work_week" },
+    { id: "fuel",   label: "Fuel",                icon: <Fuel         size={15} />, module: "fuel_settings" },
     { id: "eld",    label: "ELD",                 icon: <Truck        size={15} />, module: "eld" },
-    // The KPI table pays dispatchers, so it rides on the Payouts keys: read to see it, update to change it.
-    { id: "kpi",    label: "KPI Table",           icon: <Percent      size={15} />, module: "payouts" },
+    { id: "kpi",    label: "KPI Table",           icon: <Percent      size={15} />, module: "kpi_table" },
   ];
   const tabs = TAB_DEFS.filter((t) => can(t.module));
 
@@ -2477,10 +2482,10 @@ export function SettingsPage() {
           {tab === "users" && <UsersTab roles={roles} teams={teams} reloadTeams={reloadTeams} reloadRoles={reloadRoles} canCreate={can("users", "create")} canUpdate={can("users", "update")} canDelete={can("users", "delete")} />}
           {tab === "teams" && <TeamsTab canCreate={can("teams", "create")} canUpdate={can("teams", "update")} canDelete={can("teams", "delete")} />}
           {tab === "roles" && <RolesTab onRolesChange={setRoles} canCreate={can("roles", "create")} canUpdate={can("roles", "update")} canDelete={can("roles", "delete")} />}
-          {tab === "week"  && <WeekTab canEdit={can("settings", "update")} />}
-          {tab === "fuel"  && <FuelTab canEdit={can("settings", "update")} />}
+          {tab === "week"  && <WeekTab canEdit={can("work_week", "update")} />}
+          {tab === "fuel"  && <FuelTab canEdit={can("fuel_settings", "update")} />}
           {tab === "eld"   && <EldTab canManage={canEldUpdate} />}
-          {tab === "kpi"   && <KpiTableTab canEdit={can("payouts", "update")} />}
+          {tab === "kpi"   && <KpiTableTab canEdit={can("kpi_table", "update")} />}
         </div>
       </div>
     </div>
