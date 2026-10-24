@@ -49,7 +49,7 @@ interface Team {
   id: string;
   name: string;
   userIds: string[];
-  driverNames: string[];
+  driverIds: string[];
 }
 
 interface User {
@@ -101,7 +101,7 @@ interface BackendTeam {
   id: string;
   name: string;
   user_ids?: string[];
-  driver_names?: string[];
+  driver_ids?: string[];
 }
 
 function toTeam(b: BackendTeam): Team {
@@ -109,7 +109,7 @@ function toTeam(b: BackendTeam): Team {
     id:          b.id,
     name:        b.name,
     userIds:     b.user_ids     ?? [],
-    driverNames: b.driver_names ?? [],
+    driverIds:   b.driver_ids   ?? [],
   };
 }
 
@@ -117,7 +117,7 @@ function fromTeam(t: Partial<Team>): Record<string, unknown> {
   return {
     name:         t.name,
     user_ids:     t.userIds     ?? [],
-    driver_names: t.driverNames ?? [],
+    driver_ids:   t.driverIds   ?? [],
   };
 }
 
@@ -517,7 +517,7 @@ function ActionBtn({ icon, tone, onClick, label }: { icon: React.ReactNode; tone
   return (
     <button onClick={onClick} aria-label={label} title={label}
       style={{ width: 30, height: 30, borderRadius: 7, border: "none", backgroundColor: "transparent", color: "var(--muted-foreground)", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", transition: "color 0.12s, background-color 0.12s" }}
-      onMouseEnter={on} onMouseLeave={off} onFocus={on} onBlur={off}
+      onMouseEnter={on} onMouseLeave={off} onFocus={(e) => { if (e.currentTarget.matches(":focus-visible")) on(e); }} onBlur={off}
     >{icon}</button>
   );
 }
@@ -1402,6 +1402,21 @@ function AsyncMultiSelect({
   );
 }
 
+// Team members as chips: the first few by name, the rest folded into one "+N" chip whose
+// tooltip lists them, so a big team keeps its row one line tall.
+const TEAM_CHIPS_SHOWN = 3;
+function MemberChips({ labels, empty, color, bg }: { labels: string[]; empty: string; color: string; bg: string }) {
+  const chip: React.CSSProperties = { fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: 500, color, backgroundColor: bg, borderRadius: 5, padding: "2px 9px", whiteSpace: "nowrap" };
+  if (labels.length === 0) return <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)", fontStyle: "italic" }}>{empty}</span>;
+  const rest = labels.slice(TEAM_CHIPS_SHOWN);
+  return (
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+      {labels.slice(0, TEAM_CHIPS_SHOWN).map((l, i) => <span key={`${l}-${i}`} style={chip}>{l}</span>)}
+      {rest.length > 0 && <span title={rest.join(", ")} style={{ ...chip, fontWeight: 600, color: "var(--muted-foreground)", backgroundColor: "transparent", boxShadow: "inset 0 0 0 1px var(--border)", cursor: "default" }}>+{rest.length}</span>}
+    </div>
+  );
+}
+
 function TeamModal({ team, users, driverLabels, saving, error, onClose, onSave }: {
   team: Partial<Team>; users: User[]; driverLabels: Record<string, string>;
   saving?: boolean; error?: string | null; onClose: () => void; onSave: (t: Team) => void;
@@ -1420,7 +1435,7 @@ function TeamModal({ team, users, driverLabels, saving, error, onClose, onSave }
   };
 
   // Seed chip labels for members an edit opens with. Users resolve id -> name from the
-  // tab's (small) users list; a driver's key IS its name, prettied via driverLabels.
+  // tab's (small) users list; drivers resolve id -> label via driverLabels.
   const userLabelSeed = Object.fromEntries(users.map((u) => [u.id, u.name]));
 
   const toggleUser = (id: string) => setForm((f) => {
@@ -1428,9 +1443,9 @@ function TeamModal({ team, users, driverLabels, saving, error, onClose, onSave }
     return { ...f, userIds: ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id] };
   });
 
-  const toggleDriver = (name: string) => setForm((f) => {
-    const names = f.driverNames ?? [];
-    return { ...f, driverNames: names.includes(name) ? names.filter((x) => x !== name) : [...names, name] };
+  const toggleDriver = (id: string) => setForm((f) => {
+    const ids = f.driverIds ?? [];
+    return { ...f, driverIds: ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id] };
   });
 
   return (
@@ -1469,15 +1484,15 @@ function TeamModal({ team, users, driverLabels, saving, error, onClose, onSave }
 
           <AsyncMultiSelect
             label="Drivers"
-            selectedKeys={form.driverNames ?? []}
+            selectedKeys={form.driverIds ?? []}
             initialLabels={driverLabels}
             fetchPage={async (q, p) => {
               const { items, total } = await api.getList<any>("/drivers", { q: q || undefined, page: p, page_size: 20 });
-              // Teams key drivers by NAME (not id), so the raw name is the selection key.
-              return { items: (items ?? []).filter((d: any) => d.name).map((d: any) => ({ key: d.name as string, label: driverDisplayName(d) })), total };
+              // Keyed by id: two drivers can share a name.
+              return { items: (items ?? []).map((d: any) => ({ key: d.id as string, label: driverDisplayName(d) })), total };
             }}
-            onToggle={(name) => toggleDriver(name)}
-            onClear={() => setForm((f) => ({ ...f, driverNames: [] }))}
+            onToggle={(id) => toggleDriver(id)}
+            onClear={() => setForm((f) => ({ ...f, driverIds: [] }))}
             placeholder="Select drivers…"
             chipColor="var(--foreground)"
             chipBg="var(--muted)"
@@ -1500,11 +1515,10 @@ function TeamsTab({ canCreate, canUpdate, canDelete }: {
 }) {
   const [teams, setTeams]       = useState<Team[]>([]);
   const [users, setUsers]       = useState<User[]>([]);
-  // name -> display label ("Name 1 & Name 2" for team drivers). The dispatch-pod
-  // Teams API resolves members by the raw driver `name`, so that stays the
-  // identity key everywhere — this map only affects what's shown on screen (the teams
-  // table and the pre-selected chips in the modal). The modal's driver picker itself
-  // pages the full fleet on demand, so this preload is display-only.
+  // id -> display label ("Name 1 & Name 2" for team drivers), for the teams table and
+  // the pre-selected chips in the modal. Teams hold drivers by id, since two drivers can
+  // share a name. The modal's driver picker itself pages the full fleet on demand, so
+  // this preload is display-only.
   const [driverLabels, setDriverLabels] = useState<Record<string, string>>({});
   const [loading, setLoading]   = useState(true);
   const [loadErr, setLoadErr]   = useState<string | null>(null);
@@ -1542,7 +1556,7 @@ function TeamsTab({ canCreate, canUpdate, canDelete }: {
       .then(([teamsData, usersData, driverList]) => {
         setTeams((teamsData ?? []).map(toTeam));
         setUsers((usersData ?? []).map(toUser));
-        setDriverLabels(Object.fromEntries(driverList.filter((d) => d.name).map((d) => [d.name, driverDisplayName(d)])));
+        setDriverLabels(Object.fromEntries(driverList.map((d) => [d.id, driverDisplayName(d)])));
       })
       .catch((e) => setLoadErr(loadErrText(e, "teams")))
       .finally(() => setLoading(false));
@@ -1586,7 +1600,7 @@ function TeamsTab({ canCreate, canUpdate, canDelete }: {
   const q = search.toLowerCase();
   const filtered = teams.filter((t) =>
     !q || t.name.toLowerCase().includes(q) ||
-    t.driverNames.some((d) => d.toLowerCase().includes(q)) ||
+    t.driverIds.some((d) => (driverLabels[d] ?? "").toLowerCase().includes(q)) ||
     users.filter((u) => t.userIds.includes(u.id)).some((u) => u.name.toLowerCase().includes(q))
   );
 
@@ -1613,7 +1627,7 @@ function TeamsTab({ canCreate, canUpdate, canDelete }: {
           />
         </div>
         {canCreate && (
-          <button onClick={() => { setEditing({ userIds: [], driverNames: [] }); setSaveErr(null); setModal("create"); }} style={{ display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 14px", borderRadius: 7, border: "none", backgroundColor: "var(--primary)", color: "#fff", cursor: "pointer" }}>
+          <button onClick={() => { setEditing({ userIds: [], driverIds: [] }); setSaveErr(null); setModal("create"); }} style={{ display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "7px 14px", borderRadius: 7, border: "none", backgroundColor: "var(--primary)", color: "#fff", cursor: "pointer" }}>
             <Plus size={14} /> Create Team
           </button>
         )}
@@ -1642,22 +1656,10 @@ function TeamsTab({ canCreate, canUpdate, canDelete }: {
 
                   <TD><span style={{ fontWeight: 600 }}>{t.name}</span></TD>
                   <td style={{ padding: "8px 14px", borderBottom: "1px solid var(--border)", verticalAlign: "middle" }}>
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-                      {teamUsers.length === 0
-                        ? <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)", fontStyle: "italic" }}>No users</span>
-                        : teamUsers.map((u) => (
-                          <span key={u.id} style={{ fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: 500, color: "var(--secondary-foreground)", backgroundColor: "var(--primary-soft)", borderRadius: 5, padding: "2px 9px" }}>{u.name}</span>
-                        ))}
-                    </div>
+                    <MemberChips labels={teamUsers.map((u) => u.name)} empty="No users" color="var(--secondary-foreground)" bg="var(--primary-soft)" />
                   </td>
                   <td style={{ padding: "8px 14px", borderBottom: "1px solid var(--border)", verticalAlign: "middle" }}>
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-                      {t.driverNames.length === 0
-                        ? <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--muted-foreground)", fontStyle: "italic" }}>No drivers</span>
-                        : t.driverNames.map((d) => (
-                          <span key={d} style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--foreground)", backgroundColor: "var(--muted)", borderRadius: 5, padding: "2px 9px" }}>{driverLabels[d] ?? d}</span>
-                        ))}
-                    </div>
+                    <MemberChips labels={t.driverIds.flatMap((d) => driverLabels[d] ?? [])} empty="No drivers" color="var(--foreground)" bg="var(--muted)" />
                   </td>
                   <td style={{ padding: "4px 10px", borderBottom: "1px solid var(--border)", verticalAlign: "middle", textAlign: "center", position: "sticky", right: 0, backgroundColor: "var(--card)", boxShadow: "inset 1px 0 0 var(--border)" }}>
                     <div style={{ display: "inline-flex", gap: 2 }}>

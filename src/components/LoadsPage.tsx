@@ -573,7 +573,7 @@ export function ActionBtn({ icon, tone, onClick, label }: { icon: React.ReactNod
   return (
     <button onClick={onClick} aria-label={label} title={label}
       style={{ width: 30, height: 30, borderRadius: 7, border: "none", backgroundColor: "transparent", color: "var(--muted-foreground)", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", transition: "color 0.12s, background-color 0.12s" }}
-      onMouseEnter={on} onMouseLeave={off} onFocus={on} onBlur={off}
+      onMouseEnter={on} onMouseLeave={off} onFocus={(e) => { if (e.currentTarget.matches(":focus-visible")) on(e); }} onBlur={off}
     >
       {icon}
     </button>
