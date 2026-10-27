@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "../lib/auth";
 import { hasPerm } from "../lib/permissions";
+import { FUEL_ENABLED, FUEL_MODULES } from "../lib/features";
 import { eldErrorMessage } from "./EldModal";
 import { PageLoader } from "./PageLoader";
 import { FormError, formErrorInModal, friendlyError, notify } from "./feedback";
@@ -1824,7 +1825,8 @@ function RoleModal({ role, entries: catalogEntries, saving, error, onClose, onSa
                   ))}
                 </div>
                 {/* Rows, under the sidebar's sections */}
-                {bySection(catalogEntries).map(({ section, entries }, gi, groups) => (
+                {/* Fuel's rows are hidden while fuel is off; the role keeps what it already had on them. */}
+                {bySection(FUEL_ENABLED ? catalogEntries : catalogEntries.filter((e) => !FUEL_MODULES.includes(e.page))).map(({ section, entries }, gi, groups) => (
                   <div key={section}>
                     <div style={{ padding: "7px 14px", backgroundColor: "var(--muted)", borderBottom: "1px solid var(--border)", fontFamily: "var(--font-sans)", fontSize: 10.5, fontWeight: 700, color: "var(--muted-foreground)", textTransform: "uppercase", letterSpacing: "0.08em" }}>{section}</div>
                     {entries.map(({ page, label, actions }, ei) => {
@@ -2459,7 +2461,7 @@ export function SettingsPage() {
     { id: "eld",    label: "ELD",                 icon: <Truck        size={15} />, module: "eld" },
     { id: "kpi",    label: "KPI Table",           icon: <Percent      size={15} />, module: "kpi_table" },
   ];
-  const tabs = TAB_DEFS.filter((t) => can(t.module));
+  const tabs = TAB_DEFS.filter((t) => can(t.module) && (FUEL_ENABLED || t.id !== "fuel"));
 
   // The open tab is the URL's last segment (/workspace/settings/teams), so a refresh or a
   // shared link lands on the same tab. A missing, unknown or no-longer-permitted segment

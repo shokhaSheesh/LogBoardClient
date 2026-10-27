@@ -31,6 +31,7 @@ import { NumberField } from "./NumberField";
 import { ScrollPane, ScrollX } from "./ScrollX";
 import { useLayer, backdropClose } from "../lib/layers";
 import { useRowNav } from "../lib/rowNav";
+import { FUEL_ENABLED } from "../lib/features";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -2545,7 +2546,7 @@ function LoadDetail({ load, onBack, onEdit, onPlanMade, calcFuel = false }: { lo
             </div>
 
             {/* Fuel: where to buy diesel on this trip, and how much */}
-            <FuelPlanCard
+            {FUEL_ENABLED && <FuelPlanCard
               loadId={load.id}
               loadLabel={load.loadId}
               driverName={load.driver}
@@ -2556,7 +2557,7 @@ function LoadDetail({ load, onBack, onEdit, onPlanMade, calcFuel = false }: { lo
               onEdit={onEdit}
               onPlanMade={onPlanMade}
               autoStart={calcFuel}
-            />
+            />}
           </div>
         )}
 
@@ -2618,8 +2619,9 @@ export function LoadsPage() {
   const canCreate = hasPerm(user, "loads", "create");
   const canUpdate = hasPerm(user, "loads", "update");
   // The Fuel column shows a load's plan to anyone who may read plans; Calculate needs create.
-  const canFuel = hasPerm(user, "fuel_plans", "read");
-  const canFuelMake = hasPerm(user, "fuel_plans", "create");
+  // Both stay off while fuel is switched off (lib/features).
+  const canFuel = FUEL_ENABLED && hasPerm(user, "fuel_plans", "read");
+  const canFuelMake = FUEL_ENABLED && hasPerm(user, "fuel_plans", "create");
   const canDelete = hasPerm(user, "loads", "delete");
   const [loads, setLoads]           = useState<Load[]>([]);
   const nav = useRowNav(loads.length, loads);

@@ -1,4 +1,5 @@
 import type { AuthUser } from "./auth";
+import { FUEL_ENABLED } from "./features";
 
 // Maps each workspace page to the company-plane permission module that gates it.
 export interface PagePerm {
@@ -11,7 +12,8 @@ export interface PagePerm {
 
 // The company-plane modules that Settings manages, one per tab — the page shows if the user
 // can read any of them (and each tab is gated individually inside SettingsPage).
-export const SETTINGS_MODULES = ["users", "teams", "roles", "work_week", "fuel_settings", "eld", "kpi_table"];
+export const SETTINGS_MODULES = ["users", "teams", "roles", "work_week", "fuel_settings", "eld", "kpi_table"]
+  .filter((m) => FUEL_ENABLED || m !== "fuel_settings");
 
 export const PAGE_PERMS: PagePerm[] = [
   // In the sidebar's order: the first one a user can open is where they land.

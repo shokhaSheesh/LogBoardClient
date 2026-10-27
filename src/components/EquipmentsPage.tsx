@@ -13,6 +13,7 @@ import { ScrollPane } from "./ScrollX";
 import { useDialogKeys, useLayer, backdropClose } from "../lib/layers";
 import { useRowNav } from "../lib/rowNav";
 import { fmtDate } from "../lib/dates";
+import { FUEL_ENABLED } from "../lib/features";
 import { DatePicker } from "./DatePicker";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -603,7 +604,7 @@ function EquipModal({ title, row, onClose, onSave, saving = false, error, equipK
     setFuelChecked(true);
     setInsChecked(true);
     if (!form.unit?.toString().trim()) return;
-    if (equipKind === "truck" && fuelOutOfRange(truck).length > 0) return;
+    if (FUEL_ENABLED && equipKind === "truck" && fuelOutOfRange(truck).length > 0) return;
     if (insProblem) return;
     onSave(form as EquipRow);
   };
@@ -740,7 +741,7 @@ function EquipModal({ title, row, onClose, onSave, saving = false, error, equipK
           })()}
 
           {/* The fuel plan's numbers for this truck. Empty uses the default shown in grey. */}
-          {equipKind === "truck" && (() => {
+          {FUEL_ENABLED && equipKind === "truck" && (() => {
             const val = (f: typeof FUEL_FIELDS[number]) => truck[f.key] || f.def;
             const range = Math.round(val(FUEL_FIELDS[0]) * val(FUEL_FIELDS[1]));
             return (
