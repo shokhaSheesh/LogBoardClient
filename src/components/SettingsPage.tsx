@@ -691,7 +691,8 @@ function UserModal({ user, roles, teams, saving, error, onClose, onSave, canSetP
   const coarseRoles = roles.length === 0;
   const roleOpts  = coarseRoles
     ? [{ value: "dispatcher", label: "Dispatcher" }, { value: "updater", label: "Updater" }]
-    : roles.map((r) => ({ value: r.id, label: r.name }));
+    // The Owner role is the company owner's alone, so it is never handed out here.
+    : roles.filter((r) => !r.system).map((r) => ({ value: r.id, label: r.name }));
   const teamOpts  = teams.map((t) => ({ value: t.id, label: t.name }));
   const statusOpts = [{ value: "Active", label: "Active" }, { value: "Suspended", label: "Suspended" }];
 
