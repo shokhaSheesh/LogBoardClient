@@ -17,6 +17,9 @@ export class ApiError extends Error {
   // On a 429, how many seconds to wait before trying again, when the server said
   // (Retry-After, or error.retry_after in the body); undefined when it didn't.
   retryAfter?: number;
+  // The server's X-Request-ID for the failed call: every log line of that request carries
+  // it, so support can find the request from it.
+  requestId?: string;
   constructor(message: string, code?: string, status?: number, fields: FieldProblem[] = []) {
     super(humanize(message, status));
     this.name = "ApiError";
@@ -33,25 +36,16 @@ export function isForbidden(e: unknown): boolean {
   return e instanceof ApiError && (e.status === 403 || e.code === "forbidden");
 }
 
-// ─── Entitlement (the plan gate) ─────────────────────────────────────────────
+// ─── Entitlement (the company gate) ──────────────────────────────────────────
 //
-// A board caller is cut off from every tenant route unless their company is
-// currently entitled — it has a plan, status Active, and an unexpired period.
-// These 403s are not the user doing anything wrong, so they must not surface as
-// "Update failed" toasts; the app tells them what happened and who can fix it.
-//
-// Three of them are total: reads 403 as well, so the whole workspace is dead.
-// grace_read_only is different — the board still READS for 7 days after the last
-// subscription lapses, and only writes are refused.
-export type EntitlementCode =
-  | "plan_required"
-  | "company_suspended"
-  | "subscription_expired"
-  | "grace_read_only";
+// A board caller is cut off from every tenant route unless their company is Active:
+// company_suspended when an admin closed it (Suspended or Pending), company_unavailable
+// when it can't be found or read. These 403s are not the user doing anything wrong, so
+// they must not surface as "Update failed" toasts; the app tells them what happened and
+// who can fix it. Reads 403 as well, so the whole workspace is dead.
+export type EntitlementCode = "company_suspended" | "company_unavailable";
 
-const ENTITLEMENT_CODES = new Set<string>([
-  "plan_required", "company_suspended", "subscription_expired", "grace_read_only",
-]);
+const ENTITLEMENT_CODES = new Set<string>(["company_suspended", "company_unavailable"]);
 
 export function entitlementCode(e: unknown): EntitlementCode | null {
   if (!(e instanceof ApiError) || e.status !== 403) return null;
@@ -59,7 +53,7 @@ export function entitlementCode(e: unknown): EntitlementCode | null {
 }
 
 // The gate can trip on ANY request, from any page, so it can't be handled at a call
-// site. Requests announce it here and the layout renders the block screen / banner.
+// site. Requests announce it here and the layout renders the block screen.
 type EntitlementListener = (code: EntitlementCode, message: string) => void;
 const entitlementListeners = new Set<EntitlementListener>();
 
@@ -81,6 +75,7 @@ function apiError(json: any, status: number, headers?: Headers): ApiError {
     const wait = Number(headers?.get("Retry-After") ?? json?.error?.retry_after);
     if (Number.isFinite(wait) && wait > 0) err.retryAfter = wait;
   }
+  err.requestId = headers?.get("X-Request-ID") ?? undefined;
   const code = entitlementCode(err);
   if (code) entitlementListeners.forEach((fn) => fn(code, err.message));
   return err;
@@ -131,7 +126,7 @@ async function request<T>(
     // A wrong password is a 401 too (invalid_credentials). That is a form error, not
     // an expired session — it must reach the caller instead of forcing a sign-out.
     const json = await res.json().catch(() => ({}));
-    if (json?.error?.code === "invalid_credentials") throw apiError(json, res.status);
+    if (json?.error?.code === "invalid_credentials") throw apiError(json, res.status, res.headers);
     clearToken();
     window.location.href = "/login";
     throw new Error("Unauthorized");
@@ -175,7 +170,7 @@ async function requestList<T>(
   if (res.status === 204) return { items: [], total: 0 };
 
   const json = await res.json().catch(() => ({}));
-  if (!res.ok) throw apiError(json, res.status);
+  if (!res.ok) throw apiError(json, res.status, res.headers);
 
   const data = json.data ?? json;
   const items = Array.isArray(data) ? data : [];
@@ -198,7 +193,7 @@ async function requestPayouts<T>(
   if (res.status === 204) return { items: [], total: 0, totals: { rate: 0, added: 0, deducted: 0, net: 0 } };
 
   const json = await res.json().catch(() => ({}));
-  if (!res.ok) throw apiError(json, res.status);
+  if (!res.ok) throw apiError(json, res.status, res.headers);
 
   return {
     items: Array.isArray(json.data) ? json.data : [],
@@ -226,7 +221,7 @@ async function upload<T>(path: string, file: File, field = "file"): Promise<T> {
   const json = await res.json().catch(() => ({}));
   // Carries the machine-readable code (file_too_large, unsupported_media_type,
   // not_configured, ai_unavailable, …) so callers can map it to a specific message.
-  if (!res.ok) throw apiError(json, res.status);
+  if (!res.ok) throw apiError(json, res.status, res.headers);
   return (json.data ?? json) as T;
 }
 
@@ -245,7 +240,7 @@ async function getBlob(path: string): Promise<Blob> {
 
   if (res.status === 401) { clearToken(); window.location.href = "/login"; throw new Error("Unauthorized"); }
   // A failure on a binary route still comes back as the usual JSON error envelope.
-  if (!res.ok) throw apiError(await res.json().catch(() => ({})), res.status);
+  if (!res.ok) throw apiError(await res.json().catch(() => ({})), res.status, res.headers);
 
   return res.blob();
 }

@@ -61,7 +61,7 @@ export function DriverTelegramGroup({ driverId, driverName }: { driverId: string
       setGroup({ connected: false, title: "", linkedAt: "" });
       notify.success("Group disconnected");
     } catch (e) {
-      notify.error(friendlyError(e, "Couldn't disconnect the group."));
+      notify.error(friendlyError(e, "Couldn't disconnect the group."), e);
     } finally {
       setBusy(false); setConfirming(false);
     }

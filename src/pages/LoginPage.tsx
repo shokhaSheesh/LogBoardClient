@@ -91,12 +91,9 @@ export function LoginPage() {
     setError("");
     setSubmitting(true);
     try {
-      const { mustChangePassword } = await login(email, password);
-      if (mustChangePassword) {
-        navigate("/workspace/settings/credentials", { replace: true });
-      } else {
-        navigate("/workspace/dashboard", { replace: true });
-      }
+      await login(email, password);
+      // The workspace index sends them to the first page they can open, in sidebar order.
+      navigate("/workspace", { replace: true });
     } catch (err) {
       setError(tooManyAttempts(err) || friendlyError(err, "Couldn't sign you in. Try again."));
     } finally {

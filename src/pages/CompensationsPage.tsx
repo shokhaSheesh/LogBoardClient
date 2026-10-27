@@ -65,7 +65,7 @@ export function CompensationsPage() {
     setLoading(true);
     listCompensations({ q, type: type || undefined, status: status || undefined, from: period.from || undefined, to: period.to || undefined, page, pageSize })
       .then((r) => { if (!gone) setData(r); })
-      .catch((e) => { if (!gone) notify.error(friendlyError(e)); })
+      .catch((e) => { if (!gone) notify.error(friendlyError(e), e); })
       .finally(() => { if (!gone) setLoading(false); });
     return () => { gone = true; };
   }, [q, type, status, period, page, pageSize, fetchKey]);
@@ -82,7 +82,7 @@ export function CompensationsPage() {
       notify.success("Status updated");
       refresh();
     } catch (e) {
-      notify.error(friendlyError(e, "Update failed"));
+      notify.error(friendlyError(e, "Update failed"), e);
     }
   };
 

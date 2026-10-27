@@ -184,13 +184,16 @@ function toUser(b: BackendUser): User {
     roleId:   b.role_id   ?? "",
     roleName: b.role      ?? "",
     teamId:   null,
-    login:    b.email ?? b.login ?? "",
+    login:    b.email || b.login || "", // the owner may have a login and a blank email
     password: "",
     status:   (b.status === "active" || b.status === "Active") ? "Active" : "Suspended",
     kpiPercent: b.kpi_percent ?? null,
     kpiTable: b.kpi_mode === "table",
   };
 }
+
+// The company's owner, listed first on the Users page.
+const isOwnerUser = (u: Partial<User>) => (u.roleName ?? "").toLowerCase() === "owner";
 
 function fromUser(u: Partial<User>, isNew: boolean, roles: Role[]): Record<string, unknown> {
   // Prefer a selected company role; fall back to the coarse marker the backend gave
@@ -814,7 +817,13 @@ function UserModal({ user, roles, teams, saving, error, onClose, onSave, canSetP
             </div>
           </div>
 
-          {/* Role */}
+          {/* Role — the owner's is fixed */}
+          {isOwnerUser(form) ? (
+            <label style={fieldStyle}>
+              <span style={capStyle}>Role</span>
+              <input value="Owner" disabled style={{ ...inputStyle, opacity: 0.6, cursor: "not-allowed" }} />
+            </label>
+          ) : (
           <div style={fieldStyle}>
             {req("Role")}
             <CustomSelect
@@ -830,6 +839,7 @@ function UserModal({ user, roles, teams, saving, error, onClose, onSave, canSetP
             />
             <FieldHint text={submitted && !effectiveRoleId && !form.roleName?.trim() ? "Choose a role." : null} />
           </div>
+          )}
           {/* Team */}
           <div style={fieldStyle}>
             <span style={capStyle}>Team</span>
@@ -867,16 +877,18 @@ function UserModal({ user, roles, teams, saving, error, onClose, onSave, canSetP
             <FieldHint text={submitted ? passErr : null} />
           </label>
 
-          {/* Status */}
-          <div style={fieldStyle}>
-            <span style={capStyle}>Status</span>
-            <CustomSelect
-              value={form.status ?? "Active"}
-              options={statusOpts}
-              onChange={(v) => set("status", v as UserStatus)}
-              portal
-            />
-          </div>
+          {/* Status — the owner is always active */}
+          {!isOwnerUser(form) && (
+            <div style={fieldStyle}>
+              <span style={capStyle}>Status</span>
+              <CustomSelect
+                value={form.status ?? "Active"}
+                options={statusOpts}
+                onChange={(v) => set("status", v as UserStatus)}
+                portal
+              />
+            </div>
+          )}
 
           {/* Pay per load — owners and dispatchers only */}
           {payable && (
@@ -983,6 +995,7 @@ function UsersTab({ roles, teams, reloadTeams, reloadRoles, canCreate, canUpdate
   roles: Role[]; teams: Team[]; reloadTeams: () => Promise<unknown>; reloadRoles: () => Promise<unknown>;
   canCreate: boolean; canUpdate: boolean; canDelete: boolean;
 }) {
+  const { user: me } = useAuth();
   const [users, setUsers]       = useState<User[]>([]);
   const [loading, setLoading]   = useState(true);
   const [loadErr, setLoadErr]   = useState<string | null>(null);
@@ -1174,6 +1187,9 @@ function UsersTab({ roles, teams, reloadTeams, reloadRoles, canCreate, canUpdate
               const role = roleOf(u);
               // A user's team is derived from the team that lists them (user body has no team field).
               const team = teams.find((t) => t.userIds.includes(u.id));
+              // The owner heads the list. Their row is theirs alone to edit, and it can't be deleted.
+              const isOwner = isOwnerUser(u);
+              const editable = isOwner ? me?.id === u.id : canUpdate;
               return (
                 <tr key={u.id}
                   onMouseEnter={(e) => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = "var(--primary-faint)"; }}
@@ -1209,8 +1225,8 @@ function UsersTab({ roles, teams, reloadTeams, reloadRoles, canCreate, canUpdate
                   </td>
                   <td style={{ padding: "4px 10px", borderBottom: "1px solid var(--border)", verticalAlign: "middle", textAlign: "center", position: "sticky", right: 0, backgroundColor: "var(--card)", boxShadow: "inset 1px 0 0 var(--border)" }}>
                     <div style={{ display: "inline-flex", gap: 2 }}>
-                      {canUpdate && <ActionBtn label={`Edit ${u.name || "user"}`} icon={<Pencil size={14} />} tone="edit" onClick={() => { setEditing({ ...u, teamId: team?.id ?? null }); setSaveErr(null); setModal("edit"); }} />}
-                      {canDelete && <ActionBtn label={`Delete ${u.name || "user"}`} icon={<Trash2 size={14} />} tone="delete" onClick={() => setDeleting(u)} />}
+                      {editable && <ActionBtn label={`Edit ${u.name || "user"}`} icon={<Pencil size={14} />} tone="edit" onClick={() => { setEditing({ ...u, teamId: team?.id ?? null }); setSaveErr(null); setModal("edit"); }} />}
+                      {canDelete && !isOwner && <ActionBtn label={`Delete ${u.name || "user"}`} icon={<Trash2 size={14} />} tone="delete" onClick={() => setDeleting(u)} />}
                     </div>
                   </td>
                 </tr>
@@ -2060,7 +2076,7 @@ function WeekTab({ canEdit }: { canEdit: boolean }) {
       notify.success("Work week updated");
     } catch (e) {
       setStartDay(prev);
-      notify.error(friendlyError(e, "Couldn't save the work week — reverted."));
+      notify.error(friendlyError(e, "Couldn't save the work week — reverted."), e);
     } finally {
       setSaving(false);
     }
@@ -2350,7 +2366,7 @@ function FuelTab({ canEdit }: { canEdit: boolean }) {
       setPicked(null);
       notify.success("Fuel setting saved. New fuel plans use it.");
     } catch (e) {
-      notify.error(friendlyError(e, "Couldn't save the fuel setting."));
+      notify.error(friendlyError(e, "Couldn't save the fuel setting."), e);
     } finally {
       setSaving(false);
     }

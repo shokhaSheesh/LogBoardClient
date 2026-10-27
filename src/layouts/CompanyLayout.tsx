@@ -11,7 +11,6 @@ import {
   Truck,
   HandCoins,
   Receipt,
-  CreditCard,
   Settings,
   ChevronRight,
   ChevronDown,
@@ -23,12 +22,11 @@ import {
   Keyboard,
   Sun,
   Moon,
-  AlertTriangle,
 } from "lucide-react";
 import { Avatar, AvatarFallback } from "../components/ui/avatar";
 import { useAuth } from "../lib/auth";
 import { useTheme } from "../lib/theme";
-import { hasPerm, isOwnerPlanePage, canAccessPage } from "../lib/permissions";
+import { hasPerm, canAccessPage } from "../lib/permissions";
 import { api, setCompanyId, getCompanyId } from "../lib/api";
 import { useBoardPresence } from "../lib/useBoardPresence";
 import { useEntitlement, type EntitlementCopy } from "../lib/entitlement";
@@ -43,7 +41,6 @@ interface Account {
   name: string;
   initials: string;
   color: string;
-  plan: string;
   mc?: string; // motor-carrier number — owner-only (from /owner/companies), absent for dispatcher/updater
 }
 
@@ -63,12 +60,8 @@ function AccountSwitcher({
 }) {
   const { logout, user } = useAuth();
   const navigate = useNavigate();
-  // Billing & Settings are owner self-service (/owner/*) — hidden for dispatcher/updater.
-  const isOwner = user?.role === "owner";
-  // Billing is owner-only (there's no /company/billing); Settings now opens to anyone with
-  // a company-plane settings key, so gate each item on its own access.
-  const menuItems = USER_MENU_ITEMS.filter((m) =>
-    m.path.endsWith("/billing") ? isOwner : canAccessPage(user, "settings"));
+  // Settings opens to anyone holding one of its tabs' keys.
+  const menuItems = USER_MENU_ITEMS.filter(() => canAccessPage(user, "settings"));
   const [open, setOpen] = useState(false);
   useLayer(open, { onEscape: () => setOpen(false) });
   const [rect, setRect] = useState<DOMRect | null>(null);
@@ -139,9 +132,11 @@ function AccountSwitcher({
           <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--foreground)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
             {active.name}
           </div>
-          <div style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "var(--muted-foreground)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-            {active.mc ? `${active.mc} · ` : ""}{active.plan || "No"} plan
-          </div>
+          {active.mc && (
+            <div style={{ fontFamily: "var(--font-sans)", fontSize: 11, color: "var(--muted-foreground)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              {active.mc}
+            </div>
+          )}
         </div>
         <ChevronDown size={13} style={{ color: "var(--muted-foreground)", flexShrink: 0, transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s" }} />
       </button>
@@ -196,19 +191,14 @@ function AccountSwitcher({
                   <div style={{ fontSize: 13, fontWeight: 600, color: "var(--foreground)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                     {acc.name}
                   </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2, minWidth: 0 }}>
-                    {acc.mc && <span style={{ fontFamily: "var(--font-sans)", fontSize: 11.5, color: "var(--muted-foreground)", whiteSpace: "nowrap" }}>{acc.mc}</span>}
-                    <span style={{ fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 600, color: "var(--muted-foreground)", backgroundColor: isActive ? "var(--card)" : "var(--muted)", borderRadius: 5, padding: "0 6px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                      {acc.plan || "No plan"}
-                    </span>
-                  </div>
+                  {acc.mc && <div style={{ fontFamily: "var(--font-sans)", fontSize: 11.5, color: "var(--muted-foreground)", whiteSpace: "nowrap", marginTop: 2 }}>{acc.mc}</div>}
                 </div>
                 {isActive && <Check size={15} style={{ color: "var(--primary)", flexShrink: 0 }} />}
               </button>
             );
           })}
 
-          {/* Account section — Billing/Settings only for owners */}
+          {/* Account section — Settings, for anyone who can open a tab of it */}
           {menuItems.length > 0 && (
             <>
               <div style={{ height: 1, backgroundColor: "var(--border)", margin: "6px 4px" }} />
@@ -356,11 +346,10 @@ function colorFor(id: string): string {
 // ─── User menu (sidebar bottom) ───────────────────────────────────────────────
 
 const USER_MENU_ITEMS: { icon: React.ElementType; label: string; path: string }[] = [
-  { icon: CreditCard, label: "Billing",  path: "/workspace/billing"  },
   { icon: Settings,   label: "Settings", path: "/workspace/settings" },
 ];
 
-// Static — just shows who's signed in. Billing/Settings/Sign out live in the
+// Static — just shows who's signed in. Settings and Sign out live in the
 // account switcher (top-right) instead of a second menu down here.
 function UserCard({ collapsed }: { collapsed: boolean }) {
   const { user } = useAuth();
@@ -916,11 +905,11 @@ function TopHeader({ onToggleSidebar, accounts, activeAccountId, onSwitch }: {
   );
 }
 
-// ─── Plan gate ────────────────────────────────────────────────────────────────
+// ─── Company gate ─────────────────────────────────────────────────────────────
 
-// Shown in place of the page when the company isn't entitled. A dispatcher can't fix
-// this themselves — billing lives under /owner/* — so they get the reason and nothing
-// that would only 403. An owner gets a way through to Billing, which stays reachable.
+// Shown in place of the page when the company isn't Active. Nobody in the workspace can
+// fix this themselves — an administrator sets the status — so it is the reason and nothing
+// that would only 403.
 // A self-contained illustration for the locked-workspace states — an amber padlock
 // with a soft glow and orbiting dashed rings. Draws entirely from theme vars + amber,
 // so it reads on both light and dark without any external asset.
@@ -959,7 +948,7 @@ function LockedIllustration() {
   );
 }
 
-function EntitlementBlock({ copy, isOwner }: { copy: EntitlementCopy; isOwner: boolean }) {
+function EntitlementBlock({ copy }: { copy: EntitlementCopy }) {
   return (
     <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
       <div style={{ maxWidth: 440, textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
@@ -970,14 +959,6 @@ function EntitlementBlock({ copy, isOwner }: { copy: EntitlementCopy; isOwner: b
         <div style={{ fontFamily: "var(--font-sans)", fontSize: 13.5, color: "var(--muted-foreground)", lineHeight: 1.6, maxWidth: 380 }}>
           {copy.body}
         </div>
-        {isOwner && (
-          <NavLink
-            to="/workspace/billing"
-            style={{ marginTop: 14, fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 600, padding: "9px 20px", borderRadius: 8, backgroundColor: "var(--primary)", color: "#fff", textDecoration: "none" }}
-          >
-            Go to Billing
-          </NavLink>
-        )}
       </div>
     </div>
   );
@@ -1035,27 +1016,20 @@ export function CompanyLayout() {
         name:     c?.name     ?? "My Company",
         initials: c?.initials ?? initialsOf(c?.name ?? "My Company"),
         color:    c?.color    ?? colorFor(user.company_id),
-        plan:     c?.plan     ?? "",
         mc:       c?.mc,
       }]);
     }
   }, [user]);
 
   const [switching, setSwitching] = useState(false);
-  const { blocked, readOnly, copy, clear: clearEntitlement } = useEntitlement();
-
-  // Billing and Settings run on /owner/* endpoints, which the backend deliberately
-  // keeps outside the plan gate so an unentitled company can still record a
-  // subscription. Locking an owner out of them would strand them with no way back in.
-  const currentPage = useLocation().pathname.replace(/^\/workspace\/?/, "");
-  const gateApplies = !isOwnerPlanePage(currentPage);
+  const { blocked, copy, clear: clearEntitlement } = useEntitlement();
 
   const switchAccount = (id: string) => {
     if (id === activeAccountId) return;
     setSwitching(true);
     setActiveAccountId(id);
     setCompanyId(id);
-    // The plan gate is per-company: the one we just left being locked says nothing
+    // The company gate is per-company: the one we just left being locked says nothing
     // about this one. Drop the verdict and let the new company's requests speak.
     clearEntitlement();
     // Permissions are resolved per-company — re-pull them for the new active company.
@@ -1081,17 +1055,6 @@ export function CompanyLayout() {
           onSwitch={switchAccount}
         />
 
-        {/* The board still reads during the grace window — say so once, at the top,
-            rather than letting every save fail with a bare error toast. */}
-        {readOnly && copy && (
-          <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 16px", backgroundColor: "rgba(245,158,11,0.10)", borderBottom: "1px solid rgba(245,158,11,0.35)", flexShrink: 0 }}>
-            <AlertTriangle size={15} color="#F59E0B" style={{ flexShrink: 0 }} />
-            <span style={{ fontFamily: "var(--font-sans)", fontSize: 12.5, color: "#F59E0B", lineHeight: 1.4 }}>
-              <strong style={{ fontWeight: 700 }}>{copy.title}.</strong> {copy.body}
-            </span>
-          </div>
-        )}
-
         <main
           key={activeAccountId}
           className="flex-1 overflow-y-auto"
@@ -1099,8 +1062,8 @@ export function CompanyLayout() {
         >
           {/* A hard gate 403s reads too, so there is nothing for the page to render —
               show why instead of a shell full of failed widgets and error toasts. */}
-          {blocked && copy && gateApplies
-            ? <EntitlementBlock copy={copy} isOwner={user?.role === "owner"} />
+          {blocked && copy
+            ? <EntitlementBlock copy={copy} />
             : <Outlet />}
         </main>
       </div>

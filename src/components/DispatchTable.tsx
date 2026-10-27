@@ -1372,7 +1372,7 @@ export function DispatchTable() {
       settle(false);
       const undo = Object.fromEntries((Object.keys(fields) as (keyof Driver)[]).map((k) => [k, driver[k]])) as Partial<Driver>;
       setRows((prev) => prev.map((d) => d.driverId === driverId ? { ...d, ...undo } : d));
-      notify.error(friendlyError(e, "Couldn't save the change — reverted."));
+      notify.error(friendlyError(e, "Couldn't save the change — reverted."), e);
     }
   };
 
@@ -1415,7 +1415,7 @@ export function DispatchTable() {
       // WS snapshot pushes the authoritative row (with load.stops) back
     } catch (e) {
       rollback();
-      notify.error(friendlyError(e, "Couldn't save the change — reverted."));
+      notify.error(friendlyError(e, "Couldn't save the change — reverted."), e);
     }
   };
 
@@ -1454,7 +1454,7 @@ export function DispatchTable() {
       // WS snapshot pushes the authoritative rows (driver → covered/ready, queue rotated).
     } catch (e) {
       rollback();
-      notify.error(friendlyError(e, "Couldn't complete the load — reverted."));
+      notify.error(friendlyError(e, "Couldn't complete the load — reverted."), e);
     }
   };
 

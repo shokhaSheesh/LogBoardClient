@@ -23,7 +23,6 @@ export interface AuthUser {
     name: string;
     initials: string;
     color: string;
-    plan: string;          // "" when the company has no plan
     week_start_day: number; // 0=Sunday … 6=Saturday
     mc?: string;
   };

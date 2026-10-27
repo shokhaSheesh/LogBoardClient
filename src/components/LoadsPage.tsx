@@ -2650,7 +2650,7 @@ export function LoadsPage() {
     if (!openId) return;
     api.get<BackendLoad>(`/loads/${openId}`)
       .then((b) => { if (b) setDetail(toLoad(b)); })
-      .catch((e) => notify.error(friendlyError(e, "Couldn't open that load.")));
+      .catch((e) => notify.error(friendlyError(e, "Couldn't open that load."), e));
     navigate("/workspace/loads", { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openId]);
@@ -2696,7 +2696,7 @@ export function LoadsPage() {
         // may not be on this page, and stays as it is.
         setDetail((prev) => prev ? (mapped.find((l) => l.id === prev.id) ?? prev) : null);
       })
-      .catch((e) => { if (!cancelled) notify.error(friendlyError(e)); })
+      .catch((e) => { if (!cancelled) notify.error(friendlyError(e), e); })
       .finally(() => { if (!cancelled) { setLoading(false); setLoadedOnce(true); } });
     return () => { cancelled = true; };
   }, [fetchKey, debouncedSearch, filterStatus, created, page, pageSize]);
@@ -2711,7 +2711,7 @@ export function LoadsPage() {
       notify.success("Status updated");
       setFetchKey((k) => k + 1);
     } catch (e) {
-      notify.error(friendlyError(e, "Update failed"));
+      notify.error(friendlyError(e, "Update failed"), e);
       setFetchKey((k) => k + 1);
     }
   };

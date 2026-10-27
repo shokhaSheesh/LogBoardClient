@@ -2613,7 +2613,7 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
       setFetchKey((k) => k + 1);
     } catch (e) {
       setRows((prev) => prev.map((d) => (d.id === id ? existing : d)));
-      notify.error(friendlyError(e, "Update failed"));
+      notify.error(friendlyError(e, "Update failed"), e);
     }
   };
 
@@ -2630,7 +2630,7 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
       notify.success("Status updated");
       setFetchKey((k) => k + 1);
     } catch (e) {
-      notify.error(friendlyError(e, "Update failed"));
+      notify.error(friendlyError(e, "Update failed"), e);
     }
   };
 
@@ -2661,7 +2661,7 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
         const made = await api.post<any>("/drivers", fromSolo(d));
         notify.success(`${d.name} added successfully`);
         await saveHomeFromForm(made?.id, undefined, d.homeFrom, d.homeUntil)
-          .catch((e) => notify.error(friendlyError(e, "The driver was added, but the home time wasn't saved.")));
+          .catch((e) => notify.error(friendlyError(e, "The driver was added, but the home time wasn't saved."), e));
       } else {
         // The modal only rearranges its own state on drag — the load order the user
         // left it in reaches the server here, folded into the same Save click as
@@ -2680,7 +2680,7 @@ function SoloTab({ onSelectDriver, onCountChange }: { onSelectDriver: (d: SoloDr
         if (queueChanged) await api.put(`/drivers/${d.id}/queue`, { load_ids: newTailIds });
         notify.success(`${d.name} updated successfully`);
         await saveHomeFromForm(d.id, d.home, d.homeFrom, d.homeUntil)
-          .catch((e) => notify.error(friendlyError(e, "The driver was saved, but the home time wasn't.")));
+          .catch((e) => notify.error(friendlyError(e, "The driver was saved, but the home time wasn't."), e));
       }
       setModal(null);
       setFetchKey((k) => k + 1);
@@ -2937,7 +2937,7 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
       setFetchKey((k) => k + 1);
     } catch (e) {
       setRows((prev) => prev.map((d) => (d.id === id ? existing : d)));
-      notify.error(friendlyError(e, "Update failed"));
+      notify.error(friendlyError(e, "Update failed"), e);
     }
   };
 
@@ -2952,7 +2952,7 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
       notify.success("Status updated");
       setFetchKey((k) => k + 1);
     } catch (e) {
-      notify.error(friendlyError(e, "Update failed"));
+      notify.error(friendlyError(e, "Update failed"), e);
     }
   };
 
@@ -2981,7 +2981,7 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
       if (modal === "create") {
         const made = await api.post<any>("/drivers", fromTeam(d));
         await saveHomeFromForm(made?.id, undefined, d.homeFrom, d.homeUntil)
-          .catch((e) => notify.error(friendlyError(e, "The team was added, but the home time wasn't saved.")));
+          .catch((e) => notify.error(friendlyError(e, "The team was added, but the home time wasn't saved."), e));
         notify.success(`${d.name1} & ${d.name2} added successfully`);
       } else {
         // See the solo table's save() for why this reorder rides along with the field
@@ -2996,7 +2996,7 @@ function TeamTab({ onSelectTeam, onCountChange }: { onSelectTeam: (d: TeamDriver
         if (queueChanged) await api.put(`/drivers/${d.id}/queue`, { load_ids: newTailIds });
         notify.success(`Team updated successfully`);
         await saveHomeFromForm(d.id, d.home, d.homeFrom, d.homeUntil)
-          .catch((e) => notify.error(friendlyError(e, "The team was saved, but the home time wasn't.")));
+          .catch((e) => notify.error(friendlyError(e, "The team was saved, but the home time wasn't."), e));
       }
       setModal(null);
       setFetchKey((k) => k + 1);

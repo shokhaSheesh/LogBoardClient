@@ -130,7 +130,7 @@ export function DriverHomePeriods({ driverId }: { driverId: string }) {
       changed();
       notify.success("Home time removed");
     } catch (e) {
-      notify.error(friendlyError(e, "Couldn't remove the home time."));
+      notify.error(friendlyError(e, "Couldn't remove the home time."), e);
     } finally {
       setBusy(false); setRemoving(null);
     }

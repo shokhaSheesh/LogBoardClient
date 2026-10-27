@@ -73,7 +73,7 @@ export function KpiTableTab({ canEdit }: { canEdit: boolean }) {
       notify.success("Saved");
       setFallbackOpen(false);
     } catch (e) {
-      notify.error(friendlyError(e, "Couldn't save the percent."));
+      notify.error(friendlyError(e, "Couldn't save the percent."), e);
     } finally {
       setFallbackBusy(false);
     }

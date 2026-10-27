@@ -757,7 +757,7 @@ export function GrossMatrix() {
         if (prevCell) dateMap[date] = prevCell; else delete dateMap[date];
         return { ...d, dateMap };
       }));
-      notify.error(friendlyError(e, "Couldn't save the change — reverted."));
+      notify.error(friendlyError(e, "Couldn't save the change — reverted."), e);
     });
     setEditState(null);
   }

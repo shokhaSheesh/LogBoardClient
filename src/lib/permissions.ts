@@ -1,13 +1,9 @@
 import type { AuthUser } from "./auth";
 
 // Maps each workspace page to the company-plane permission module that gates it.
-// `ownerOnly` pages live under /owner/* on the backend and are reachable only by
-// the carrier owner (dispatchers/updaters get 403 there), so they're gated on the
-// operational role rather than a permission key.
 export interface PagePerm {
   path: string;
   module: string;
-  ownerOnly?: boolean;
   // Page opens if the user holds `read` on ANY of these modules (used by Settings, whose
   // tabs are each gated on their own key — users, teams, work_week, …).
   anyModule?: string[];
@@ -18,15 +14,15 @@ export interface PagePerm {
 export const SETTINGS_MODULES = ["users", "teams", "roles", "work_week", "fuel_settings", "eld", "kpi_table"];
 
 export const PAGE_PERMS: PagePerm[] = [
+  // In the sidebar's order: the first one a user can open is where they land.
   { path: "dashboard",  module: "dashboard"  },
   { path: "board",      module: "board"      },
-  { path: "gross",      module: "gross"      },
   { path: "loads",      module: "loads"      },
   { path: "drivers",    module: "drivers"    },
   { path: "equipments", module: "equipments" },
+  { path: "gross",      module: "gross"      },
   { path: "payouts",    module: "payouts"    },
   { path: "compensations", module: "compensations" },
-  { path: "billing",    module: "billing",  ownerOnly: true },
   // Runs on /company/* now, gated on permission keys — not owner-only anymore.
   { path: "settings",   module: "users", anyModule: SETTINGS_MODULES },
 ];
@@ -54,23 +50,13 @@ export function canAccessPage(user: AuthUser | null, path: string): boolean {
   const seg = path.split("/")[0];
   const def = PAGE_PERMS.find((p) => p.path === seg);
   if (!def) return true; // unknown page — don't block
-  if (def.ownerOnly) return user?.role === "owner";
   if (def.anyModule) return def.anyModule.some((m) => hasPerm(user, m));
   return hasPerm(user, def.module);
 }
 
 // The first page (in nav order) the user can actually open — used for the index
 // redirect and as the fallback when they land on a page they can't access.
-export function firstAccessiblePath(user: AuthUser | null): string {
-  const found = PAGE_PERMS.find((p) => canAccessPage(user, p.path));
-  return found ? found.path : "dashboard";
-}
-
-// Whether a page is served entirely by /owner/* endpoints. Those sit OUTSIDE the plan
-// gate — the backend keeps them reachable precisely so an unentitled company can still
-// record a subscription — so they must stay open when the rest of the workspace is
-// locked out. Everything else is a tenant route and dies with the gate.
-export function isOwnerPlanePage(path: string): boolean {
-  const seg = path.split("/")[0];
-  return PAGE_PERMS.find((p) => p.path === seg)?.ownerOnly ?? false;
+// null when they can open none — the caller then says so instead of redirecting in a circle.
+export function firstAccessiblePath(user: AuthUser | null): string | null {
+  return PAGE_PERMS.find((p) => canAccessPage(user, p.path))?.path ?? null;
 }

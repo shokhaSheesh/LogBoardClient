@@ -21,8 +21,18 @@ export { friendlyError } from "../lib/errors";
 
 export const notify = {
   success: (msg: string) => toast.success(msg),
-  error:   (msg: string) => toast.error(msg, { duration: 6000 }),
+  // Pass the error itself as well when there is one: a failed request then carries its
+  // reference (the server's request id) under the message, for support to look it up.
+  error:   (msg: string, cause?: unknown) => {
+    const ref = requestRef(cause);
+    toast.error(msg, { duration: 6000, description: ref ? `Ref: ${ref}` : undefined });
+  },
 };
+
+function requestRef(cause: unknown): string | undefined {
+  const id = (cause as { requestId?: unknown } | undefined)?.requestId;
+  return typeof id === "string" && id ? id : undefined;
+}
 
 // Mounted once at the app root.
 export function AppToaster() {
